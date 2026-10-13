@@ -131,6 +131,7 @@ export function BatchActionToolbar({
       // start" box — apply directly, matching handleBatchStatus's backlog short-
       // circuit. A mixed selection still routes through the modal: the non-backlog
       // issues will trigger and need confirmation.
+      // Only the fixed Backlog key parks work; custom Unstarted does not.
       const allBacklog = selectedIssues.every((i) => i.status === "backlog");
       if (!allBacklog) {
         openModal("issue-run-confirm", {
@@ -174,7 +175,7 @@ export function BatchActionToolbar({
             className={cn(
               "z-50",
               placement === "fixed-bottom"
-                ? "fixed bottom-6 left-1/2 -translate-x-1/2"
+                ? "fixed bottom-6 left-1/2 -translate-x-1/2 max-md:above-chat-launcher"
                 : "mb-2 w-fit",
             )}
           >
@@ -208,11 +209,11 @@ export function BatchActionToolbar({
               }}
             >
         <div className="flex items-center gap-1.5 pl-1 pr-2 border-r mr-1">
-          <span className="text-sm font-medium">{t(($) => $.batch.selected, { count })}</span>
+          <span className="text-body font-medium">{t(($) => $.batch.selected, { count })}</span>
           <button
             type="button"
             onClick={clear}
-            className="rounded p-0.5 hover:bg-accent transition-colors"
+            className="rounded-xs p-0.5 hover:bg-accent transition-colors"
           >
             <X className="size-3.5 text-muted-foreground" />
           </button>
@@ -277,7 +278,7 @@ export function BatchActionToolbar({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t(($) => $.batch.delete_dialog_desc, { count })}
-              <span className="mt-2 block text-xs text-muted-foreground/80">
+              <span className="mt-2 block text-caption text-muted-foreground">
                 {t(($) => $.batch.delete_dialog_warning)}
               </span>
             </AlertDialogDescription>

@@ -26,6 +26,20 @@ func testDBPool(t *testing.T) *pgxpool.Pool {
 		pool.Close()
 		t.Skipf("skipping DB test: database not reachable: %v", err)
 	}
+	// Close via t.Cleanup, registered FIRST, so it runs LAST — after every
+	// row-deleting cleanup the test registers later, and after the context
+	// cancel that stops the manager's workers. The previous shape, a `defer
+	// pool.Close()` at each call site, ran BEFORE any t.Cleanup: the row
+	// deletions then executed against a closed pool and failed silently, so
+	// every run leaked its PR rows into the shared database. The refresh
+	// worker looks rows up by ADDRESS (installation/owner/repo/number), which
+	// every test here shares — once enough leaked rows accumulate, a sweep
+	// applies a snapshot to a leaked row first, the onApplied signal fires for
+	// THAT row, and the test asserts on its own row before the worker reaches
+	// it. That is the "trailing refresh did not replace old snapshot" failure,
+	// and the "closed pool" WARN spam was the same ordering bug seen from the
+	// worker's side.
+	t.Cleanup(pool.Close)
 	return pool
 }
 
@@ -100,15 +114,22 @@ func checkRunCount(t *testing.T, pool *pgxpool.Pool, prID pgtype.UUID) int {
 
 func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T) {
 	pool := testDBPool(t)
-	defer pool.Close()
 	q := db.New(pool)
 	ctx := context.Background()
 	now := time.Unix(1_700_010_000, 0)
+	// Go runs DB-backed packages concurrently against one database. Keep this
+	// cursor test at the top of the BIGINT address space so ordinary fixtures
+	// from another package sort only after this test's bounded page wraps.
+	const (
+		firstInstallationID  int64 = 1<<63 - 2
+		secondInstallationID int64 = 1<<63 - 1
+		beforeFixtures       int64 = firstInstallationID - 1
+	)
 
-	settled := seedPRAt(t, pool, q, 111, "settled", 1, "S")
-	oldest := seedPRAt(t, pool, q, 111, "oldest", 2, "O")
-	running := seedPRAt(t, pool, q, 222, "running", 3, "R")
-	newer := seedPRAt(t, pool, q, 222, "newer", 4, "N")
+	settled := seedPRAt(t, pool, q, firstInstallationID, "settled", 1, "S")
+	oldest := seedPRAt(t, pool, q, firstInstallationID, "oldest", 2, "O")
+	running := seedPRAt(t, pool, q, secondInstallationID, "running", 3, "R")
+	newer := seedPRAt(t, pool, q, secondInstallationID, "newer", 4, "N")
 	prs := []db.GithubPullRequest{settled, oldest, running, newer}
 	t.Cleanup(func() {
 		for _, pr := range prs {
@@ -142,7 +163,7 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 
 	rows, err := q.ListStaleUndecidedGitHubPRs(ctx, db.ListStaleUndecidedGitHubPRsParams{
 		OlderThan:           tsFromTime(now.Add(-10 * time.Minute)),
-		AfterInstallationID: 0,
+		AfterInstallationID: beforeFixtures,
 		AfterRepoOwner:      "",
 		AfterRepoName:       "",
 		AfterPrNumber:       0,
@@ -166,7 +187,7 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 
 	first, err := q.ListStaleUndecidedGitHubPRs(ctx, db.ListStaleUndecidedGitHubPRsParams{
 		OlderThan:           tsFromTime(now.Add(-10 * time.Minute)),
-		AfterInstallationID: 0,
+		AfterInstallationID: beforeFixtures,
 		AfterRepoOwner:      "",
 		AfterRepoName:       "",
 		AfterPrNumber:       0,
@@ -201,7 +222,6 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 // response for an old head must never overwrite a newer head's snapshot.
 func TestApplySnapshotHeadSHAGuard(t *testing.T) {
 	pool := testDBPool(t)
-	defer pool.Close()
 	q := db.New(pool)
 	ctx := context.Background()
 	now := time.Unix(1_700_000_100, 0)
@@ -277,7 +297,6 @@ func TestApplySnapshotHeadSHAGuard(t *testing.T) {
 // trailing edge must still fetch and apply B immediately.
 func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	pool := testDBPool(t)
-	defer pool.Close()
 	q := db.New(pool)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -368,7 +387,6 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 // replace, not an accumulation.
 func TestApplySnapshotReplacesRuns(t *testing.T) {
 	pool := testDBPool(t)
-	defer pool.Close()
 	q := db.New(pool)
 	ctx := context.Background()
 	now := time.Unix(1_700_000_200, 0)

@@ -8,17 +8,9 @@
     "members": "Members",
     "projects": "Projects",
     "issues": "Issues",
-    "recent": "Recent"
-  },
-  "pages": {
-    "inbox": "Inbox",
-    "my_issues": "My Issues",
-    "issues": "Issues",
-    "projects": "Projects",
-    "agents": "Agents",
-    "runtimes": "Runtimes",
-    "skills": "Skills",
-    "settings": "Settings"
+    "cancelled": "Cancelled",
+    "recent": "Recent",
+    "workspaces": "Workspaces"
   },
   "commands": {
     "current_theme_aria": "Current theme",

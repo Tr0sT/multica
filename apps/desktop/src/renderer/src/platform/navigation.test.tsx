@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { useEffect } from "react";
 
 // MUL-4741: the adapter mutates tab sessions in the REAL store (no router,
@@ -28,7 +28,7 @@ vi.mock("@multica/core/auth", () => ({
 }));
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
-import { useNavigation } from "@multica/views/navigation";
+import { currentPath, useNavigation } from "@multica/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {
@@ -142,6 +142,50 @@ describe("push", () => {
     expect(getActiveTab(s)?.url).toBe("/butter/inbox");
   });
 
+  // The workspace switchers (sidebar dropdown, Mod+K palette) push the
+  // target's Issues root, which is where web lands. On desktop that resumes
+  // the workspace where the user left it instead. NoAccessPage recovers with
+  // replace() to the same kind of path, so both methods are covered.
+  it.each(["push", "replace"] as const)(
+    "%s to another workspace's Issues root restores its last active tab",
+    (method) => {
+      const store = useTabStore.getState();
+      store.switchWorkspace("butter", "/butter/projects");
+      store.switchWorkspace("acme");
+      const getAdapter = renderProvider();
+
+      getAdapter()[method]("/butter/issues");
+
+      const s = useTabStore.getState();
+      expect(s.activeWorkspaceSlug).toBe("butter");
+      expect(getActiveTab(s)?.url).toBe("/butter/projects");
+      expect(s.byWorkspace.butter.tabs.map((t) => t.url)).toEqual([
+        "/butter/projects",
+      ]);
+    },
+  );
+
+  it("lands on Issues when switching to a workspace with no tabs yet", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/butter/issues");
+
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/butter/issues");
+  });
+
+  it("still opens a deeper cross-workspace path under Issues", () => {
+    const store = useTabStore.getState();
+    store.switchWorkspace("butter", "/butter/projects");
+    store.switchWorkspace("acme");
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/butter/issues/BUT-1");
+
+    expect(getActiveTab(useTabStore.getState())?.url).toBe(
+      "/butter/issues/BUT-1",
+    );
+  });
+
   it("logs out instead of navigating for /login", () => {
     const getAdapter = renderProvider();
 
@@ -216,6 +260,78 @@ describe("back", () => {
     const active = getActiveTab(useTabStore.getState())!;
     expect(active.url).toBe("/acme/issues");
     expect(active.history.index).toBe(0);
+  });
+});
+
+// Consumed by `useBackOrReplace` — a page whose subject was deleted steps back
+// only when this says there is somewhere to step back to.
+describe("canGoBack", () => {
+  it("is false on a tab sitting at the start of its history", () => {
+    const getAdapter = renderProvider();
+
+    expect(getActiveTab(useTabStore.getState())!.history.index).toBe(0);
+    expect(getAdapter().canGoBack!()).toBe(false);
+  });
+
+  it("is true once the tab has navigated in place", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/acme/projects");
+
+    expect(getActiveTab(useTabStore.getState())!.history.index).toBe(1);
+    expect(getAdapter().canGoBack!()).toBe(true);
+  });
+
+  it("is false again after stepping back to the start", () => {
+    const getAdapter = renderProvider();
+    getAdapter().push("/acme/projects");
+
+    getAdapter().back!();
+
+    expect(getAdapter().canGoBack!()).toBe(false);
+  });
+
+  it("is false for a freshly opened tab, which starts its own history", () => {
+    const getAdapter = renderProvider();
+    getAdapter().push("/acme/projects");
+
+    getAdapter().openInNewTab!("/acme/agents", "Agents", { activate: true });
+
+    expect(getAdapter().canGoBack!()).toBe(false);
+  });
+});
+
+// MUL-6784: the tab URL is the only place the fragment survives on desktop —
+// the renderer's own `window.location` is the packaged file:// page — so a
+// share or feedback link built from this adapter depends on `hash` being here.
+describe("current location", () => {
+  it("splits the active tab URL into pathname, search and fragment", () => {
+    const getAdapter = renderProvider();
+
+    act(() => getAdapter().push("/acme/issues/MUL-1?tab=activity#comment-c1"));
+
+    expect(getAdapter().pathname).toBe("/acme/issues/MUL-1");
+    expect(getAdapter().searchParams.get("tab")).toBe("activity");
+    expect(getAdapter().hash).toBe("#comment-c1");
+  });
+
+  it('reports "" for a tab URL that carries no fragment', () => {
+    const getAdapter = renderProvider();
+
+    act(() => getAdapter().push("/acme/issues/MUL-1?tab=activity"));
+
+    expect(getAdapter().hash).toBe("");
+  });
+
+  it("rebuilds the current page as a web URL that keeps the fragment", () => {
+    const getAdapter = renderProvider();
+
+    act(() => getAdapter().push("/acme/issues/MUL-1#comment-c1"));
+
+    const adapter = getAdapter();
+    expect(adapter.getShareableUrl(currentPath(adapter))).toBe(
+      "https://app.example/acme/issues/MUL-1#comment-c1",
+    );
   });
 });
 

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,15 +25,21 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // githubAPIBase is the base URL for GitHub's REST API. Mutable so tests can
-// point fetchInstallationAccount at an httptest server without touching the
-// real GitHub.
+// point App-authenticated calls at an httptest server without touching GitHub.
 var githubAPIBase = "https://api.github.com"
+
+const (
+	githubReturnToGitHub       = "github"
+	githubReturnToRepositories = "repositories"
+	githubAPIResponseLimit     = 4 << 20
+)
 
 // ── Response shapes ─────────────────────────────────────────────────────────
 
@@ -75,6 +82,9 @@ type GitHubPullRequestResponse struct {
 	ClosedAt        *string `json:"closed_at"`
 	PRCreatedAt     string  `json:"pr_created_at"`
 	PRUpdatedAt     string  `json:"pr_updated_at"`
+	// LinkSource explains why the PR is on the issue: "manual", "title",
+	// "branch", or "auto" (an older rule). Only set on the issue PR list.
+	LinkSource string `json:"link_source,omitempty"`
 	// Mergeable state mirrors GitHub's REST `mergeable_state` field, retained
 	// for compatibility. The card now reads the richer GraphQL fields below.
 	MergeableState *string `json:"mergeable_state"`
@@ -134,6 +144,23 @@ type GitHubPullRequestResponse struct {
 type GitHubConnectResponse struct {
 	URL        string `json:"url"`
 	Configured bool   `json:"configured"`
+}
+
+type GitHubRepositoryResponse struct {
+	ID            int64   `json:"id"`
+	FullName      string  `json:"full_name"`
+	HTMLURL       string  `json:"html_url"`
+	CloneURL      string  `json:"clone_url"`
+	Description   *string `json:"description"`
+	Private       bool    `json:"private"`
+	Archived      bool    `json:"archived"`
+	DefaultBranch string  `json:"default_branch"`
+}
+
+type GitHubRepositoriesResponse struct {
+	Repositories []GitHubRepositoryResponse `json:"repositories"`
+	TotalCount   int64                      `json:"total_count"`
+	NextPage     *int                       `json:"next_page"`
 }
 
 func githubInstallationToResponse(i db.GithubInstallation) GitHubInstallationResponse {
@@ -347,46 +374,89 @@ func githubWebhookSecret() string { return strings.TrimSpace(os.Getenv("GITHUB_W
 // frontend never offers a flow that the backend would reject.
 func isGitHubConfigured() bool { return githubAppSlug() != "" && githubWebhookSecret() != "" }
 
+// isGitHubRepositoryBrowseConfigured is deliberately separate from the
+// install-flow flag. The App slug + webhook secret are enough to connect an
+// installation, but browsing its repositories also requires App JWT
+// credentials so the server can mint a short-lived installation token.
+func isGitHubRepositoryBrowseConfigured() bool {
+	return strings.TrimSpace(os.Getenv("GITHUB_APP_ID")) != "" &&
+		strings.TrimSpace(os.Getenv("GITHUB_APP_PRIVATE_KEY")) != ""
+}
+
 // signState produces an opaque token that binds a workspace ID to the
 // install flow so the setup callback can recover the workspace without
 // trusting query params alone. Format: "<workspaceID>.<nonce>.<sigHex>".
 func signState(workspaceID string) (string, error) {
+	return signStateForReturn(workspaceID, githubReturnToGitHub)
+}
+
+func signStateForReturn(workspaceID, returnTo string) (string, error) {
 	secret := githubWebhookSecret()
 	if secret == "" {
 		return "", errors.New("github integration is not configured")
+	}
+	if !isAllowedGitHubReturnTo(returnTo) {
+		return "", errors.New("invalid github return target")
 	}
 	nonceBytes := make([]byte, 12)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return "", err
 	}
 	nonce := hex.EncodeToString(nonceBytes)
+	payload := workspaceID + "." + nonce
+	if returnTo != githubReturnToGitHub {
+		payload = workspaceID + "." + returnTo + "." + nonce
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(workspaceID))
-	mac.Write([]byte("."))
-	mac.Write([]byte(nonce))
+	mac.Write([]byte(payload))
 	sig := hex.EncodeToString(mac.Sum(nil))
-	return workspaceID + "." + nonce + "." + sig, nil
+	return payload + "." + sig, nil
 }
 
 func verifyState(token string) (string, bool) {
+	workspaceID, _, ok := verifyStateWithReturn(token)
+	return workspaceID, ok
+}
+
+func verifyStateWithReturn(token string) (workspaceID, returnTo string, ok bool) {
 	secret := githubWebhookSecret()
 	if secret == "" {
-		return "", false
+		return "", "", false
 	}
 	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", false
+	if len(parts) != 3 && len(parts) != 4 {
+		return "", "", false
 	}
-	workspaceID, nonce, sig := parts[0], parts[1], parts[2]
+	workspaceID = parts[0]
+	returnTo = githubReturnToGitHub
+	nonceIndex := 1
+	if len(parts) == 4 {
+		returnTo = parts[1]
+		nonceIndex = 2
+		if !isAllowedGitHubReturnTo(returnTo) {
+			return "", "", false
+		}
+	}
+	sig := parts[nonceIndex+1]
+	payload := strings.Join(parts[:nonceIndex+1], ".")
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(workspaceID))
-	mac.Write([]byte("."))
-	mac.Write([]byte(nonce))
+	mac.Write([]byte(payload))
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(sig)) {
-		return "", false
+		return "", "", false
 	}
-	return workspaceID, true
+	return workspaceID, returnTo, true
+}
+
+func isAllowedGitHubReturnTo(returnTo string) bool {
+	return returnTo == githubReturnToGitHub || returnTo == githubReturnToRepositories
+}
+
+func githubSettingsURL(frontend, returnTo string) string {
+	if !isAllowedGitHubReturnTo(returnTo) {
+		returnTo = githubReturnToGitHub
+	}
+	return strings.TrimRight(frontend, "/") + "/settings?tab=" + url.QueryEscape(returnTo)
 }
 
 // GitHubConnect (GET /api/workspaces/{id}/github/connect) returns the URL the
@@ -401,8 +471,16 @@ func (h *Handler) GitHubConnect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, GitHubConnectResponse{Configured: false})
 		return
 	}
+	returnTo := strings.TrimSpace(r.URL.Query().Get("return_to"))
+	if returnTo == "" {
+		returnTo = githubReturnToGitHub
+	}
+	if !isAllowedGitHubReturnTo(returnTo) {
+		writeError(w, http.StatusBadRequest, "invalid return target")
+		return
+	}
 	slug := githubAppSlug()
-	state, err := signState(workspaceID)
+	state, err := signStateForReturn(workspaceID, returnTo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to sign state")
 		return
@@ -431,15 +509,20 @@ func (h *Handler) GitHubSetupCallback(w http.ResponseWriter, r *http.Request) {
 	if frontend == "" {
 		frontend = "http://localhost:3000"
 	}
-	settingsURL := strings.TrimRight(frontend, "/") + "/settings?tab=github"
+	settingsURL := githubSettingsURL(frontend, githubReturnToGitHub)
 
-	if installationIDStr == "" || state == "" {
+	if state == "" {
 		http.Redirect(w, r, settingsURL+"&github_error=missing_params", http.StatusFound)
 		return
 	}
-	workspaceID, ok := verifyState(state)
+	workspaceID, returnTo, ok := verifyStateWithReturn(state)
 	if !ok {
 		http.Redirect(w, r, settingsURL+"&github_error=invalid_state", http.StatusFound)
+		return
+	}
+	settingsURL = githubSettingsURL(frontend, returnTo)
+	if installationIDStr == "" {
+		http.Redirect(w, r, settingsURL+"&github_error=missing_params", http.StatusFound)
 		return
 	}
 	installationID, err := strconv.ParseInt(installationIDStr, 10, 64)
@@ -652,10 +735,207 @@ func (h *Handler) ListGitHubInstallations(w http.ResponseWriter, r *http.Request
 		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"installations": out,
-		"configured":    isGitHubConfigured(),
-		"can_manage":    canManage,
+		"installations":                out,
+		"configured":                   isGitHubConfigured(),
+		"repository_browse_configured": isGitHubRepositoryBrowseConfigured(),
+		"can_manage":                   canManage,
 	})
+}
+
+// ListGitHubInstallationRepositories returns the repositories accessible to a
+// workspace-bound GitHub App installation. The route is admin-only because
+// private repository names are sensitive. The path takes our installation row
+// UUID (not GitHub's numeric installation id), and the workspace ownership
+// check happens before any GitHub API call.
+func (h *Handler) ListGitHubInstallationRepositories(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	if _, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id"); !ok {
+		return
+	}
+	installationRowID := chi.URLParam(r, "installationId")
+	rowUUID, ok := parseUUIDOrBadRequest(w, installationRowID, "installation id")
+	if !ok {
+		return
+	}
+	row, err := h.Queries.GetGitHubInstallationByID(r.Context(), rowUUID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "github installation not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load github installation")
+		return
+	}
+	if uuidToString(row.WorkspaceID) != workspaceID {
+		writeError(w, http.StatusNotFound, "github installation not found")
+		return
+	}
+	if !isGitHubRepositoryBrowseConfigured() {
+		writeFeatureDisabled(w, "github_repository_browsing_not_configured", "github repository browsing is not configured")
+		return
+	}
+	page, ok := parseGitHubPageParam(w, r, "page", 1, 1, 100000)
+	if !ok {
+		return
+	}
+	perPage, ok := parseGitHubPageParam(w, r, "per_page", 100, 1, 100)
+	if !ok {
+		return
+	}
+
+	repositories, err := fetchGitHubInstallationRepositories(
+		r.Context(),
+		row.InstallationID,
+		page,
+		perPage,
+	)
+	if err != nil {
+		slog.Warn("github: list installation repositories failed", "err", err)
+		writeError(w, http.StatusBadGateway, "failed to list github repositories")
+		return
+	}
+	writeJSON(w, http.StatusOK, repositories)
+}
+
+func parseGitHubPageParam(
+	w http.ResponseWriter,
+	r *http.Request,
+	name string,
+	defaultValue, minValue, maxValue int,
+) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return defaultValue, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minValue || value > maxValue {
+		writeError(w, http.StatusBadRequest, "invalid "+name)
+		return 0, false
+	}
+	return value, true
+}
+
+func fetchGitHubInstallationRepositories(
+	ctx context.Context,
+	installationID int64,
+	page, perPage int,
+) (GitHubRepositoriesResponse, error) {
+	appJWT, err := signGitHubAppJWT(time.Now())
+	if err != nil {
+		return GitHubRepositoriesResponse{}, err
+	}
+	if appJWT == "" {
+		return GitHubRepositoriesResponse{}, errors.New("github App JWT credentials unavailable")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	tokenEndpoint := fmt.Sprintf(
+		"%s/app/installations/%d/access_tokens",
+		strings.TrimRight(githubAPIBase, "/"),
+		installationID,
+	)
+	tokenReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		tokenEndpoint,
+		strings.NewReader(`{"permissions":{"metadata":"read"}}`),
+	)
+	if err != nil {
+		return GitHubRepositoriesResponse{}, err
+	}
+	setGitHubAPIHeaders(tokenReq, appJWT)
+	tokenReq.Header.Set("Content-Type", "application/json")
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return GitHubRepositoriesResponse{}, fmt.Errorf("create installation token: %w", err)
+	}
+	defer tokenResp.Body.Close()
+	if tokenResp.StatusCode != http.StatusCreated {
+		_, _ = io.Copy(io.Discard, io.LimitReader(tokenResp.Body, githubAPIResponseLimit))
+		return GitHubRepositoriesResponse{}, fmt.Errorf("create installation token: github status %d", tokenResp.StatusCode)
+	}
+	var tokenBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(tokenResp.Body, githubAPIResponseLimit)).Decode(&tokenBody); err != nil {
+		return GitHubRepositoriesResponse{}, fmt.Errorf("decode installation token: %w", err)
+	}
+	if tokenBody.Token == "" {
+		return GitHubRepositoriesResponse{}, errors.New("github returned an empty installation token")
+	}
+	defer revokeGitHubInstallationToken(client, tokenBody.Token)
+
+	repositoriesEndpoint := fmt.Sprintf(
+		"%s/installation/repositories?page=%d&per_page=%d",
+		strings.TrimRight(githubAPIBase, "/"),
+		page,
+		perPage,
+	)
+	repositoriesReq, err := http.NewRequestWithContext(ctx, http.MethodGet, repositoriesEndpoint, nil)
+	if err != nil {
+		return GitHubRepositoriesResponse{}, err
+	}
+	setGitHubAPIHeaders(repositoriesReq, tokenBody.Token)
+	repositoriesResp, err := client.Do(repositoriesReq)
+	if err != nil {
+		return GitHubRepositoriesResponse{}, fmt.Errorf("list installation repositories: %w", err)
+	}
+	defer repositoriesResp.Body.Close()
+	if repositoriesResp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(repositoriesResp.Body, githubAPIResponseLimit))
+		return GitHubRepositoriesResponse{}, fmt.Errorf("list installation repositories: github status %d", repositoriesResp.StatusCode)
+	}
+	var body struct {
+		TotalCount   int64 `json:"total_count"`
+		Repositories []struct {
+			ID            int64   `json:"id"`
+			FullName      string  `json:"full_name"`
+			HTMLURL       string  `json:"html_url"`
+			CloneURL      string  `json:"clone_url"`
+			Description   *string `json:"description"`
+			Private       bool    `json:"private"`
+			Archived      bool    `json:"archived"`
+			DefaultBranch string  `json:"default_branch"`
+		} `json:"repositories"`
+	}
+	if err := json.NewDecoder(io.LimitReader(repositoriesResp.Body, githubAPIResponseLimit)).Decode(&body); err != nil {
+		return GitHubRepositoriesResponse{}, fmt.Errorf("decode installation repositories: %w", err)
+	}
+	out := GitHubRepositoriesResponse{
+		Repositories: make([]GitHubRepositoryResponse, 0, len(body.Repositories)),
+		TotalCount:   body.TotalCount,
+	}
+	for _, repository := range body.Repositories {
+		out.Repositories = append(out.Repositories, GitHubRepositoryResponse(repository))
+	}
+	if int64(page*perPage) < body.TotalCount {
+		nextPage := page + 1
+		out.NextPage = &nextPage
+	}
+	return out, nil
+}
+
+func setGitHubAPIHeaders(req *http.Request, token string) {
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+}
+
+func revokeGitHubInstallationToken(client *http.Client, token string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	endpoint := strings.TrimRight(githubAPIBase, "/") + "/installation/token"
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return
+	}
+	setGitHubAPIHeaders(req, token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, githubAPIResponseLimit))
 }
 
 func (h *Handler) DeleteGitHubInstallation(w http.ResponseWriter, r *http.Request) {
@@ -689,6 +969,12 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	ws, err := h.Queries.GetWorkspace(r.Context(), issue.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
+		return
+	}
+	identifier := fmt.Sprintf("%s-%d", issuePrefixForWorkspace(ws), issue.Number)
 	rows, err := h.Queries.ListPullRequestsByIssue(r.Context(), issue.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
@@ -696,7 +982,9 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 	}
 	out := make([]GitHubPullRequestResponse, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, issuePullRequestRowToResponse(row, h.PRRefresh.Enabled()))
+		resp := issuePullRequestRowToResponse(row, h.PRRefresh.Enabled())
+		resp.LinkSource = prLinkSource(row.LinkedByType, identifier, row.Title, row.Branch.String)
+		out = append(out, resp)
 		// Page-visit trigger (MUL-5265): if this card's snapshot is missing or
 		// older than the view TTL, kick an async refresh. Non-blocking — the
 		// current (possibly stale) response is returned immediately and the
@@ -719,12 +1007,24 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	for _, row := range vcsRows {
-		out = append(out, vcsPullRequestRowToResponse(row))
+		resp := vcsPullRequestRowToResponse(row)
+		resp.LinkSource = prLinkSource(row.LinkedByType, identifier, row.Title, row.Branch.String)
+		out = append(out, resp)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].PRCreatedAt > out[j].PRCreatedAt
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"pull_requests": out})
+	// The one auto-complete decision the issue page renders, so the UI never
+	// re-derives the rule on its own.
+	decision, err := h.decidePRAutoComplete(r.Context(), ws, issue, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pull_requests": out,
+		"auto_complete": prAutoCompleteToResponse(decision),
+	})
 }
 
 // broadcastPRSnapshotApplied is the ghsnapshot pipeline's onApplied callback:
@@ -757,19 +1057,17 @@ func (h *Handler) broadcastPRSnapshotApplied(ctx context.Context, prID pgtype.UU
 // uppercase. Word boundary on the left prevents matching inside email-style
 // strings (e.g. "abc@MUL-1") and the digit anchor on the right rules out
 // version numbers like "v1.2-3".
-var identifierRe = regexp.MustCompile(`(?i)\b([a-z][a-z0-9]{1,9})-(\d+)\b`)
+var identifierRe = regexp.MustCompile(`(?i)\b([a-z][a-z0-9]{0,9})-(\d+)\b`)
 
 // closingIdentifierRe extracts identifiers that appear immediately after a
 // GitHub-style closing keyword ("close[sd]?", "fix(e[sd])?", "resolve[sd]?"),
 // optionally separated by a colon and whitespace. Matching is intentionally
-// strict on adjacency — "Fix MUL-1" closes MUL-1, but "Fix login MUL-1"
-// does not. This mirrors GitHub's own closing-keyword grammar and is the
-// gate the webhook uses to decide whether to auto-advance an issue to
-// `done` after a PR merges. References like "Follow up in MUL-2" and bare
-// title prefixes like "MUL-1: ..." link the PR (via identifierRe) but
-// never auto-close.
+// strict on adjacency — "Fix MUL-1" names MUL-1, but "Fix login MUL-1" does
+// not. It is the one way a PR body links an issue; a bare body mention links
+// nothing. Since MUL-7726 the keyword only links: what a merge does is the
+// workspace's choice, not the PR text's.
 var closingIdentifierRe = regexp.MustCompile(
-	`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[:\s]+([a-z][a-z0-9]{1,9})-(\d+)\b`,
+	`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[:\s]+([a-z][a-z0-9]{0,9})-(\d+)\b`,
 )
 
 // HandleGitHubWebhook (POST /api/webhooks/github) is GitHub's destination for
@@ -786,7 +1084,7 @@ func (h *Handler) HandleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	if secret == "" {
 		// Refusing to process webhooks at all is safer than treating an
 		// unconfigured deployment as "all signatures valid".
-		writeError(w, http.StatusServiceUnavailable, "github webhooks not configured")
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	sigHeader := r.Header.Get("X-Hub-Signature-256")
@@ -1004,14 +1302,144 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 	// authorized the installation for; we deliberately don't gate on the
 	// workspace.repos registry — that list is "code the agent clones", not a
 	// webhook subscription (MUL-4343).
+	//
+	// Fanning out means an identifier can resolve in more than one workspace at
+	// once (issue prefixes are not globally unique and issue numbers restart at
+	// 1 per workspace, so two bound workspaces can both own a real "ABC-100").
+	// Settle who — if anyone — may link each identifier BEFORE any workspace
+	// writes, and treat that verdict as authoritative for the whole delivery.
+	// See prLinkPolicy.
+	linkPolicy := h.resolvePRLinkPolicy(ctx, insts, &p)
 	for _, inst := range insts {
-		h.mirrorPullRequestForWorkspace(ctx, inst.WorkspaceID, inst.InstallationID, &p)
+		h.mirrorPullRequestForWorkspace(ctx, inst.WorkspaceID, inst.InstallationID, &p, linkPolicy)
 	}
 	// The PR row(s) now carry the new head; ask the API pipeline for the
 	// authoritative CI + mergeability snapshot for that head. The webhook is
 	// only the doorbell — its own mergeable/checks payload is not used for
 	// display anymore (MUL-5265).
 	h.PRRefresh.Enqueue(p.Installation.ID, p.Repository.Owner.Login, p.Repository.Name, p.PullRequest.Number)
+}
+
+// prLinkPolicy decides which (identifier, workspace) pairs this delivery may
+// link, and is the single authority for that decision: the per-workspace mirror
+// pass consults it instead of re-deriving the answer from its own reads.
+//
+// A link is a claim that the PR delivers the issue, and a merged link set with
+// a closing keyword completes the issue. So when one installation is bound to
+// several workspaces, an identifier that resolves in more than one of them must
+// not link anywhere — otherwise merging the PR could complete an issue in a
+// workspace that has nothing to do with it (#6804). A member can still link the
+// PR by hand.
+type prLinkPolicy struct {
+	// unrestricted marks the single-binding case: cross-workspace ambiguity is
+	// impossible with one bound workspace, so the scan does no reads at all.
+	unrestricted bool
+	// indeterminate means a read failed, so we cannot tell ambiguous from
+	// unique. The mirror pass then leaves links and statuses untouched for this
+	// delivery rather than guessing either way.
+	indeterminate bool
+	// owner maps an identifier to the one auto-linking workspace proven to
+	// resolve it.
+	owner map[string]string
+	// ambiguous lists identifiers that resolved in more than one auto-linking
+	// workspace.
+	ambiguous map[string]bool
+}
+
+// permits reports whether workspaceID may link identifier.
+func (c prLinkPolicy) permits(identifier, workspaceID string) bool {
+	if c.unrestricted {
+		return true
+	}
+	owner, ok := c.owner[identifier]
+	return ok && owner == workspaceID
+}
+
+// resolvePRLinkPolicy determines, before any workspace writes, which claimed
+// identifiers on this PR may link, and in which workspace. An identifier is
+// allowed only when exactly one auto-linking bound workspace was proven to
+// resolve it; misjudging "unique" as "ambiguous" costs a link a person can add
+// by hand, while the reverse would move someone else's issue on merge.
+func (h *Handler) resolvePRLinkPolicy(ctx context.Context, insts []db.GithubInstallation, p *ghPullRequestPayload) prLinkPolicy {
+	if len(insts) < 2 {
+		return prLinkPolicy{unrestricted: true}
+	}
+	idents := prClaimedIdentifiers(p.PullRequest.Title, p.PullRequest.Body, p.PullRequest.Head.Ref)
+	policy := prLinkPolicy{owner: map[string]string{}, ambiguous: map[string]bool{}}
+	if len(idents) == 0 {
+		return policy
+	}
+	prNumber := p.PullRequest.Number
+	repo := p.Repository.Owner.Login + "/" + p.Repository.Name
+	indeterminate := func(msg string, args ...any) prLinkPolicy {
+		slog.Warn(msg, append(args, "installation_id", p.Installation.ID, "repo", repo, "pr_number", prNumber)...)
+		return prLinkPolicy{indeterminate: true}
+	}
+
+	type resolver struct {
+		workspaceID string
+		autoLink    bool
+	}
+	resolvers := make(map[string][]resolver, len(idents))
+	for _, inst := range insts {
+		ws, err := h.Queries.GetWorkspace(ctx, inst.WorkspaceID)
+		if err != nil {
+			return indeterminate("github: cannot load bound workspace, leaving links unchanged for this delivery", "err", err)
+		}
+		// A settings blob we cannot parse is not evidence either way, so it
+		// fails closed.
+		autoLink, err := autoLinkPRsEnabledForWorkspace(ws)
+		if err != nil {
+			return indeterminate("github: cannot read workspace auto-link setting, leaving links unchanged for this delivery",
+				"err", err, "workspace_id", uuidToString(inst.WorkspaceID))
+		}
+		// With GitHub off a workspace acts on nothing, so it claims nothing.
+		if !githubFeaturesEnabled(ws) {
+			continue
+		}
+		prefix := issuePrefixForWorkspace(ws)
+		for _, id := range idents {
+			number, ok := issueNumberForPrefix(id, prefix)
+			if !ok {
+				continue
+			}
+			if _, err := h.Queries.GetIssueByNumber(ctx, db.GetIssueByNumberParams{
+				WorkspaceID: inst.WorkspaceID,
+				Number:      number,
+			}); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					continue
+				}
+				return indeterminate("github: cannot resolve identifier in bound workspace, leaving links unchanged for this delivery",
+					"err", err, "identifier", id, "workspace_id", uuidToString(inst.WorkspaceID))
+			}
+			resolvers[id] = append(resolvers[id], resolver{workspaceID: uuidToString(inst.WorkspaceID), autoLink: autoLink})
+		}
+	}
+	for id, all := range resolvers {
+		// A workspace with auto-link off never writes a link row, so it is not
+		// a competing claimant for the link.
+		var wss []string
+		for _, r := range all {
+			if r.autoLink {
+				wss = append(wss, r.workspaceID)
+			}
+		}
+		if len(wss) == 0 {
+			continue
+		}
+		if len(wss) == 1 {
+			policy.owner[id] = wss[0]
+			continue
+		}
+		policy.ambiguous[id] = true
+		// An issue that never auto-links is otherwise untraceable back to
+		// GitHub, so leave a breadcrumb naming the collision.
+		slog.Warn("github: identifier resolves in several bound workspaces, not auto-linking it",
+			"identifier", id, "workspaces", len(wss),
+			"installation_id", p.Installation.ID, "repo", repo, "pr_number", prNumber)
+	}
+	return policy
 }
 
 // ghCIEventPayload captures the shared shape of the check_suite / check_run /
@@ -1108,12 +1536,26 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 // mirrorPullRequestForWorkspace mirrors a pull_request webhook into a single
 // workspace: it upserts the PR row, replays any check_suite events that
 // arrived before the PR was mirrored, auto-links referenced issues (gated by
-// the workspace's github toggles), advances issues on terminal events, and
-// broadcasts the change. Invoked once per workspace bound to the delivering
-// installation.
-func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype.UUID, installationID int64, p *ghPullRequestPayload) {
+// the workspace's github toggles), completes issues on a merge, and broadcasts
+// the change. Invoked once per workspace bound to the delivering installation.
+//
+// linkPolicy is the delivery-wide verdict on which identifiers this workspace
+// may link; this function only ever narrows it.
+func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype.UUID, installationID int64, p *ghPullRequestPayload, linkPolicy prLinkPolicy) {
 	state := derivePRState(p.PullRequest.State, p.PullRequest.Draft, p.PullRequest.Merged)
 	mergeable, clearMergeable := derivePRMergeableState(p.Action, p.PullRequest.MergeableState, baseRefChanged(p.Changes))
+	// The stored state before this event, so a merge is acted on once — when it
+	// happens — and not again on a later edit/label event of a merged PR (that
+	// would re-complete an issue someone reopened on purpose).
+	prevState := ""
+	if prev, err := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+		WorkspaceID: wsID,
+		RepoOwner:   p.Repository.Owner.Login,
+		RepoName:    p.Repository.Name,
+		PrNumber:    p.PullRequest.Number,
+	}); err == nil {
+		prevState = prev.State
+	}
 	pr, err := h.Queries.UpsertGitHubPullRequest(ctx, db.UpsertGitHubPullRequestParams{
 		WorkspaceID:         wsID,
 		InstallationID:      installationID,
@@ -1137,6 +1579,12 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 		Deletions:           p.PullRequest.Deletions,
 		ChangedFiles:        p.PullRequest.ChangedFiles,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// A stale redelivery: the stored row is newer, and the newer event
+		// already linked and published. Acting on this one would roll links
+		// and merge detection back.
+		return
+	}
 	if err != nil {
 		slog.Warn("github: upsert pr failed", "err", err)
 		return
@@ -1144,118 +1592,47 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 
 	workspaceID := uuidToString(wsID)
 	resp := githubPullRequestToResponse(pr, h.PRRefresh.Enabled())
-
-	// Auto-link: scan title/body/branch for issue identifiers, look them
-	// up in this workspace, attach the link rows. Idempotent (ON CONFLICT
-	// upserts the close_intent flag — see LinkIssueToPullRequest) so
-	// re-firing the webhook doesn't duplicate.
-	//
-	// RFC MUL-2414 §4.8: the PR mirror upsert above always runs (so re-enabling
-	// GitHub features restores history without backfill), but the link rows
-	// are a "new side-effect" and must be gated by the workspace's auto-link
-	// flag (which itself short-circuits when the master `github_enabled`
-	// switch is off).
 	linkedIssueIDs := make([]string, 0)
-	if h.workspaceAutoLinkPRsEnabled(ctx, wsID) {
-		idents := extractIdentifiers(p.PullRequest.Title, p.PullRequest.Body, p.PullRequest.Head.Ref)
-		// closingIdents is the subset of identifiers that this PR explicitly
-		// declared via a closing keyword ("Closes/Fixes/Resolves MUL-X").
-		// Linking still happens for every mention (idents above), but the
-		// link row's close_intent column — and therefore whether the
-		// auto-advance gate eventually fires — is only set for keyword-
-		// declared identifiers. Bare title prefixes and branch-name
-		// references are link-only.
-		closingIdents := map[string]struct{}{}
-		for _, c := range extractClosingIdentifiers(p.PullRequest.Title, p.PullRequest.Body) {
-			closingIdents[c] = struct{}{}
-		}
-		// qualifyingIdents are the identifiers that genuinely tie this PR to an
-		// issue: a title prefix, a branch-name reference, or a body closing
-		// keyword. Any identifier that is linked but NOT in this set was matched
-		// only by a bare mention in the PR body ("Related MUL-1", "Follow up in
-		// MUL-1"). Those links are still recorded (auto-link stays generous so
-		// close_intent can be tracked across edits) but are flagged
-		// reference_only and hidden from the issue's PR list — a passing mention
-		// should not surface the PR as a working PR for that issue (MUL-3739).
-		qualifyingIdents := map[string]struct{}{}
-		for _, id := range extractIdentifiers(p.PullRequest.Title, p.PullRequest.Head.Ref) {
-			qualifyingIdents[id] = struct{}{}
-		}
-		for c := range closingIdents {
-			qualifyingIdents[c] = struct{}{}
-		}
-		// close_intent should follow the PR title/body while the PR is still
-		// editable before its terminal close event. Once GitHub has delivered
-		// a terminal event, later edit/synchronize webhooks must not rewrite
-		// the merge-time close decision.
-		preserveCloseIntent := p.Action != "closed" && (state == "merged" || state == "closed")
-		prefix := h.getIssuePrefix(ctx, wsID)
-		// reevalIssues collects each issue whose link row we just touched so
-		// we can re-run the auto-advance gate against the persisted aggregate
-		// after every link upsert in this event. Driving the gate off
-		// persisted state (instead of "did *this* webhook declare closing
-		// intent?") is what fixes the multi-PR sibling case: a PR with
-		// `Closes MUL-1` merges first while a link-only sibling is still
-		// open, then the sibling closes later — its webhook has no closing
-		// keyword, but the earlier link row carries close_intent=true, so
-		// MUL-1 still advances.
-		reevalIssues := make([]db.Issue, 0, len(idents))
-		for _, id := range idents {
-			issue, ok := h.lookupIssueByIdentifier(ctx, wsID, prefix, id)
-			if !ok {
-				continue
-			}
-			_, declared := closingIdents[id]
-			closeIntent := declared && !preserveCloseIntent
-			_, qualifies := qualifyingIdents[id]
-			referenceOnly := !qualifies
-			if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
-				IssueID:             issue.ID,
-				PullRequestID:       pr.ID,
-				CloseIntent:         closeIntent,
-				ReferenceOnly:       referenceOnly,
-				PreserveCloseIntent: preserveCloseIntent,
-				LinkedByType:        strToText("system"),
-				LinkedByID:          pgtype.UUID{},
-			}); err != nil {
-				slog.Warn("github: link failed", "err", err)
-				continue
-			}
-			linkedIssueIDs = append(linkedIssueIDs, uuidToString(issue.ID))
-			reevalIssues = append(reevalIssues, issue)
-		}
 
-		// A terminal PR event (`merged` or `closed`) may be the moment the
-		// last in-flight sibling resolves. We re-evaluate every issue we
-		// just linked once both the PR row and the link row are persisted,
-		// so the aggregate query sees the freshest state. We advance the
-		// issue to done when:
-		//   1. the issue isn't already terminal (`done` / `cancelled`);
-		//   2. no linked PR is still `open` / `draft`;
-		//   3. at least one merged linked PR declared close_intent (a
-		//      "Closes/Fixes/Resolves" keyword on its link row).
-		// Rule (3) is what prevents "Follow up in MUL-2" / "Unblocks MUL-3"
-		// references from being treated the same as "Closes MUL-1", and
-		// also prevents an "all closed-without-merge" sequence from
-		// silently auto-closing the issue — if nothing carrying closing
-		// intent was ever delivered, the user should decide manually.
-		if state == "merged" || state == "closed" {
-			for _, issue := range reevalIssues {
-				if issue.Status == "done" || issue.Status == "cancelled" {
-					continue
-				}
-				// Combined across providers: an issue may also carry a still-open
-				// self-hosted VCS PR, which must block auto-advance here just as
-				// an open GitHub PR blocks it on the VCS webhook path.
-				counts, err := h.Queries.GetIssueCombinedPullRequestCloseAggregate(ctx, issue.ID)
-				if err != nil {
-					slog.Warn("github: count linked pr states failed", "err", err, "issue_id", uuidToString(issue.ID))
-					continue
-				}
-				if counts.OpenCount == 0 && counts.MergedWithCloseIntentCount > 0 {
-					h.advanceIssueToDone(ctx, issue, workspaceID)
-				}
+	// RFC MUL-2414 §4.8: the PR mirror upsert above always runs (so re-enabling
+	// GitHub features restores history without backfill), but links and status
+	// changes are side-effects gated by the master `github_enabled` switch.
+	ws, err := h.Queries.GetWorkspace(ctx, wsID)
+	if err == nil && githubFeaturesEnabled(ws) && !linkPolicy.indeterminate {
+		touched := map[pgtype.UUID]struct{}{}
+		idents := prClaimedIdentifiers(p.PullRequest.Title, p.PullRequest.Body, p.PullRequest.Head.Ref)
+		if autoLink, _ := autoLinkPRsEnabledForWorkspace(ws); autoLink {
+			linkedIssueIDs, touched = h.reconcileAutoLinks(ctx, ws, pr.ID, state, prAutoLinkInput{
+				idents:    idents,
+				permits:   func(id string) bool { return linkPolicy.permits(id, workspaceID) },
+				ambiguous: func(id string) bool { return linkPolicy.ambiguous[id] },
+				link: func(issueID pgtype.UUID) (int64, error) {
+					return h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{IssueID: issueID, PullRequestID: pr.ID})
+				},
+				unlink: func(issueID pgtype.UUID) (int64, error) {
+					return h.Queries.UnlinkIssueFromPullRequest(ctx, db.UnlinkIssueFromPullRequestParams{IssueID: issueID, PullRequestID: pr.ID})
+				},
+				listAuto: func() ([]pgtype.UUID, error) {
+					return h.Queries.ListAutoLinkedIssueIDsForPullRequest(ctx, pr.ID)
+				},
+			})
+		}
+		// A merge is a PR event for every issue this PR is linked to, manual
+		// links included.
+		if state == "merged" && prevState != "merged" {
+			issueIDs, err := h.Queries.ListIssueIDsForPullRequest(ctx, pr.ID)
+			if err != nil {
+				slog.Warn("github: list linked issues failed", "err", err)
 			}
+			for _, id := range issueIDs {
+				touched[id] = struct{}{}
+			}
+		}
+		// One status-catalog read per workspace per delivery, however many
+		// issues the PR touches.
+		resolver := issuestatus.NewResolver(wsID)
+		for issueID := range touched {
+			h.maybeAutoCompleteIssue(ctx, wsID, issueID, resolver)
 		}
 	}
 
@@ -1265,6 +1642,93 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 		"pull_request":     resp,
 		"linked_issue_ids": linkedIssueIDs,
 	})
+}
+
+// prAutoLinkInput is what reconcileAutoLinks needs from one provider.
+type prAutoLinkInput struct {
+	idents    []string                         // identifiers the PR claims (see prClaimedIdentifiers)
+	permits   func(identifier string) bool     // cross-workspace verdict (always true for VCS)
+	ambiguous func(identifier string) bool     // resolved in several workspaces
+	link      func(pgtype.UUID) (int64, error) // automatic link; 1 when new
+	unlink    func(pgtype.UUID) (int64, error) // drop a link; 1 when removed
+	listAuto  func() ([]pgtype.UUID, error)    // issues currently auto-linked to the PR
+}
+
+// reconcileAutoLinks makes the PR's automatic links match its claims. It
+// returns the issue ids the PR is linked to after the pass, and the issues
+// whose link set changed (a PR event for auto-complete).
+//
+//   - A claimed identifier that resolves here links, unless a person removed
+//     that PR from that issue before.
+//   - An automatic link the PR no longer claims is dropped while the PR is still
+//     open. After merge/close it is kept: a later title edit must not take the
+//     delivered work off the issue.
+//   - An automatic link for an identifier that turned out to be ambiguous
+//     across bound workspaces is always dropped (see prLinkPolicy).
+//
+// Manual links are never touched here.
+func (h *Handler) reconcileAutoLinks(ctx context.Context, ws db.Workspace, prID pgtype.UUID, state string, in prAutoLinkInput) ([]string, map[pgtype.UUID]struct{}) {
+	touched := map[pgtype.UUID]struct{}{}
+	linked := make([]string, 0)
+	claimed := map[pgtype.UUID]struct{}{}
+	ambiguousIssues := map[pgtype.UUID]struct{}{}
+	prefix := issuePrefixForWorkspace(ws)
+	for _, id := range in.idents {
+		issue, ok := h.lookupIssueByIdentifier(ctx, ws.ID, prefix, id)
+		if !ok {
+			continue
+		}
+		if !in.permits(id) {
+			if in.ambiguous(id) {
+				ambiguousIssues[issue.ID] = struct{}{}
+			}
+			continue
+		}
+		excluded, err := h.Queries.IsPullRequestExcludedFromIssue(ctx, db.IsPullRequestExcludedFromIssueParams{IssueID: issue.ID, PullRequestID: prID})
+		if err != nil {
+			slog.Warn("pr link: exclusion lookup failed", "err", err)
+			continue
+		}
+		if excluded {
+			continue
+		}
+		claimed[issue.ID] = struct{}{}
+		rows, err := in.link(issue.ID)
+		if err != nil {
+			slog.Warn("pr link: link failed", "err", err)
+			continue
+		}
+		linked = append(linked, uuidToString(issue.ID))
+		if rows > 0 {
+			touched[issue.ID] = struct{}{}
+		}
+	}
+
+	terminal := state == "merged" || state == "closed"
+	current, err := in.listAuto()
+	if err != nil {
+		slog.Warn("pr link: list auto links failed", "err", err)
+		return linked, touched
+	}
+	for _, issueID := range current {
+		if _, ok := claimed[issueID]; ok {
+			continue
+		}
+		_, ambiguous := ambiguousIssues[issueID]
+		if terminal && !ambiguous {
+			continue
+		}
+		rows, err := in.unlink(issueID)
+		if err != nil {
+			slog.Warn("pr link: unlink failed", "err", err)
+			continue
+		}
+		if rows > 0 {
+			// Dropping an unmerged PR can leave only merged ones behind.
+			touched[issueID] = struct{}{}
+		}
+	}
+	return linked, touched
 }
 
 // derivePRMergeableState resolves the upsert behaviour for the PR row's
@@ -1349,33 +1813,21 @@ func parseGHTimeRequired(s string) pgtype.Timestamptz {
 // extractIdentifiers pulls every "PREFIX-NUMBER" match across the supplied
 // fields, deduplicating in input order.
 func extractIdentifiers(parts ...string) []string {
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, src := range parts {
-		for _, m := range identifierRe.FindAllStringSubmatch(src, -1) {
-			ident := strings.ToUpper(m[1]) + "-" + m[2]
-			if _, dup := seen[ident]; dup {
-				continue
-			}
-			seen[ident] = struct{}{}
-			out = append(out, ident)
-		}
-	}
-	return out
+	return extractMatchedIdentifiers(identifierRe, parts...)
 }
 
-// extractClosingIdentifiers pulls every "PREFIX-NUMBER" identifier that
-// appears immediately after a GitHub-style closing keyword in the supplied
-// fields, deduplicating in input order. Identifiers in branch names are
-// intentionally excluded — callers should pass only title and body — because
-// branch names are not natural-language fields and treating "mul-1/fix-login"
-// as a close declaration would silently re-open the bug this gate is meant
-// to fix.
+// extractClosingIdentifiers pulls every identifier that appears immediately
+// after a closing keyword. Callers pass the title and body only: in a branch
+// name any identifier links already.
 func extractClosingIdentifiers(parts ...string) []string {
+	return extractMatchedIdentifiers(closingIdentifierRe, parts...)
+}
+
+func extractMatchedIdentifiers(re *regexp.Regexp, parts ...string) []string {
 	seen := map[string]struct{}{}
 	out := []string{}
 	for _, src := range parts {
-		for _, m := range closingIdentifierRe.FindAllStringSubmatch(src, -1) {
+		for _, m := range re.FindAllStringSubmatch(src, -1) {
 			ident := strings.ToUpper(m[1]) + "-" + m[2]
 			if _, dup := seen[ident]; dup {
 				continue
@@ -1387,87 +1839,99 @@ func extractClosingIdentifiers(parts ...string) []string {
 	return out
 }
 
-// lookupIssueByIdentifier looks up an issue in the given workspace by its
-// "PREFIX-NUMBER" identifier. Returns the row + true if the prefix matches
-// workspaceAutoLinkPRsEnabled reports whether the workspace allows the
+// prClaimedIdentifiers returns the identifiers a PR claims. The title and
+// branch name link an issue, and so does a closing keyword in the body
+// ("Closes MUL-1"). A bare mention in the body claims nothing.
+func prClaimedIdentifiers(title, body, branch string) []string {
+	idents := extractIdentifiers(title, branch)
+	for _, id := range extractClosingIdentifiers(title, body) {
+		if !slices.Contains(idents, id) {
+			idents = append(idents, id)
+		}
+	}
+	return idents
+}
+
+// autoLinkPRsEnabledForWorkspace reports whether the workspace allows the
 // GitHub webhook to create issue ↔ PR link rows. Defaults to true so that
 // workspaces predating RFC MUL-2414 keep the historical "auto-link on"
 // behavior, and short-circuits to false whenever the master GitHub switch
 // is explicitly off — mirroring the precedence used on the client side.
-func (h *Handler) workspaceAutoLinkPRsEnabled(ctx context.Context, workspaceID pgtype.UUID) bool {
-	ws, err := h.Queries.GetWorkspace(ctx, workspaceID)
-	if err != nil || len(ws.Settings) == 0 {
-		return true
+//
+// An unparseable settings blob is surfaced as an error instead of being folded
+// into the permissive default. Callers deciding whether to write a link row
+// keep taking the default, but the cross-workspace scan has to tell "auto-link
+// is on" apart from "we could not find out" — see prLinkPolicy.
+func autoLinkPRsEnabledForWorkspace(ws db.Workspace) (bool, error) {
+	if len(ws.Settings) == 0 {
+		return true, nil
 	}
 	var s struct {
 		GitHubEnabled            *bool `json:"github_enabled"`
 		GitHubAutoLinkPRsEnabled *bool `json:"github_auto_link_prs_enabled"`
 	}
 	if err := json.Unmarshal(ws.Settings, &s); err != nil {
-		return true
+		return true, err
 	}
 	if s.GitHubEnabled != nil && !*s.GitHubEnabled {
-		return false
+		return false, nil
 	}
 	if s.GitHubAutoLinkPRsEnabled == nil {
-		return true
+		return true, nil
 	}
-	return *s.GitHubAutoLinkPRsEnabled
+	return *s.GitHubAutoLinkPRsEnabled, nil
 }
 
-// the workspace's configured prefix and the number resolves to a real issue.
-func (h *Handler) lookupIssueByIdentifier(ctx context.Context, workspaceID pgtype.UUID, prefix, identifier string) (db.Issue, bool) {
+// githubFeaturesEnabled reads the GitHub master switch. Absent means on.
+func githubFeaturesEnabled(ws db.Workspace) bool {
+	if len(ws.Settings) == 0 {
+		return true
+	}
+	var s struct {
+		GitHubEnabled *bool `json:"github_enabled"`
+	}
+	if err := json.Unmarshal(ws.Settings, &s); err != nil {
+		return true
+	}
+	return s.GitHubEnabled == nil || *s.GitHubEnabled
+}
+
+// issueNumberForPrefix returns the issue number encoded in a "PREFIX-NUMBER"
+// identifier, and false when the identifier is malformed or carries a prefix
+// that is not the workspace's. Case-insensitive: branch names are
+// conventionally lowercase while issue prefixes are uppercase.
+func issueNumberForPrefix(identifier, prefix string) (int32, bool) {
 	idx := strings.LastIndex(identifier, "-")
 	if idx < 0 {
-		return db.Issue{}, false
+		return 0, false
 	}
 	gotPrefix, numStr := identifier[:idx], identifier[idx+1:]
 	if !strings.EqualFold(gotPrefix, prefix) {
-		return db.Issue{}, false
+		return 0, false
 	}
 	n, err := strconv.Atoi(numStr)
 	if err != nil {
+		return 0, false
+	}
+	return int32(n), true
+}
+
+// lookupIssueByIdentifier looks up an issue in the given workspace by its
+// "PREFIX-NUMBER" identifier. Returns the row + true if the prefix matches
+// the workspace's configured prefix and the number resolves to a real issue.
+func (h *Handler) lookupIssueByIdentifier(ctx context.Context, workspaceID pgtype.UUID, prefix, identifier string) (db.Issue, bool) {
+	number, ok := issueNumberForPrefix(identifier, prefix)
+	if !ok {
 		return db.Issue{}, false
 	}
 	issue, err := h.Queries.GetIssueByNumber(ctx, db.GetIssueByNumberParams{
 		WorkspaceID: workspaceID,
-		Number:      int32(n),
+		Number:      number,
 	})
 	if err != nil {
 		return db.Issue{}, false
 	}
 	return issue, true
-}
-
-func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, workspaceID string) {
-	updated, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
-		ID:          issue.ID,
-		Status:      "done",
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err != nil {
-		slog.Warn("github: advance issue to done failed", "err", err)
-		return
-	}
-
-	// Fire the platform parent-notification path on the same transition the
-	// HTTP UpdateIssue / BatchUpdateIssues paths use. A merged PR is one of
-	// the most common ways a sub-issue actually reaches `done`, and skipping
-	// it here would leave the parent silent for the dominant completion path.
-	// notifyParentOfChildDone re-checks every guard (prev != done, parent
-	// exists, parent not terminal), so calling it unconditionally is safe.
-	h.notifyParentOfChildDone(ctx, issue, updated)
-
-	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
-	resp := issueToResponse(updated, prefix)
-	h.publish(protocol.EventIssueUpdated, workspaceID, "system", "", map[string]any{
-		"issue":          resp,
-		"status_changed": true,
-		"prev_status":    issue.Status,
-		"creator_type":   issue.CreatorType,
-		"creator_id":     uuidToString(issue.CreatorID),
-		"source":         "github_pr_merged",
-	})
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
