@@ -1,0 +1,160 @@
+---
+title: Mattermost Bot
+description: Connect a Multica agent to a bot account on your own Mattermost server for direct messages, channel mentions, threads, and /issue.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Multica connects to a bot account that you create in your own Mattermost server. One bot maps to one Multica agent. Create a separate bot for each agent that needs its own Mattermost identity.
+
+Mattermost support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/multica-ai/multica/issues).
+
+Opening the link only previews the account. Check the Mattermost username, server, workspace, and signed-in Multica account, then select **Link account**. Do not confirm a link sent by someone else for an account you do not own. Replacing the server or bot disconnects its old user/chat routes and invalidates old links; the Multica chat history is retained.
+
+## Before you start
+
+- A Multica workspace owner or admin must connect the bot.
+- The Multica API server must be able to reach your Mattermost server over HTTPS at an operator-approved URL. Because Mattermost is self-hosted, this is often an internal address rather than a public one.
+- Bot accounts must be enabled in Mattermost (**System Console → Integrations → Bot Accounts**).
+- You need the bot's access token. Treat it as a password.
+
+## 1. Create the bot account
+
+1. In Mattermost, open **System Console → Integrations → Bot Accounts** and make sure bot account creation is enabled.
+2. Open **Integrations → Bot Accounts** from the main menu of a team, then click **Add Bot Account**.
+3. Give it a username — this is the name members will `@`-mention — plus a display name and icon.
+4. Click **Create Bot Account** and copy the token it shows you. Mattermost shows it once.
+5. Add the bot to the channels it should work in. A bot only receives messages from channels it is a member of.
+
+<Callout type="warning">
+Never paste the token into an issue, chat message, log, or source repository. If it is exposed, revoke it in **Integrations → Bot Accounts** and reconnect the bot with a replacement token.
+</Callout>
+
+<Callout type="info">
+Use a **bot account**, not a personal access token. Multica refuses a personal token: its own posts would come back in as inbound messages, and the bot would answer itself.
+</Callout>
+
+## 2. Connect it to an agent
+
+1. In Multica, open **Agents**, select an agent, and open **Integrations**.
+2. Click **Connect Mattermost**.
+3. Paste your Mattermost server URL (for example `https://mattermost.example.com`) and the bot access token.
+4. Choose **History sent to agent** and, for **Chat history**, the period. Click **Connect**.
+
+Multica calls your server to verify the token, confirms the account is a bot, encrypts the token, and opens one supervised WebSocket connection. A bot already connected to another agent or workspace must be disconnected there first.
+
+You can connect multiple bots from the same or different servers to one workspace. Each agent has its own bot token, connection, context setting, and conversation routes. One Mattermost bot can belong to only one agent, and each agent can have one Mattermost bot.
+
+### Choose the context
+
+- **Current message only** (default): no extra Mattermost history is sent to the agent, including the thread root.
+- **Whole thread**: load the thread containing the request, up to that message. A top-level request has no earlier thread messages.
+- **Chat history**: load messages and replies from the current channel or direct message for the last **1 hour, 6 hours, 24 hours, 3 days, 7 days, or 30 days**, ending at the request.
+
+For a summary bot, select **Whole thread**, then mention it inside the discussion: `@summary summarize the decisions, action items, owners, and open questions`. Choose **Chat history** for summaries across discussions in the current channel. The adapter never follows a message URL to read a different channel.
+
+Selected history is saved with the request in Multica and sent to the agent's model, including other participants' messages. Existing Multica conversation history is separate: `/new` and `/clear` reset that conversation's context, but the configured Mattermost history can be loaded again on the next request. To change the selection, reconnect the bot from the agent's Integrations tab.
+
+History is text-only. It includes authors, timestamps, and post links, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. Files and images are not downloaded. More history increases model context usage.
+
+## First use and account binding
+
+The first time a member messages the bot, it sends a single-use Multica account-binding link. Open it, sign in to the same Multica workspace, review and confirm the account link, then return to Mattermost and send the message again. The link expires after 15 minutes; message the bot again to get a new link.
+
+In a channel, the bot never posts the bearer link publicly. It asks the sender to open a direct message first.
+
+Only current workspace members can use the bot. Membership is checked again for every message.
+
+## Use the bot
+
+### Direct messages
+
+Open a direct message with the bot and send text. No `@`-mention is required.
+
+### Channels and group messages
+
+Add the bot to a channel, then `@`-mention it. Accepted messages continue the Multica conversation for that thread; unaddressed channel chatter is not collected.
+
+A mention-free reply also reaches the bot when the thread's root post was written by the bot itself — so a conversation the bot started can continue without repeating its name. In a thread rooted by a person, mention the bot each time.
+
+Each thread is its own Multica chat. Two `@`-mention threads in one channel are two independent conversations, and a direct message is one continuous conversation.
+
+### Commands
+
+- `@multica /issue <title>` creates a Multica issue; following lines are used as its optional description. `@multica /issue` without a title returns usage guidance.
+- `@multica /new` creates a new empty Multica Chat and routes later messages in that thread to it. `@multica /new <message>` creates the Chat with that message as its first turn.
+- `@multica /clear` keeps the current Multica Chat and applies a fresh agent-visible context to the next non-empty message.
+
+<Callout type="info">
+Examples use `@multica`; replace it with your bot’s username. Include the mention even in direct messages so Mattermost sends ordinary message text instead of executing a native slash command.
+</Callout>
+
+### Replies and supported content
+
+The bot replies in the thread the request came from, renders the agent's Markdown natively, and splits long replies under the server's maximum post size. The reply is posted once the agent finishes rather than streamed.
+
+This version accepts text only. A post that carries text plus an attachment is handled as text. A post with only files, images, or other non-text content receives a clear unsupported-message response in direct messages and when it explicitly addresses the bot; unaddressed channel media stays silent.
+
+There is no typing indicator: Mattermost exposes typing only over its WebSocket API, with no server-side equivalent Multica can call for a message it is already processing.
+
+### Delivery recovery
+
+Replies and delivered chunks are recorded in the database. The worker resumes after a restart and retries definite transient rejections. If a POST response is lost, it searches for the bot’s delivery marker instead of blindly sending a duplicate. An unconfirmed outcome stays pending for reconciliation and is logged; inspect the Mattermost thread and the stored Multica reply before any manual resend. Reconciliation scans at most 4000 posts. Messages sent while the inbound WebSocket is disconnected are not replayed by this adapter.
+
+## Manage connections
+
+Open **Settings → Messaging → Mattermost** to view connected bots and the server each one belongs to. Owners and admins can disconnect one. Disconnecting closes the connection and stops outbound replies but preserves Multica conversations and audit records.
+
+## Self-hosting setup
+
+Set a stable 32-byte encryption key before starting the API server:
+
+```dotenv
+MULTICA_MATTERMOST_SECRET_KEY=<base64-encoded 32-byte key>
+MULTICA_MATTERMOST_ALLOWED_SERVERS=https://mattermost.example.com
+```
+
+Generate one with `openssl rand -base64 32`. Keep it long-term: losing or rotating it makes existing bot tokens unreadable and requires reconnecting each bot.
+
+The operator must set `MULTICA_MATTERMOST_ALLOWED_SERVERS` to a comma-separated list of exact HTTPS base URLs. Include any deployment sub-path. HTTP, credentials in URLs, queries, fragments, and unapproved destinations are refused before any connection. Removing a URL also blocks existing installations on their next connection or send.
+
+Binding links use `MULTICA_APP_URL`, falling back to `FRONTEND_ORIGIN`. The resulting address must be reachable by members.
+
+<Callout type="warning">
+Multica never follows an HTTP redirect when talking to your Mattermost server, so a misconfigured redirect cannot send the bot token to another host. If your deployment redirects (for example HTTP to HTTPS), enter the final URL — the one you would use in a browser — rather than the one that redirects.
+</Callout>
+
+## Verifying a change against a real server
+
+The adapter ships with an end-to-end suite that runs against a real Mattermost,
+not a fixture. It is the only thing that can catch the adapter being wrong about
+Mattermost rather than wrong about itself, so run it after changing the adapter.
+
+```bash
+eval "$(./scripts/mattermost-e2e-up.sh)"    # start a throwaway server, provision it, export the env
+(cd server && go test -tags=mattermoste2e ./internal/integrations/mattermost/ -run E2E -v -count=1)
+./scripts/mattermost-e2e-down.sh             # remove the container
+```
+
+The bootstrap requires Docker, curl, Node.js, and OpenSSL. It uses random
+passwords, binds only to localhost, and refuses to replace an existing container.
+
+The suite is behind the `mattermoste2e` build tag and an env gate, so `make test`
+never reaches the network. The bootstrap script creates its own admin, team, bot
+account, channel and second user inside one container, so tearing that container
+down is a complete cleanup.
+
+## Troubleshooting
+
+- **Bot cannot be verified**: first check the server URL and the API server's network or proxy. Generate a new token only when Mattermost itself rejects the current one — the error message distinguishes the two cases.
+- **"This token belongs to a user account"**: you pasted a personal access token. Create a bot account and use its token.
+- **No reply in a channel**: confirm the bot is a member of that channel, and that the message `@`-mentions it or is a reply in a thread the bot started.
+- **`@channel` does not trigger the bot**: this is deliberate. The bot answers only its own name, so a broadcast mention does not page every bot in the channel.
+- **Binding link expired**: send the bot another direct message and use the newest link.
+- **Bot does not run**: check whether the agent is archived and whether its [runtime](/daemon-runtimes) is online.
+
+## Next steps
+
+- [Chat integrations](/channels) — compare platforms and understand session and identity handling.
+- [Chat](/chat) — how bot messages become agent runs.
+- [Issues](/issues) — the work created by `@multica /issue`.

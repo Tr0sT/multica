@@ -70,6 +70,9 @@ const slackListingRef = vi.hoisted(() => ({
 const telegramListingRef = vi.hoisted(() => ({
   current: { installations: [] as unknown[], configured: false },
 }));
+const mattermostListingRef = vi.hoisted(() => ({
+  current: { installations: [] as unknown[], configured: false },
+}));
 vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
@@ -89,6 +92,12 @@ vi.mock("@multica/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: () => Promise.resolve(telegramListingRef.current),
+  }),
+}));
+vi.mock("@multica/core/mattermost", () => ({
+  mattermostInstallationsOptions: () => ({
+    queryKey: ["mattermost", "installations"],
+    queryFn: () => Promise.resolve(mattermostListingRef.current),
   }),
 }));
 
@@ -186,6 +195,7 @@ beforeEach(() => {
   larkListingRef.current = { installations: [], configured: false };
   slackListingRef.current = { installations: [], configured: false };
   telegramListingRef.current = { installations: [], configured: false };
+  mattermostListingRef.current = { installations: [], configured: false };
 });
 
 describe("AgentOverviewPane MCP tab visibility", () => {
@@ -263,6 +273,15 @@ describe("AgentOverviewPane Integrations tab visibility", () => {
     expect(
       screen.queryByRole("tab", { name: /^Integrations$/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the Integrations tab when only Mattermost is configured", async () => {
+    mattermostListingRef.current = { installations: [], configured: true };
+    renderPane([makeRuntime("claude")]);
+    openCapabilities();
+    expect(
+      await screen.findByRole("tab", { name: /^Integrations$/i }),
+    ).toBeInTheDocument();
   });
 });
 

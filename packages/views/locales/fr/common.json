@@ -128,5 +128,25 @@
   },
   "navigation": {
     "open_in_new_tab": "Ouvrir dans un nouvel onglet"
+  },
+  "mattermost_bind": {
+    "page_title": "Associer votre compte Mattermost",
+    "redeeming": "Association du compte…",
+    "loading": "Vérification du compte…",
+    "needs_auth_description": "Connectez-vous pour vérifier et confirmer le compte Mattermost à associer.",
+    "sign_in": "Se connecter",
+    "done_title": "Compte associé.",
+    "done_description": "Votre prochain message au bot Mattermost sera transmis à l’agent. Vous pouvez fermer cet onglet.",
+    "error_title": "Impossible d’associer le compte",
+    "error_admin_hint": "Envoyez un nouveau message au bot Mattermost pour obtenir un nouveau lien.",
+    "error_missing_token": "Le lien ne contient pas de jeton. Demandez un nouveau lien au bot Mattermost.",
+    "error_expired": "Ce lien est invalide ou a expiré. Demandez un nouveau lien au bot.",
+    "error_already_bound": "Ce compte Mattermost est déjà associé à un autre compte Multica.",
+    "error_not_member": "Votre compte Multica ne fait pas partie de cet espace de travail.",
+    "error_unknown": "Impossible de vérifier ou d’associer le compte. Réessayez ou contactez l’administrateur.",
+    "confirm_description": "Associer @{{username}} sur {{server}} à {{account}} dans l’espace de travail {{workspace}} ?",
+    "confirm_warning": "Continuez uniquement si ce compte Mattermost vous appartient et si vous avez demandé ce lien. La personne qui contrôle ce compte pourra agir en votre nom dans cet espace de travail.",
+    "confirm": "Associer le compte",
+    "cancel": "Annuler"
   }
 }

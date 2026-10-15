@@ -102,6 +102,26 @@
     "error_not_member": "当前登录的 Multica 账号不是该工作区的成员。",
     "error_unknown": "出了点问题。请重试；若问题持续，请联系工作区管理员。"
   },
+  "mattermost_bind": {
+    "page_title": "关联你的 Mattermost 账号",
+    "redeeming": "正在关联账号…",
+    "needs_auth_description": "登录后，核实并确认要关联的 Mattermost 账号。",
+    "sign_in": "登录",
+    "done_title": "关联成功。",
+    "done_description": "你下次在 Mattermost 中给机器人发消息时会直接送达智能体。可以关闭此页面了。",
+    "error_title": "无法完成关联",
+    "error_admin_hint": "如果反复出现此问题，请在 Mattermost 中重新给机器人发消息以获取新链接。",
+    "error_missing_token": "链接缺少令牌。请在 Mattermost 中重新给机器人发消息以获取新链接。",
+    "error_expired": "此链接无效或已过期（链接有效期为 15 分钟）。请重新给机器人发消息获取新链接。",
+    "error_already_bound": "该 Mattermost 账号已关联到另一个 Multica 用户。如需转移，必须先显式解绑。",
+    "error_not_member": "你当前登录的 Multica 账号不是该工作区的成员。",
+    "error_unknown": "出了点问题。请重试；若问题持续，请联系工作区管理员。",
+    "loading": "正在核实账号…",
+    "confirm_description": "将 {{server}} 上的 @{{username}} 关联到工作区 {{workspace}} 中的 {{account}}？",
+    "confirm_warning": "仅当这是你自己的 Mattermost 账号，且链接由你本人申请时才继续。控制该账号的人将能以你的身份在此工作区执行操作。",
+    "confirm": "关联账号",
+    "cancel": "取消"
+  },
   "expandable_description": {
     "expand": "查看详情",
     "collapse": "收起"

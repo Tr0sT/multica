@@ -1443,5 +1443,26 @@
     "mcp": "Ajoutés par les administrateurs, partagés dans l'espace de travail puis attribués agent par agent.",
     "apps": "Autorisées avec votre propre compte via Composio et activées sur les agents qui vous appartiennent.",
     "plugins": "Paquets installés pouvant ajouter des outils, des hooks planifiés et du stockage, chacun avec ses propres autorisations."
+  },
+  "mattermost": {
+    "context": {
+      "label": "Historique envoyé à l’agent",
+      "message": "Message actuel uniquement",
+      "thread": "Fil entier",
+      "channel": "Historique de la conversation",
+      "unknown": "Paramètre d’historique inconnu",
+      "period": "Période de l’historique",
+      "hour": "Dernière heure",
+      "six_hours": "6 dernières heures",
+      "day": "24 dernières heures",
+      "three_days": "3 derniers jours",
+      "week": "7 derniers jours",
+      "month": "30 derniers jours",
+      "help": "Définit l’historique chargé depuis Mattermost. La conversation Multica existante est conservée.",
+      "notice": "Les messages des autres participants sont enregistrés dans Multica et envoyés au modèle de l’agent. Texte uniquement, jusqu’à 1 000 messages / 128 Kio ; tout historique incomplet est signalé.",
+      "summary": "Contexte : {{selection}}",
+      "channel_summary": "Historique de la conversation, {{hours}} dernières heures"
+    },
+    "not_enabled_description": "Demandez à votre opérateur Multica d’activer Mattermost et d’autoriser l’URL HTTPS de votre serveur."
   }
 }

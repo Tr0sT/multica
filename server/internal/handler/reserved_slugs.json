@@ -94,7 +94,8 @@
         "webhooks",
         "sdk",
         "tokens",
-        "cli"
+        "cli",
+        "mattermost"
       ]
     },
     {

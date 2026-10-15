@@ -49,6 +49,10 @@ import type {
   TelegramInstallation,
   ListTelegramInstallationsResponse,
   RedeemTelegramBindingTokenResponse,
+  MattermostInstallation,
+  ListMattermostInstallationsResponse,
+  RedeemMattermostBindingTokenResponse,
+  MattermostBindingPreview,
   GroupedIssuesResponse,
   GitHubConnectResponse,
   IssuePullRequestsResponse,
@@ -3504,6 +3508,86 @@ export const EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE: RedeemTelegramBinding
   workspace_id: "",
   installation_id: "",
   telegram_user_id: "",
+};
+
+export const MattermostInstallationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  server_url: z.string().default(""),
+  bot_user_id: z.string().default(""),
+  bot_username: z.string().default(""),
+  context: z.object({
+    mode: z.enum(["message", "thread", "channel", "unknown"]).catch("unknown"),
+    lookback_hours: z.number().int().min(0).max(720).default(0),
+  }).default({ mode: "message", lookback_hours: 0 }),
+  installer_user_id: z.string().default(""),
+  status: z.string().default("revoked"),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_MATTERMOST_INSTALLATION: MattermostInstallation = {
+  id: "",
+  workspace_id: "",
+  agent_id: "",
+  server_url: "",
+  bot_user_id: "",
+  bot_username: "",
+  installer_user_id: "",
+  status: "revoked",
+  installed_at: "",
+  created_at: "",
+  updated_at: "",
+};
+
+export const ListMattermostInstallationsResponseSchema = z.object({
+  installations: z.array(MattermostInstallationSchema).default([]),
+  configured: z.boolean().default(false),
+  install_supported: z.boolean().optional(),
+}).loose();
+
+export const EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE: ListMattermostInstallationsResponse = {
+  installations: [],
+  configured: false,
+};
+
+export const RedeemMattermostBindingTokenResponseSchema = z.object({
+  workspace_id: z.string().default(""),
+  installation_id: z.string().default(""),
+  mattermost_user_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE: RedeemMattermostBindingTokenResponse = {
+  workspace_id: "",
+  installation_id: "",
+  mattermost_user_id: "",
+};
+
+export const MattermostBindingPreviewSchema = z.object({
+  workspace_id: z.string().min(1),
+  workspace_name: z.string().min(1),
+  installation_id: z.string().min(1),
+  mattermost_user_id: z.string().min(1),
+  username: z.string().min(1),
+  server_url: z.string().url().startsWith("https://"),
+}).transform((value) => ({
+  workspaceId: value.workspace_id,
+  workspaceName: value.workspace_name,
+  installationId: value.installation_id,
+  mattermostUserId: value.mattermost_user_id,
+  username: value.username,
+  serverUrl: value.server_url,
+}));
+
+export const EMPTY_MATTERMOST_BINDING_PREVIEW: MattermostBindingPreview = {
+  workspaceId: "",
+  workspaceName: "",
+  installationId: "",
+  mattermostUserId: "",
+  username: "",
+  serverUrl: "",
 };
 
 // Skills. Introduced for `POST /api/skills/:id/refresh` (update a skill from
