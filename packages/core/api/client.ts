@@ -3651,7 +3651,7 @@ export class ApiClient {
   // File Upload & Attachments
   async uploadFile(
     file: File,
-    opts?: { issueId?: string; commentId?: string; chatSessionId?: string },
+    opts?: { issueId?: string; commentId?: string; chatSessionId?: string; workspaceId?: string },
     // Optional abort signal so a module-level upload coordinator (MUL-5181)
     // can cancel an in-flight upload on logout. When aborted, `fetch` rejects
     // with an AbortError, which the coordinator distinguishes from a real
@@ -3669,9 +3669,14 @@ export class ApiClient {
     this.logger.info("→ POST /api/upload-file", { rid });
 
     const credentialUsed = this.getToken();
+    const headers = this.authHeaders();
+    if (opts?.workspaceId) {
+      delete headers["X-Workspace-Slug"];
+      headers["X-Workspace-ID"] = opts.workspaceId;
+    }
     const res = await fetch(`${this.baseUrl}/api/upload-file`, {
       method: "POST",
-      headers: this.authHeaders(),
+      headers,
       body: formData,
       credentials: "include",
       signal,

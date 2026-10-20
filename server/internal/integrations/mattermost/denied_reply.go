@@ -19,12 +19,14 @@ import (
 const maxDeniedReplyImageBytes = 5 << 20
 const defaultDeniedReplyText = "This Mattermost account cannot use this bot. Ask a workspace admin to check the bot's access settings."
 
-var ErrInvalidDeniedReply = errors.New("mattermost: choose text up to 4000 characters or a standalone PNG, JPEG, GIF or WebP image up to 5 MiB uploaded to this workspace")
+var ErrInvalidDeniedReply = errors.New("mattermost: choose text up to 4000 characters or standalone PNG, JPEG, GIF or WebP images up to 5 MiB each uploaded to this workspace")
 var ErrDeniedReplyImageUnavailable = errors.New("mattermost: could not read the automatic reply image; upload it again or choose text")
 
 type DeniedReply struct {
-	Mode              string `json:"mode"`
-	Text              string `json:"text,omitempty"`
+	Mode               string   `json:"mode"`
+	Text               string   `json:"text,omitempty"`
+	ImageAttachmentIDs []string `json:"image_attachment_ids,omitempty"`
+	// Accept existing single-image settings at the API and stored-config boundary.
 	ImageAttachmentID string `json:"image_attachment_id,omitempty"`
 }
 
@@ -32,14 +34,34 @@ func (reply DeniedReply) normalized() (DeniedReply, error) {
 	if reply.Mode == "" {
 		reply.Mode = "text"
 	}
-	switch reply.Mode {
-	case "text":
-		if reply.ImageAttachmentID != "" || !utf8.ValidString(reply.Text) || utf8.RuneCountInString(reply.Text) > 4000 {
+	if reply.Mode == "image" {
+		if len(reply.ImageAttachmentIDs) != 0 || reply.ImageAttachmentID == "" {
 			return DeniedReply{}, ErrInvalidDeniedReply
 		}
-	case "image":
-		if _, err := util.ParseUUID(reply.ImageAttachmentID); err != nil || reply.Text != "" {
+		reply.Mode = "images"
+		reply.ImageAttachmentIDs = []string{reply.ImageAttachmentID}
+		reply.ImageAttachmentID = ""
+	}
+	if reply.ImageAttachmentID != "" {
+		return DeniedReply{}, ErrInvalidDeniedReply
+	}
+	switch reply.Mode {
+	case "text":
+		if len(reply.ImageAttachmentIDs) != 0 || !utf8.ValidString(reply.Text) || utf8.RuneCountInString(reply.Text) > 4000 {
 			return DeniedReply{}, ErrInvalidDeniedReply
+		}
+		reply.ImageAttachmentIDs = nil
+	case "images":
+		if len(reply.ImageAttachmentIDs) == 0 || reply.Text != "" {
+			return DeniedReply{}, ErrInvalidDeniedReply
+		}
+		seen := make(map[pgtype.UUID]bool, len(reply.ImageAttachmentIDs))
+		for _, rawID := range reply.ImageAttachmentIDs {
+			id, err := util.ParseUUID(rawID)
+			if err != nil || seen[id] {
+				return DeniedReply{}, ErrInvalidDeniedReply
+			}
+			seen[id] = true
 		}
 	default:
 		return DeniedReply{}, ErrInvalidDeniedReply
@@ -102,8 +124,8 @@ func (s *InstallService) prepareDeniedReply(ctx context.Context, workspaceID pgt
 	if err != nil {
 		return DeniedReply{}, err
 	}
-	if normalized.Mode == "image" {
-		if _, _, err := loadDeniedReplyImage(ctx, s.q, s.objects, workspaceID, normalized.ImageAttachmentID); err != nil {
+	for _, imageID := range normalized.ImageAttachmentIDs {
+		if _, _, err := loadDeniedReplyImage(ctx, s.q, s.objects, workspaceID, imageID); err != nil {
 			return DeniedReply{}, err
 		}
 	}

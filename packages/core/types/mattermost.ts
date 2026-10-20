@@ -2,9 +2,9 @@ export type MattermostContextMode = "message" | "thread" | "channel";
 export type MattermostAccessMode = "members" | "anyone" | "allowlist";
 
 export interface MattermostDeniedReply {
-  mode: "text" | "image";
+  mode: "text" | "images";
   text?: string;
-  image_attachment_id?: string;
+  image_attachment_ids?: string[];
 }
 
 export interface MattermostContextSettings {

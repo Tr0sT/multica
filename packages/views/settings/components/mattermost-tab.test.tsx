@@ -334,9 +334,9 @@ describe("Mattermost settings editing", () => {
     expect(mockUpload).not.toHaveBeenCalled();
     expect(screen.getByRole("img", { name: enSettings.mattermost.denied_reply.preview })).toHaveAttribute("src", "blob:reply-preview");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpload).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledWith(file, { workspaceId: "workspace-1" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", expect.objectContaining({
-      denied_reply: { mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111" },
+      denied_reply: { mode: "images", image_attachment_ids: ["11111111-1111-4111-8111-111111111111"] },
     })));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -366,6 +366,61 @@ describe("Mattermost settings editing", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mockUpload).toHaveBeenCalledTimes(failure === "upload" ? 2 : 1);
+  });
+
+  it("adds and removes images without fixing the set at ten or re-uploading saved files", async () => {
+    const files = Array.from({ length: 13 }, (_, index) => new File(["PNG"], `pic-${index}.png`, { type: "image/png" }));
+    const ids = files.map((_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`);
+    mockUpload.mockImplementation(async (file) => ({ id: ids[files.indexOf(file)] }));
+    mockGetAttachment.mockImplementation(async (id) => ({ filename: files[ids.indexOf(id)]!.name, download_url: `https://files.test/${id}.png` }));
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.denied_reply.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.denied_reply.image }));
+    await user.upload(screen.getByLabelText(enSettings.mattermost.denied_reply.image_label), files.slice(0, 12));
+    await user.click(screen.getByRole("button", { name: "Remove pic-0.png" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", expect.objectContaining({
+      denied_reply: { mode: "images", image_attachment_ids: ids.slice(1, 12) },
+    })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockUpload).toHaveBeenCalledTimes(11);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(await screen.findByRole("button", { name: "Remove pic-1.png" }));
+    await user.upload(screen.getByLabelText(enSettings.mattermost.denied_reply.image_label), files[12]!);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenLastCalledWith("workspace-1", "existing", expect.objectContaining({
+      denied_reply: { mode: "images", image_attachment_ids: ids.slice(2) },
+    })));
+    expect(mockUpload).toHaveBeenCalledTimes(12);
+  });
+
+  it("keeps successful uploads when a later image in the batch fails", async () => {
+    const files = [new File(["PNG"], "first.png", { type: "image/png" }), new File(["PNG"], "second.png", { type: "image/png" })];
+    const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+    mockUpload.mockResolvedValueOnce({ id: ids[0] }).mockRejectedValueOnce(new Error("Second upload failed")).mockResolvedValueOnce({ id: ids[1] });
+    mockGetAttachment.mockImplementation(async (id) => ({ filename: id === ids[0] ? "first.png" : "second.png", download_url: `https://files.test/${id}.png` }));
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.denied_reply.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.denied_reply.image }));
+    await user.upload(screen.getByLabelText(enSettings.mattermost.denied_reply.image_label), files);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("Second upload failed"));
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(await screen.findByText("first.png")).toBeVisible();
+    expect(screen.getByText("second.png")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockUpload).toHaveBeenCalledTimes(3);
+    expect(mockUpload).toHaveBeenNthCalledWith(3, files[1], { workspaceId: "workspace-1" });
+    expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", expect.objectContaining({ denied_reply: { mode: "images", image_attachment_ids: ids } }));
   });
 
   it("does not silently replace an unsupported reply type", async () => {

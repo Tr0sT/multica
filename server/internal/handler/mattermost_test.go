@@ -75,6 +75,24 @@ func TestMattermostAllowedUsersResponse(t *testing.T) {
 	}
 }
 
+func TestMattermostReplySetsPreserveSingleImageResponseCompatibility(t *testing.T) {
+	first := "11111111-1111-4111-8111-111111111111"
+	second := "22222222-2222-4222-8222-222222222222"
+	for _, raw := range []string{
+		`{"mode":"image","image_attachment_id":"` + first + `"}`,
+		`{"mode":"images","image_attachment_ids":["` + first + `"]}`,
+	} {
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(`{"denied_reply":` + raw + `}`)})
+		if response.DeniedReply.Mode != "image" || response.DeniedReply.ImageAttachmentID != first || len(response.DeniedReply.ImageAttachmentIDs) != 0 {
+			t.Fatalf("single-image API contract changed: %+v", response.DeniedReply)
+		}
+	}
+	response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(`{"denied_reply":{"mode":"images","image_attachment_ids":["` + first + `","` + second + `"]}}`)})
+	if response.DeniedReply.Mode != "images" || len(response.DeniedReply.ImageAttachmentIDs) != 2 || response.DeniedReply.ImageAttachmentID != "" {
+		t.Fatalf("image set would be truncated by an older client: %+v", response.DeniedReply)
+	}
+}
+
 func TestMattermostBindingRequiresExplicitConfirmation(t *testing.T) {
 	// No database is wired: these requests must be rejected before redemption.
 	h := &Handler{MattermostBindingTokens: &mattermost.BindingTokenService{}}

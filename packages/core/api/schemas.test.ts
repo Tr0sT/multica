@@ -2069,8 +2069,13 @@ describe("Telegram installation schemas", () => {
 // self-hosted, so a missing or malformed server URL must render as "not
 // connected" rather than as a row pointing nowhere.
 describe("Mattermost installation schemas", () => {
+  it("reads saved single-image replies as a one-image set", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old", denied_reply: {
+      mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111",
+    } }).denied_reply).toEqual({ mode: "images", text: "", image_attachment_ids: ["11111111-1111-4111-8111-111111111111"] });
+  });
   it("defaults missing automatic replies and preserves unknown reply types", () => {
-    expect(MattermostInstallationSchema.parse({ id: "old" }).denied_reply).toEqual({ mode: "text", text: "", image_attachment_id: "" });
+    expect(MattermostInstallationSchema.parse({ id: "old" }).denied_reply).toEqual({ mode: "text", text: "", image_attachment_ids: [] });
     expect(MattermostInstallationSchema.parse({ id: "future", denied_reply: { mode: "video" } }).denied_reply.mode).toBe("unknown");
   });
   it("defaults missing access to members and preserves unsupported access as unknown", () => {

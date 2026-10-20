@@ -5,9 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -25,10 +29,18 @@ type replyImageQueryStub struct {
 	row    db.Attachment
 	err    error
 	params db.GetAttachmentParams
+	rows   map[pgtype.UUID]db.Attachment
 }
 
 func (q *replyImageQueryStub) GetAttachment(_ context.Context, params db.GetAttachmentParams) (db.Attachment, error) {
 	q.params = params
+	if q.rows != nil {
+		row, ok := q.rows[params.ID]
+		if !ok {
+			return db.Attachment{}, pgx.ErrNoRows
+		}
+		return row, nil
+	}
 	return q.row, q.err
 }
 
@@ -37,6 +49,11 @@ func TestDeniedReplyValidation(t *testing.T) {
 		{Mode: "unknown"}, {Mode: "text", Text: strings.Repeat("x", 4001)},
 		{Mode: "text", ImageAttachmentID: replyImageID}, {Mode: "image"},
 		{Mode: "image", ImageAttachmentID: "invalid"}, {Mode: "image", ImageAttachmentID: replyImageID, Text: "caption"},
+		{Mode: "images"}, {Mode: "images", ImageAttachmentIDs: []string{"invalid"}},
+		{Mode: "images", ImageAttachmentIDs: []string{replyImageID, replyImageID}},
+		{Mode: "images", ImageAttachmentIDs: []string{replyImageID}, Text: "caption"},
+		{Mode: "images", ImageAttachmentIDs: []string{replyImageID}, ImageAttachmentID: replyImageID},
+		{Mode: "text", ImageAttachmentIDs: []string{replyImageID}},
 	} {
 		if _, err := reply.normalized(); !errors.Is(err, ErrInvalidDeniedReply) {
 			t.Fatalf("accepted %+v: %v", reply, err)
@@ -46,6 +63,97 @@ func TestDeniedReplyValidation(t *testing.T) {
 		if _, err := reply.normalized(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestDeniedReplyKeepsSingleImagesAndAllowsLargerSets(t *testing.T) {
+	legacy, err := (DeniedReply{Mode: "image", ImageAttachmentID: replyImageID}).normalized()
+	if err != nil || !reflect.DeepEqual(legacy, DeniedReply{Mode: "images", ImageAttachmentIDs: []string{replyImageID}}) {
+		t.Fatalf("legacy image lost: %+v, %v", legacy, err)
+	}
+	ids := make([]string, 11)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)
+	}
+	set, err := (DeniedReply{Mode: "images", ImageAttachmentIDs: ids}).normalized()
+	if err != nil || !reflect.DeepEqual(set.ImageAttachmentIDs, ids) {
+		t.Fatalf("image set was limited or changed: %+v, %v", set, err)
+	}
+}
+
+func TestEveryReplyImageIsValidatedBeforeSaving(t *testing.T) {
+	ws := mmUUID(t, "22222222-2222-4222-8222-222222222222")
+	first := mmUUID(t, replyImageID)
+	second := mmUUID(t, "33333333-3333-4333-8333-333333333333")
+	q := &replyImageQueryStub{rows: map[pgtype.UUID]db.Attachment{
+		first:  {WorkspaceID: ws, Url: "https://objects.test/reply"},
+		second: {WorkspaceID: ws, Url: "https://objects.test/reply", ChatSessionID: first},
+	}}
+	svc := &InstallService{q: q, objects: &testObjectStore{data: map[string][]byte{"reply": replyPNG}}}
+	reply := DeniedReply{Mode: "images", ImageAttachmentIDs: []string{replyImageID, second.String()}}
+	if _, err := svc.UpdateSettings(context.Background(), first, ws, SettingsUpdate{DeniedReply: &reply}); !errors.Is(err, ErrInvalidDeniedReply) {
+		t.Fatalf("private image later in the set was accepted: %v", err)
+	}
+	if q.params.ID != second {
+		t.Fatal("only the first image was validated")
+	}
+}
+
+func TestReplierChoosesOneRandomImagePerMessage(t *testing.T) {
+	ws := mmUUID(t, "22222222-2222-4222-8222-222222222222")
+	ids := []string{replyImageID, "33333333-3333-4333-8333-333333333333"}
+	q := &replyImageQueryStub{rows: make(map[pgtype.UUID]db.Attachment)}
+	objects := &testObjectStore{data: make(map[string][]byte)}
+	for i, id := range ids {
+		key := fmt.Sprintf("reply-%d", i)
+		q.rows[mmUUID(t, id)] = db.Attachment{WorkspaceID: ws, Url: "https://objects.test/" + key, Filename: key + ".png"}
+		objects.data[key] = append(append([]byte{}, replyPNG...), byte(i))
+	}
+	var mu sync.Mutex
+	selected := make(map[string]int)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Path == apiPath+"/files" {
+			data, _ := io.ReadAll(r.Body)
+			fileID := ""
+			for key, bytes := range objects.data {
+				if string(bytes) == string(data) {
+					fileID = key
+				}
+			}
+			if fileID == "" {
+				t.Error("uploaded an image outside the configured set")
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_infos": []map[string]string{{"id": fileID}}})
+			return
+		}
+		var post Post
+		if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+			t.Error(err)
+		}
+		if post.Message != "" || len(post.FileIDs) != 1 {
+			t.Errorf("reply did not contain exactly one image: %+v", post)
+		} else {
+			selected[post.FileIDs[0]]++
+		}
+		post.ID = "created"
+		_ = json.NewEncoder(w).Encode(post)
+	}))
+	defer srv.Close()
+	config, err := json.Marshal(installConfig{ServerURL: srv.URL, AccessTokenEncrypted: base64.StdEncoding.EncodeToString([]byte("token")), AccessMode: AccessAllowlist,
+		DeniedReply: DeniedReply{Mode: "images", ImageAttachmentIDs: ids}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replier := NewOutboundReplier(OutboundReplierConfig{Queries: q, Objects: objects, Policy: testServerPolicy(srv.URL), HTTPClient: srv.Client()})
+	for i := 0; i < 128; i++ {
+		replier.Reply(context.Background(), engine.ResolvedInstallation{WorkspaceID: ws, Platform: db.ChannelInstallation{Config: config}}, dmInbound(), engine.Result{Outcome: engine.OutcomeDropped, DropReason: engine.DropReasonNonWorkspaceMember})
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(selected) != 2 || selected["reply-0"]+selected["reply-1"] != 128 {
+		t.Fatalf("replies did not select randomly from the set: %v", selected)
 	}
 }
 

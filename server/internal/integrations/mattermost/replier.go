@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"slices"
@@ -147,7 +148,11 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			if err != nil || (reply.Mode == "text" && strings.TrimSpace(reply.Text) == "") {
 				reply = DeniedReply{Mode: "text", Text: defaultDeniedReplyText}
 			}
-			if err := r.post(ctx, inst, msg, reply.Text, reply.ImageAttachmentID); err != nil {
+			imageID := ""
+			if reply.Mode == "images" {
+				imageID = reply.ImageAttachmentIDs[rand.IntN(len(reply.ImageAttachmentIDs))]
+			}
+			if err := r.post(ctx, inst, msg, reply.Text, imageID); err != nil {
 				r.warn(ctx, "access refusal failed", inst, err)
 			}
 			return

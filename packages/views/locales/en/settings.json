@@ -1247,15 +1247,16 @@
     "denied_reply": {
       "label": "Reply to accounts outside the list",
       "text": "Text",
-      "image": "Image",
+      "image": "Random image",
       "help": "Sent automatically without starting an agent or using agent tokens.",
       "text_label": "Reply text",
       "text_help": "Up to 4000 characters. Leave empty for the standard access-denied message.",
-      "image_label": "Reply image",
-      "image_help": "PNG, JPEG, GIF or WebP, up to 5 MiB.",
+      "image_label": "Reply images",
+      "image_help": "PNG, JPEG, GIF or WebP, up to 5 MiB each. One image is chosen at random for each reply; repeats are possible.",
       "preview": "Automatic reply image preview",
       "preview_failed": "Could not load the saved image. Upload it again.",
-      "unknown": "Unknown reply type"
+      "unknown": "Unknown reply type",
+      "remove_image": "Remove {{name}}"
     },
     "access": {
       "label": "Who can use this bot",

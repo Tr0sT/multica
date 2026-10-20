@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAuthStore } from "../auth";
 import { configStore } from "../config";
+import { setCurrentWorkspace } from "../platform";
 import type { StorageAdapter, User } from "../types";
 import { ApiClient, ApiError, CHAT_DRAFT_RESTORE_CAPABILITY, clientErrorMessage } from "./client";
 import { EMPTY_PLUGIN_PACKAGE_LIST, EMPTY_PLUGIN_PREVIEW, EMPTY_PLUGIN_SURFACE_LAUNCH } from "./schemas";
@@ -2041,6 +2042,19 @@ describe("ApiClient", () => {
   });
 
   describe("chat attachment wiring", () => {
+    it("pins an upload to its workspace when the current route has changed", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x", download_url: "https://cdn/x", filename: "x.png" }), { headers: { "Content-Type": "application/json" } }));
+      vi.stubGlobal("fetch", fetchMock);
+      setCurrentWorkspace("another-workspace", "another-id");
+      try {
+        await new ApiClient("https://api.example.test").uploadFile(new File(["x"], "x.png"), { workspaceId: "original-id" });
+        const headers = fetchMock.mock.calls[0]?.[1]?.headers;
+        expect(headers).toMatchObject({ "X-Workspace-ID": "original-id" });
+        expect(headers).not.toHaveProperty("X-Workspace-Slug");
+      } finally {
+        setCurrentWorkspace(null, null);
+      }
+    });
     it("uploadFile includes chat_session_id in the FormData body", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x" }), {

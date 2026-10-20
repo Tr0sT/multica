@@ -1476,15 +1476,16 @@
     "denied_reply": {
       "label": "Réponse aux comptes hors liste",
       "text": "Texte",
-      "image": "Image",
+      "image": "Image aléatoire",
       "help": "Envoyée automatiquement, sans lancer d’agent ni consommer ses jetons.",
       "text_label": "Texte de la réponse",
       "text_help": "4000 caractères maximum. Laissez vide pour le message de refus standard.",
-      "image_label": "Image de la réponse",
-      "image_help": "PNG, JPEG, GIF ou WebP, jusqu’à 5 MiB.",
+      "image_label": "Images de réponse",
+      "image_help": "PNG, JPEG, GIF ou WebP, jusqu’à 5 MiB par image. Une image est choisie au hasard à chaque réponse ; elle peut se répéter.",
       "preview": "Aperçu de l’image de réponse automatique",
       "preview_failed": "Impossible de charger l’image enregistrée. Importez-la à nouveau.",
-      "unknown": "Type de réponse inconnu"
+      "unknown": "Type de réponse inconnu",
+      "remove_image": "Retirer {{name}}"
     },
     "access": {
       "label": "Qui peut utiliser ce bot",

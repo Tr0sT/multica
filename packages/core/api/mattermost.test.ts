@@ -9,7 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("Mattermost settings update", () => {
   it.each([
     { mode: "text" as const, text: "Team accounts only" },
-    { mode: "image" as const, image_attachment_id: "11111111-1111-4111-8111-111111111111" },
+    { mode: "images" as const, image_attachment_ids: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] },
   ])("saves and parses a $mode automatic reply", async (denied_reply) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       id: "installation-1", status: "active", denied_reply,
@@ -70,7 +70,11 @@ describe("Mattermost settings update", () => {
     ...[null, "alice", [{}], [{ id: "", username: "alice" }], [{ id: "alice-id", username: 3 }]]
       .map((allowed_users) => ({ id: "installation-1", access_mode: "allowlist", allowed_users })),
     ...[null, { mode: "text", text: 123 }, { mode: "image" }, { mode: "image", image_attachment_id: "invalid" },
-      { mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111", text: "also text" }]
+      { mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111", text: "also text" },
+      { mode: "images", image_attachment_ids: [] }, { mode: "images", image_attachment_ids: ["invalid"] },
+      { mode: "images", image_attachment_ids: ["11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111"] },
+      { mode: "text", image_attachment_ids: ["11111111-1111-4111-8111-111111111111"] },
+      { mode: "images", image_attachment_ids: "11111111-1111-4111-8111-111111111111" }]
       .map((denied_reply) => ({ id: "installation-1", denied_reply })),
   ])(
     "returns an inert fallback for malformed response %j",

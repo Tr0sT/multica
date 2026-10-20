@@ -1241,15 +1241,16 @@
     "denied_reply": {
       "label": "对列表外账号的回复",
       "text": "文字",
-      "image": "图片",
+      "image": "随机图片",
       "help": "自动发送，不启动智能体，也不消耗智能体 token。",
       "text_label": "回复文字",
       "text_help": "最多 4000 个字符。留空则发送默认的拒绝访问提示。",
-      "image_label": "回复图片",
-      "image_help": "支持 PNG、JPEG、GIF 或 WebP，最大 5 MiB。",
+      "image_label": "回复图片集",
+      "image_help": "支持 PNG、JPEG、GIF 或 WebP，每张最大 5 MiB。每次回复随机选择一张，可能重复。",
       "preview": "自动回复图片预览",
       "preview_failed": "无法加载已保存的图片，请重新上传。",
-      "unknown": "未知回复类型"
+      "unknown": "未知回复类型",
+      "remove_image": "移除 {{name}}"
     },
     "access": {
       "label": "谁可以使用此机器人",

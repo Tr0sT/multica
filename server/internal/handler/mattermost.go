@@ -45,6 +45,11 @@ type MattermostContextResponse struct {
 
 func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInstallationResponse {
 	info := mattermost.DecodePublicConfig(row.Config)
+	reply := info.DeniedReply
+	if reply.Mode == "images" && len(reply.ImageAttachmentIDs) == 1 {
+		// Keep single-image replies editable in installed clients; sets use a new mode.
+		reply = mattermost.DeniedReply{Mode: "image", ImageAttachmentID: reply.ImageAttachmentIDs[0]}
+	}
 	context := MattermostContextResponse{Mode: info.Context.Mode, LookbackHours: info.Context.LookbackHours}
 	if context.Mode == mattermost.ContextChannel && (context.LookbackHours == 0 || context.LookbackHours > 720) {
 		// Older clients cap lookback_hours at 720 but safely display unknown modes.
@@ -60,7 +65,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		Context:         context,
 		AccessMode:      info.AccessMode,
 		AllowedUsers:    info.AllowedUsers,
-		DeniedReply:     info.DeniedReply,
+		DeniedReply:     reply,
 		InstallerUserID: uuidToString(row.InstallerUserID),
 		Status:          row.Status,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),

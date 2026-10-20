@@ -8,25 +8,38 @@ import { mattermostKeys } from "@multica/core/mattermost";
 import type { MattermostDeniedReply, MattermostInstallation } from "@multica/core/types";
 import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import { Input } from "@multica/ui/components/ui/input";
+import { Button } from "@multica/ui/components/ui/button";
 import { Label } from "@multica/ui/components/ui/label";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 import { useT } from "../../i18n";
 
-export type MattermostReplyDraft = NonNullable<MattermostInstallation["denied_reply"]> & { file?: File };
+export type MattermostReplyDraft = NonNullable<MattermostInstallation["denied_reply"]> & { files?: File[] };
 
-export async function prepareMattermostDeniedReply(draft: MattermostReplyDraft): Promise<MattermostDeniedReply> {
+export async function prepareMattermostDeniedReply(
+  draft: MattermostReplyDraft,
+  onProgress: (draft: MattermostReplyDraft) => void,
+  workspaceId: string,
+): Promise<MattermostDeniedReply> {
   if (draft.mode === "text") return { mode: "text", text: draft.text ?? "" };
-  if (draft.mode !== "image") throw new Error("Choose an automatic reply type");
-  const imageId = draft.file ? (await api.uploadFile(draft.file)).id : draft.image_attachment_id;
-  if (!imageId) throw new Error("Automatic reply image upload failed");
-  return { mode: "image", image_attachment_id: imageId };
+  if (draft.mode !== "images") throw new Error("Choose an automatic reply type");
+  const imageIds = [...(draft.image_attachment_ids ?? [])];
+  const files = draft.files ?? [];
+  for (const [index, file] of files.entries()) {
+    const image = await api.uploadFile(file, { workspaceId });
+    if (!image.id) throw new Error("Automatic reply image upload failed");
+    imageIds.push(image.id);
+    onProgress({ mode: "images", image_attachment_ids: [...imageIds], files: files.slice(index + 1) });
+  }
+  if (imageIds.length === 0) throw new Error("Choose an automatic reply image");
+  return { mode: "images", image_attachment_ids: imageIds };
 }
 
 export function deniedReplyMatches(saved: MattermostInstallation["denied_reply"], expected: MattermostDeniedReply): boolean {
   return (saved?.mode ?? "text") === expected.mode && (saved?.text ?? "") === (expected.text ?? "") &&
-    (saved?.image_attachment_id ?? "") === (expected.image_attachment_id ?? "");
+    (saved?.image_attachment_ids ?? []).join("\n") === (expected.image_attachment_ids ?? []).join("\n");
 }
 
 export function MattermostDeniedReplyFields({ value, onChange, disabled }: {
@@ -36,31 +49,15 @@ export function MattermostDeniedReplyFields({ value, onChange, disabled }: {
 }) {
   const { t } = useT("settings");
   const id = useId();
-  const wsId = useWorkspaceId();
-  const [localPreview, setLocalPreview] = useState<string>();
-  useEffect(() => {
-    if (!value.file) { setLocalPreview(undefined); return; }
-    const url = URL.createObjectURL(value.file);
-    setLocalPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [value.file]);
-  const imageId = value.mode === "image" ? value.image_attachment_id : undefined;
-  const { data: image, isError } = useQuery({
-    queryKey: mattermostKeys.replyImage(wsId, imageId ?? ""),
-    queryFn: () => api.getAttachment(imageId ?? ""),
-    enabled: !!imageId && !value.file,
-    staleTime: 0,
-  });
-  const preview = localPreview ?? resolvePublicFileUrl(image?.download_url);
   const options = [
     { value: "text", label: t(($) => $.mattermost.denied_reply.text) },
-    { value: "image", label: t(($) => $.mattermost.denied_reply.image) },
+    { value: "images", label: t(($) => $.mattermost.denied_reply.image) },
   ];
   return (
     <div className="space-y-2">
       <Label htmlFor={`${id}-mode`}>{t(($) => $.mattermost.denied_reply.label)}</Label>
       <Select items={options} value={value.mode === "unknown" ? null : value.mode} disabled={disabled}
-        onValueChange={(mode) => { if (mode === "text" || mode === "image") onChange({ mode }); }}>
+        onValueChange={(mode) => { if (mode === "text" || mode === "images") onChange({ mode }); }}>
         <SelectTrigger id={`${id}-mode`} className="w-full" aria-describedby={`${id}-help`}>
           <SelectValue placeholder={t(($) => $.mattermost.denied_reply.unknown)} />
         </SelectTrigger>
@@ -75,24 +72,69 @@ export function MattermostDeniedReplyFields({ value, onChange, disabled }: {
           aria-describedby={`${id}-text-help`} onChange={(event) => onChange({ mode: "text", text: event.target.value })} />
         <p id={`${id}-text-help`} className="text-caption text-muted-foreground">{t(($) => $.mattermost.denied_reply.text_help)}</p>
       </>}
-      {value.mode === "image" && <>
+      {value.mode === "images" && <>
         <Label htmlFor={`${id}-file`}>{t(($) => $.mattermost.denied_reply.image_label)}</Label>
-        <Input id={`${id}-file`} type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={disabled}
+        <Input id={`${id}-file`} type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp" disabled={disabled}
           aria-describedby={`${id}-image-help`} onChange={(event) => {
-            const file = event.target.files?.[0];
+            const files = Array.from(event.target.files ?? []);
             event.target.value = "";
-            if (!file) return;
-            if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+            if (files.length === 0) return;
+            if (files.some((file) => !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024)) {
               toast.error(t(($) => $.mattermost.denied_reply.image_help));
               return;
             }
-            onChange({ mode: "image", file });
+            onChange({ ...value, files: [...(value.files ?? []), ...files] });
           }} />
         <p id={`${id}-image-help`} className="text-caption text-muted-foreground">{t(($) => $.mattermost.denied_reply.image_help)}</p>
-        {(value.file?.name || image?.filename) && <p className="break-words text-caption">{value.file?.name ?? image?.filename}</p>}
-        {preview && <img src={preview} alt={t(($) => $.mattermost.denied_reply.preview)} className="max-h-48 max-w-full rounded-md object-contain" />}
-        {isError && !value.file && <p role="alert" className="text-caption text-destructive">{t(($) => $.mattermost.denied_reply.preview_failed)}</p>}
+        <div className="space-y-2">
+          {(value.image_attachment_ids ?? []).map((imageId, index) => (
+            <MattermostReplyImage key={imageId} imageId={imageId} disabled={disabled}
+              onRemove={() => onChange({ ...value, image_attachment_ids: value.image_attachment_ids?.filter((_, i) => i !== index) })} />
+          ))}
+          {(value.files ?? []).map((file, index) => (
+            <MattermostReplyImage key={`file-${index}`} file={file} disabled={disabled}
+              onRemove={() => onChange({ ...value, files: value.files?.filter((_, i) => i !== index) })} />
+          ))}
+        </div>
       </>}
+    </div>
+  );
+}
+
+function MattermostReplyImage({ imageId, file, disabled, onRemove }: {
+  imageId?: string;
+  file?: File;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
+  const { t } = useT("settings");
+  const wsId = useWorkspaceId();
+  const [localPreview, setLocalPreview] = useState<string>();
+  useEffect(() => {
+    if (!file) { setLocalPreview(undefined); return; }
+    const url = URL.createObjectURL(file);
+    setLocalPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  const { data: image, isError } = useQuery({
+    queryKey: mattermostKeys.replyImage(wsId, imageId ?? ""),
+    queryFn: () => api.getAttachment(imageId ?? ""),
+    enabled: !!imageId,
+    staleTime: 0,
+  });
+  const preview = localPreview ?? resolvePublicFileUrl(image?.download_url);
+  const name = file?.name ?? image?.filename ?? t(($) => $.mattermost.denied_reply.preview);
+  return (
+    <div className="flex items-center gap-3">
+      {preview && <img src={preview} alt={t(($) => $.mattermost.denied_reply.preview)} className="h-20 w-20 shrink-0 rounded-md object-contain" />}
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-caption">{name}</p>
+        {isError && <p role="alert" className="text-caption text-destructive">{t(($) => $.mattermost.denied_reply.preview_failed)}</p>}
+      </div>
+      <Button type="button" variant="ghost" size="icon-sm" disabled={disabled} onClick={onRemove}
+        aria-label={t(($) => $.mattermost.denied_reply.remove_image, { name })}>
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

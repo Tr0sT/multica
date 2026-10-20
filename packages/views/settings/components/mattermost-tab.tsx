@@ -349,7 +349,7 @@ export function MattermostAgentBindButton({
     setSubmitting(true);
     try {
       const allowedUsernames = parseAllowedUsernames(allowedUsers);
-      const reply = accessMode === "allowlist" ? await prepareMattermostDeniedReply(deniedReply) : undefined;
+      const reply = accessMode === "allowlist" ? await prepareMattermostDeniedReply(deniedReply, setDeniedReply, wsId) : undefined;
       if (reply) setDeniedReply(reply);
       const installation = await api.registerMattermostBot(wsId, agentId, {
         server_url,
@@ -392,7 +392,7 @@ export function MattermostAgentBindButton({
 
   const canSubmit = serverUrl.trim() !== "" && accessToken.trim() !== "" && !submitting &&
     (accessMode !== "allowlist" || (deniedReply.mode !== "unknown" &&
-      (deniedReply.mode !== "image" || !!deniedReply.file || !!deniedReply.image_attachment_id)));
+      (deniedReply.mode !== "images" || !!deniedReply.files?.length || !!deniedReply.image_attachment_ids?.length)));
 
   return (
     <div
@@ -678,7 +678,7 @@ function MattermostEditButton({
       const { context } = settings;
       let reply: MattermostDeniedReply | undefined;
       if (settings.access_mode === "allowlist") {
-        reply = await prepareMattermostDeniedReply(deniedReply);
+        reply = await prepareMattermostDeniedReply(deniedReply, setDeniedReply, wsId);
         setDeniedReply(reply);
       }
       const saved = await api.updateMattermostInstallation(wsId, installation.id, { ...settings, ...(reply ? { denied_reply: reply } : {}) });
@@ -755,7 +755,7 @@ function MattermostEditButton({
             size="sm"
             disabled={update.isPending || contextMode === "unknown" || accessMode === "unknown" ||
               (accessMode === "allowlist" && (deniedReply.mode === "unknown" ||
-                (deniedReply.mode === "image" && !deniedReply.file && !deniedReply.image_attachment_id)))}
+                (deniedReply.mode === "images" && !deniedReply.files?.length && !deniedReply.image_attachment_ids?.length)))}
             aria-busy={update.isPending}
             onClick={() => {
               if (contextMode === "unknown" || accessMode === "unknown") return;

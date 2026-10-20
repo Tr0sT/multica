@@ -165,13 +165,13 @@ func TestDeniedReplyImageSettingsDB(t *testing.T) {
 		"workspace_id": fx.WorkspaceID, "uploader_type": "member", "uploader_id": fx.UserID,
 		"filename": "reply.png", "content_type": "image/png", "size_bytes": len(replyPNG), "url": "https://objects.test/reply",
 	})
-	params.DeniedReply = DeniedReply{Mode: "image", ImageAttachmentID: imageID}
+	params.DeniedReply = DeniedReply{Mode: "images", ImageAttachmentIDs: []string{imageID}}
 	ctx := context.Background()
 	row, err := svc.Register(ctx, params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if DecodePublicConfig(row.Config).DeniedReply != params.DeniedReply {
+	if !reflect.DeepEqual(DecodePublicConfig(row.Config).DeniedReply, params.DeniedReply) {
 		t.Fatal("registration lost the reply image")
 	}
 	context := ContextSettings{Mode: ContextThread}
@@ -179,7 +179,7 @@ func TestDeniedReplyImageSettingsDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if DecodePublicConfig(row.Config).DeniedReply != params.DeniedReply {
+	if !reflect.DeepEqual(DecodePublicConfig(row.Config).DeniedReply, params.DeniedReply) {
 		t.Fatal("an older client's context-only save lost the reply image")
 	}
 	reply := DeniedReply{Mode: "text", Text: "Access is restricted."}
@@ -187,7 +187,7 @@ func TestDeniedReplyImageSettingsDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info := DecodePublicConfig(row.Config); info.DeniedReply != reply || info.Context != context {
+	if info := DecodePublicConfig(row.Config); !reflect.DeepEqual(info.DeniedReply, reply) || info.Context != context {
 		t.Fatalf("text replacement changed unrelated settings: %+v", info)
 	}
 }

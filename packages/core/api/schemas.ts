@@ -3523,12 +3523,19 @@ export const MattermostInstallationSchema = z.object({
     username: z.string().min(1),
   })).default([]),
   denied_reply: z.object({
-    mode: z.enum(["text", "image", "unknown"]).catch("unknown").default("text"),
+    mode: z.enum(["text", "image", "images", "unknown"]).catch("unknown").default("text"),
     text: z.string().default(""),
     image_attachment_id: z.string().default(""),
-  }).refine((reply) => reply.mode !== "image" || (reply.text === "" && z.uuid().safeParse(reply.image_attachment_id).success))
-    .refine((reply) => reply.mode !== "text" || reply.image_attachment_id === "")
-    .default({ mode: "text", text: "", image_attachment_id: "" }),
+    image_attachment_ids: z.array(z.uuid()).default([]),
+  }).refine((reply) => reply.mode !== "image" || (reply.text === "" && reply.image_attachment_ids.length === 0 && z.uuid().safeParse(reply.image_attachment_id).success))
+    .refine((reply) => reply.mode !== "images" || (reply.text === "" && reply.image_attachment_id === "" && reply.image_attachment_ids.length > 0 && new Set(reply.image_attachment_ids).size === reply.image_attachment_ids.length))
+    .refine((reply) => reply.mode !== "text" || (reply.image_attachment_id === "" && reply.image_attachment_ids.length === 0))
+    .transform((reply) => ({
+      mode: reply.mode === "image" ? "images" as const : reply.mode,
+      text: reply.text,
+      image_attachment_ids: reply.mode === "image" ? [reply.image_attachment_id] : reply.image_attachment_ids,
+    }))
+    .default({ mode: "text", text: "", image_attachment_ids: [] }),
   context: z.object({
     mode: z.enum(["message", "thread", "channel", "channel_extended", "unknown"]).catch("unknown"),
     lookback_hours: z.number().int().min(0).max(720).default(0),
