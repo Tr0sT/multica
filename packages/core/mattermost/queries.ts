@@ -7,6 +7,7 @@ import { api } from "../api";
 export const mattermostKeys = {
   all: (wsId: string) => ["mattermost", wsId] as const,
   installations: (wsId: string) => [...mattermostKeys.all(wsId), "installations"] as const,
+  replyImage: (wsId: string, imageId: string) => [...mattermostKeys.all(wsId), "reply-image", imageId] as const,
 };
 
 export const mattermostInstallationsOptions = (wsId: string) =>

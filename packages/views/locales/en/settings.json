@@ -1244,6 +1244,19 @@
     "connect_success_toast": "Mattermost bot connected",
     "connect_failed_toast": "Could not connect the Mattermost bot",
     "not_enabled_description": "Ask your Multica operator to enable Mattermost and approve your server’s HTTPS URL.",
+    "denied_reply": {
+      "label": "Reply to accounts outside the list",
+      "text": "Text",
+      "image": "Image",
+      "help": "Sent automatically without starting an agent or using agent tokens.",
+      "text_label": "Reply text",
+      "text_help": "Up to 4000 characters. Leave empty for the standard access-denied message.",
+      "image_label": "Reply image",
+      "image_help": "PNG, JPEG, GIF or WebP, up to 5 MiB.",
+      "preview": "Automatic reply image preview",
+      "preview_failed": "Could not load the saved image. Upload it again.",
+      "unknown": "Unknown reply type"
+    },
     "access": {
       "label": "Who can use this bot",
       "members": "Linked Multica workspace members",

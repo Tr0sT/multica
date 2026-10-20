@@ -59,6 +59,7 @@ type installConfig struct {
 	Context              ContextSettings `json:"context"`
 	AccessMode           AccessMode      `json:"access_mode"`
 	AllowedUsers         []AllowedUser   `json:"allowed_users,omitempty"`
+	DeniedReply          DeniedReply     `json:"denied_reply"`
 }
 
 // credentials is the decoded, decrypted form the transports run on. The
@@ -211,6 +212,7 @@ type PublicConfig struct {
 	Context      ContextSettings
 	AccessMode   AccessMode
 	AllowedUsers []AllowedUser
+	DeniedReply  DeniedReply
 }
 
 // DecodePublicConfig extracts the display-safe fields from a stored config
@@ -232,6 +234,10 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	if cfg.AllowedUsers == nil {
 		cfg.AllowedUsers = []AllowedUser{}
 	}
+	reply, err := cfg.DeniedReply.normalized()
+	if err != nil {
+		reply = DeniedReply{Mode: "unknown"}
+	}
 	return PublicConfig{
 		ServerURL:    cfg.ServerURL,
 		BotUserID:    cfg.BotUserID,
@@ -239,6 +245,7 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 		Context:      settings,
 		AccessMode:   accessMode,
 		AllowedUsers: cfg.AllowedUsers,
+		DeniedReply:  reply,
 	}
 }
 

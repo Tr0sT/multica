@@ -38,9 +38,10 @@ func NewMattermostResolverSet(q *db.Queries, tx engine.TxStarter, replier engine
 			Direct:   "Mattermost direct message",
 			Fallback: "Mattermost chat",
 		})},
-		Audit:      &auditor{q: q},
-		Replier:    replier,
-		OriginType: originMattermostChat,
+		Audit:        &auditor{q: q},
+		Replier:      replier,
+		ReplyTimeout: replyUploadTimeout + defaultTimeout,
+		OriginType:   originMattermostChat,
 	}
 }
 

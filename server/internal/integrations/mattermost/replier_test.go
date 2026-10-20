@@ -155,6 +155,30 @@ func TestReplierAllowlistRefusalDoesNotOfferAccountLinking(t *testing.T) {
 	}
 }
 
+func TestReplierUsesConfiguredDenialText(t *testing.T) {
+	h := newReplierHarness(t)
+	row := h.inst.Platform.(db.ChannelInstallation)
+	var config map[string]any
+	if err := json.Unmarshal(row.Config, &config); err != nil {
+		t.Fatal(err)
+	}
+	config["access_mode"] = "allowlist"
+	config["denied_reply"] = map[string]string{"mode": "text", "text": "This bot is for our team only."}
+	var err error
+	row.Config, err = json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.inst.Platform = row
+	h.replier.Reply(context.Background(), h.inst, dmInbound(), engine.Result{
+		Outcome: engine.OutcomeDropped, DropReason: engine.DropReasonNonWorkspaceMember,
+	})
+	posts := h.sent()
+	if len(posts) != 1 || posts[0].Message != "This bot is for our team only." {
+		t.Fatalf("configured denial ignored: %+v", posts)
+	}
+}
+
 // A bearer link posted in a channel could be redeemed by any member, binding
 // the sender's identity to the wrong Multica user. The prompt must stay out of
 // group conversations.

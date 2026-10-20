@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { MattermostContextMode } from "@multica/core/types";
 import enSettings from "../../locales/en/settings.json";
@@ -12,12 +12,15 @@ import enCommon from "../../locales/en/common.json";
 const mockRegister = vi.hoisted(() => vi.fn());
 const mockList = vi.hoisted(() => vi.fn());
 const mockUpdate = vi.hoisted(() => vi.fn());
+const mockUpload = vi.hoisted(() => vi.fn());
+const mockGetAttachment = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
 const role = vi.hoisted(() => ({ current: "owner" }));
 
 vi.mock("@multica/core/api", () => ({ api: {
   registerMattermostBot: mockRegister, listMattermostInstallations: mockList,
   updateMattermostInstallation: mockUpdate,
+  uploadFile: mockUpload, getAttachment: mockGetAttachment, getBaseUrl: () => "https://api.test",
 } }));
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 vi.mock("@multica/core/workspace/queries", () => ({
@@ -45,7 +48,13 @@ function renderConnect(workspaceSettings = false) {
   );
 }
 
+const BrowserURL = URL;
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
+  vi.stubGlobal("URL", class extends BrowserURL {
+    static createObjectURL = vi.fn(() => "blob:reply-preview");
+    static revokeObjectURL = vi.fn();
+  });
   vi.clearAllMocks();
   role.current = "owner";
   // Another bot on the same server must not disable this agent's connect flow.
@@ -53,6 +62,8 @@ beforeEach(() => {
     { id: "existing", agent_id: "agent-1", status: "active", server_url: "https://chat.test" },
   ] });
   mockRegister.mockResolvedValue({ id: "new-installation", status: "active" });
+  mockUpload.mockResolvedValue({ id: "11111111-1111-4111-8111-111111111111" });
+  mockGetAttachment.mockResolvedValue({ filename: "reply.png", download_url: "https://files.test/reply.png" });
 });
 
 const connectedInstallation = {
@@ -250,6 +261,7 @@ describe("Mattermost settings editing", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
       access_mode: "allowlist", allowed_usernames: ["alice", "bob"], context: connectedInstallation.context,
+      denied_reply: { mode: "text", text: "" },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -259,6 +271,7 @@ describe("Mattermost settings editing", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenLastCalledWith("workspace-1", "existing", {
       access_mode: "allowlist", allowed_usernames: [], context: connectedInstallation.context,
+      denied_reply: { mode: "text", text: "" },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
@@ -290,6 +303,79 @@ describe("Mattermost settings editing", () => {
       .toHaveTextContent(enSettings.mattermost.access.unknown);
   });
 
+  it.each([false, true])("saves automatic text without uploading an image (workspace settings: %s)", async (workspaceSettings) => {
+    const user = userEvent.setup();
+    renderConnect(workspaceSettings);
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.type(screen.getByLabelText(enSettings.mattermost.denied_reply.text_label), "Team accounts only");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", expect.objectContaining({
+      denied_reply: { mode: "text", text: "Team accounts only" },
+    })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText(enSettings.mattermost.denied_reply.text_label)).toHaveValue("Team accounts only");
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it("uploads on save, restores the image and replaces it with text", async () => {
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.denied_reply.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.denied_reply.image }));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    const file = new File(["PNG"], "reply.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText(enSettings.mattermost.denied_reply.image_label), file);
+    expect(mockUpload).not.toHaveBeenCalled();
+    expect(screen.getByRole("img", { name: enSettings.mattermost.denied_reply.preview })).toHaveAttribute("src", "blob:reply-preview");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", expect.objectContaining({
+      denied_reply: { mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111" },
+    })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByText("reply.png")).toBeVisible();
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.denied_reply.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.denied_reply.text }));
+    await user.type(screen.getByLabelText(enSettings.mattermost.denied_reply.text_label), "No access");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenLastCalledWith("workspace-1", "existing", expect.objectContaining({ denied_reply: { mode: "text", text: "No access" } })));
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["upload", "save"])("keeps the image available to retry a failed %s", async (failure) => {
+    if (failure === "upload") mockUpload.mockRejectedValueOnce(new Error("Upload failed"));
+    else mockUpdate.mockRejectedValueOnce(new Error("Save failed"));
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.denied_reply.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.denied_reply.image }));
+    await user.upload(screen.getByLabelText(enSettings.mattermost.denied_reply.image_label), new File(["PNG"], "reply.png", { type: "image/png" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+    expect(await screen.findByText("reply.png")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockUpload).toHaveBeenCalledTimes(failure === "upload" ? 2 : 1);
+  });
+
+  it("does not silently replace an unsupported reply type", async () => {
+    mockList.mockResolvedValue({ configured: true, installations: [{ ...connectedInstallation, access_mode: "allowlist", denied_reply: { mode: "unknown" } }] });
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it.each([false, true])("hides editing from members (workspace settings: %s)", async (workspaceSettings) => {
     role.current = "member";
     renderConnect(workspaceSettings);
@@ -315,6 +401,7 @@ describe("Mattermost context selection", () => {
     await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("workspace-1", "agent-2", {
       server_url: "https://chat.test", access_token: "token", access_mode: "allowlist",
       allowed_usernames: ["alice"], context: { mode: "message" },
+      denied_reply: { mode: "text", text: "" },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });

@@ -1238,6 +1238,19 @@
     "connect_success_toast": "已连接 Mattermost 机器人",
     "connect_failed_toast": "连接 Mattermost 机器人失败",
     "not_enabled_description": "请联系 Multica 运维人员启用 Mattermost，并批准服务器的 HTTPS 地址。",
+    "denied_reply": {
+      "label": "对列表外账号的回复",
+      "text": "文字",
+      "image": "图片",
+      "help": "自动发送，不启动智能体，也不消耗智能体 token。",
+      "text_label": "回复文字",
+      "text_help": "最多 4000 个字符。留空则发送默认的拒绝访问提示。",
+      "image_label": "回复图片",
+      "image_help": "支持 PNG、JPEG、GIF 或 WebP，最大 5 MiB。",
+      "preview": "自动回复图片预览",
+      "preview_failed": "无法加载已保存的图片，请重新上传。",
+      "unknown": "未知回复类型"
+    },
     "access": {
       "label": "谁可以使用此机器人",
       "members": "已绑定账号的 Multica 工作区成员",

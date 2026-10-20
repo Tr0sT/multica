@@ -1473,6 +1473,19 @@
       "channel_summary": "Historique de la conversation, {{hours}} dernières heures"
     },
     "not_enabled_description": "Demandez à votre opérateur Multica d’activer Mattermost et d’autoriser l’URL HTTPS de votre serveur.",
+    "denied_reply": {
+      "label": "Réponse aux comptes hors liste",
+      "text": "Texte",
+      "image": "Image",
+      "help": "Envoyée automatiquement, sans lancer d’agent ni consommer ses jetons.",
+      "text_label": "Texte de la réponse",
+      "text_help": "4000 caractères maximum. Laissez vide pour le message de refus standard.",
+      "image_label": "Image de la réponse",
+      "image_help": "PNG, JPEG, GIF ou WebP, jusqu’à 5 MiB.",
+      "preview": "Aperçu de l’image de réponse automatique",
+      "preview_failed": "Impossible de charger l’image enregistrée. Importez-la à nouveau.",
+      "unknown": "Type de réponse inconnu"
+    },
     "access": {
       "label": "Qui peut utiliser ce bot",
       "members": "Membres Multica ayant lié leur compte",

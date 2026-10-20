@@ -35,6 +35,10 @@ func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
 		{validID, validID, `{"allowed_usernames":["alice"]}`},
 		{validID, validID, `{"access_mode":"anyone","allowed_usernames":["alice"]}`},
 		{validID, validID, `{"access_mode":"allowlist","allowed_users":[{"id":"forged","username":"alice"}]}`},
+		{validID, validID, `{"denied_reply":{"mode":"unknown"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"image","image_attachment_id":"invalid"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"text","image_attachment_id":"11111111-1111-4111-8111-111111111111"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"text","text":12}}`},
 	} {
 		r := testutil.JSONRequest(http.MethodPatch, "/", tc.body)
 		testutil.WithHeaders(r, "X-User-ID", validID)

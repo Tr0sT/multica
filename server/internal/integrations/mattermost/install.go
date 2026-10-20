@@ -53,6 +53,7 @@ var (
 // installQueries is the slice of generated queries InstallService needs,
 // interface-shaped so tests inject a fake (same adapter pattern as Slack).
 type installQueries interface {
+	replyImageQueries
 	WithTx(tx pgx.Tx) installQueries
 	UpsertChannelInstallation(ctx context.Context, arg db.UpsertChannelInstallationParams) (db.ChannelInstallation, error)
 	ReclaimDeadChannelInstallationByAppID(ctx context.Context, arg db.ReclaimDeadChannelInstallationByAppIDParams) (pgtype.UUID, error)
@@ -82,6 +83,7 @@ type InstallService struct {
 	tx         engine.TxStarter
 	httpClient *http.Client
 	logger     *slog.Logger
+	objects    objectStore
 }
 
 // NewInstallService binds the service to queries, a tx starter, and an
@@ -130,6 +132,7 @@ type RegisterParams struct {
 	Context          ContextSettings
 	AccessMode       AccessMode
 	AllowedUsernames []string
+	DeniedReply      DeniedReply
 }
 
 // Register installs a user-supplied Mattermost bot for an agent: canonicalize
@@ -143,6 +146,10 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		return db.ChannelInstallation{}, err
 	}
 	accessMode, err := p.AccessMode.normalized()
+	if err != nil {
+		return db.ChannelInstallation{}, err
+	}
+	reply, err := s.prepareDeniedReply(ctx, p.WorkspaceID, p.DeniedReply)
 	if err != nil {
 		return db.ChannelInstallation{}, err
 	}
@@ -192,6 +199,7 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		Context:              settings,
 		AccessMode:           accessMode,
 		AllowedUsers:         allowedUsers,
+		DeniedReply:          reply,
 	})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost installation config: %w", err)
@@ -360,14 +368,22 @@ type SettingsUpdate struct {
 	Context          *ContextSettings `json:"context,omitempty"`
 	AccessMode       *AccessMode      `json:"access_mode,omitempty"`
 	AllowedUsernames []string         `json:"allowed_usernames"`
+	DeniedReply      *DeniedReply     `json:"denied_reply,omitempty"`
 }
 
 func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUID, settings SettingsUpdate) (db.ChannelInstallation, error) {
 	if settings.AllowedUsernames != nil && settings.AccessMode == nil {
 		return db.ChannelInstallation{}, ErrInvalidAllowedUsers
 	}
-	if settings.Context == nil && settings.AccessMode == nil {
+	if settings.Context == nil && settings.AccessMode == nil && settings.DeniedReply == nil {
 		return db.ChannelInstallation{}, ErrInvalidContextSettings
+	}
+	if settings.DeniedReply != nil {
+		reply, err := s.prepareDeniedReply(ctx, wsID, *settings.DeniedReply)
+		if err != nil {
+			return db.ChannelInstallation{}, err
+		}
+		settings.DeniedReply = &reply
 	}
 	if settings.Context != nil {
 		if settings.Context.Mode == "" {
@@ -421,7 +437,8 @@ func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUI
 		Context      *ContextSettings `json:"context,omitempty"`
 		AccessMode   *AccessMode      `json:"access_mode,omitempty"`
 		AllowedUsers *[]AllowedUser   `json:"allowed_users,omitempty"`
-	}{settings.Context, settings.AccessMode, allowedUsers})
+		DeniedReply  *DeniedReply     `json:"denied_reply,omitempty"`
+	}{settings.Context, settings.AccessMode, allowedUsers, settings.DeniedReply})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost settings: %w", err)
 	}

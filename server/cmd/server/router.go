@@ -1252,6 +1252,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			mattermostBindingSvc := mattermost.NewBindingTokenService(queries, pool, box.Open, policy)
 			h.MattermostBindingTokens = mattermostBindingSvc
 			mattermostReplier := mattermost.NewOutboundReplier(mattermost.OutboundReplierConfig{
+				Queries: queries,
+				Objects: store,
 				Binding: mattermostBindingSvc,
 				Decrypt: box.Open,
 				Policy:  policy,
@@ -1281,6 +1283,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				slog.Error("mattermost: InstallService init failed; install disabled", "error", ierr)
 			} else {
 				h.MattermostInstall = installSvc
+				installSvc.EnableReplyImages(store)
 			}
 			slog.Info("mattermost integration enabled (per-installation websocket)")
 		}

@@ -2,10 +2,15 @@ package mattermost
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,6 +22,117 @@ import (
 	dbfx "github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
+
+func TestAutomaticDenialNeverStartsAnAgentDB(t *testing.T) {
+	for _, mode := range []string{"text", "image"} {
+		t.Run(mode, func(t *testing.T) {
+			fx, q, agent := mattermostDBFixture(t)
+			ctx := context.Background()
+			var mu sync.Mutex
+			var posts []Post
+			uploads := 0
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == apiPath+"/files" {
+					data, err := io.ReadAll(r.Body)
+					if err != nil || string(data) != string(replyPNG) {
+						t.Errorf("wrong image: %v", err)
+					}
+					uploads++
+					_, _ = io.WriteString(w, `{"file_infos":[{"id":"automatic-image"}]}`)
+					return
+				}
+				if r.URL.Path != apiPath+"/posts" {
+					t.Errorf("unexpected call %s", r.URL.Path)
+				}
+				var post Post
+				if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+					t.Error(err)
+				}
+				posts = append(posts, post)
+				post.ID = fmt.Sprintf("reply-%d", len(posts))
+				_ = json.NewEncoder(w).Encode(post)
+			}))
+			defer srv.Close()
+			policy, err := NewServerPolicy(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reply := DeniedReply{Mode: mode, Text: "Team accounts only."}
+			if mode == "image" {
+				reply.Text = ""
+				reply.ImageAttachmentID = fx.Insert(t, "attachment", dbfx.Cols{
+					"workspace_id": fx.WorkspaceID, "uploader_type": "member", "uploader_id": fx.UserID,
+					"filename": "reply.png", "content_type": "image/png", "size_bytes": len(replyPNG), "url": "https://objects.test/reply",
+				})
+			}
+			config, err := json.Marshal(installConfig{AppID: "denied-bot", ServerURL: srv.URL, BotUserID: "bot", BotUsername: "bot",
+				AccessTokenEncrypted: base64.StdEncoding.EncodeToString([]byte("token")), AccessMode: AccessAllowlist, DeniedReply: reply})
+			if err != nil {
+				t.Fatal(err)
+			}
+			installation := fx.Insert(t, "channel_installation", dbfx.Cols{
+				"workspace_id": fx.WorkspaceID, "agent_id": agent, "channel_type": "mattermost", "config": config,
+				"status": "active", "installer_user_id": fx.UserID,
+			})
+			fx.Cleanup(t, `DELETE FROM channel_inbound_dedup WHERE installation_id=$1`, installation)
+			replier := NewOutboundReplier(OutboundReplierConfig{Queries: q, Objects: &testObjectStore{data: map[string][]byte{"reply": replyPNG}}, Policy: policy, HTTPClient: srv.Client()})
+			tasks := service.NewTaskService(q, fx.Pool, nil, events.New())
+			router := engine.NewRouter(nil, tasks, q, engine.RouterConfig{})
+			t.Cleanup(func() { router.Drain(context.Background()) })
+			router.Register(TypeMattermost, NewMattermostResolverSet(q, fx.Pool, replier))
+			for _, post := range []Post{
+				{ID: "dm", ChannelID: "dm-room", Message: "hello"},
+				{ID: "dm", ChannelID: "dm-room", Message: "hello"},
+				{ID: "group", ChannelID: "channel", RootID: "root", Message: "@bot help"},
+				{ID: "chatter", ChannelID: "channel", Message: "just chatting"},
+			} {
+				post.UserID = "outside-account"
+				channelType := "O"
+				if post.ChannelID == "dm-room" {
+					channelType = "D"
+				}
+				msg, ok := inboundFromPosted(post, postedData{ChannelType: channelType}, inboundParams{appID: "denied-bot", botUserID: "bot", botUsername: "bot"})
+				if !ok {
+					t.Fatal("message rejected before routing")
+				}
+				if err := router.Handle(ctx, msg); err != nil {
+					t.Fatal(err)
+				}
+			}
+			router.Drain(ctx)
+			mu.Lock()
+			defer mu.Unlock()
+			if len(posts) != 2 {
+				t.Fatalf("sent %d replies, want one per addressed message", len(posts))
+			}
+			for _, post := range posts {
+				if mode == "text" && (post.Message != reply.Text || len(post.FileIDs) != 0) {
+					t.Fatalf("wrong text reply: %+v", post)
+				}
+				if mode == "image" && (post.Message != "" || len(post.FileIDs) != 1 || post.FileIDs[0] != "automatic-image") {
+					t.Fatalf("wrong image reply: %+v", post)
+				}
+				if post.ChannelID == "dm-room" && post.RootID != "" || post.ChannelID == "channel" && post.RootID != "root" {
+					t.Fatalf("wrong reply placement: %+v", post)
+				}
+			}
+			if mode == "text" && uploads != 0 || mode == "image" && uploads != 2 {
+				t.Fatalf("unexpected uploads: %d", uploads)
+			}
+			if count := fx.Count(t, `SELECT count(*) FROM agent_task_queue WHERE agent_id=$1`, agent); count != 0 {
+				t.Fatalf("denied request queued %d agent runs", count)
+			}
+			for _, table := range []string{"chat_session", "issue"} {
+				if count := fx.Count(t, "SELECT count(*) FROM "+table+" WHERE workspace_id=$1", fx.WorkspaceID); count != 0 {
+					t.Fatalf("denied request created %s rows: %d", table, count)
+				}
+			}
+		})
+	}
+}
 
 func TestAnyoneAccessDoesNotRequireAnAccountBindingDB(t *testing.T) {
 	fx, q, agent := mattermostDBFixture(t)

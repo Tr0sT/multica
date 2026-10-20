@@ -1,6 +1,12 @@
 export type MattermostContextMode = "message" | "thread" | "channel";
 export type MattermostAccessMode = "members" | "anyone" | "allowlist";
 
+export interface MattermostDeniedReply {
+  mode: "text" | "image";
+  text?: string;
+  image_attachment_id?: string;
+}
+
 export interface MattermostContextSettings {
   mode: MattermostContextMode;
   /** Zero disables the date cutoff for channel history; volume limits still apply. */
@@ -27,6 +33,7 @@ export interface MattermostInstallation {
   bot_username: string;
   access_mode?: MattermostAccessMode | "unknown";
   allowed_users?: { id: string; username: string }[];
+  denied_reply?: Omit<MattermostDeniedReply, "mode"> & { mode: MattermostDeniedReply["mode"] | "unknown" };
   context?: {
     mode: MattermostContextMode | "unknown";
     lookback_hours?: number;
@@ -60,12 +67,14 @@ export interface RegisterMattermostRequest {
   context?: MattermostContextSettings;
   access_mode?: MattermostAccessMode;
   allowed_usernames?: string[];
+  denied_reply?: MattermostDeniedReply;
 }
 
 export interface UpdateMattermostInstallationRequest {
   context?: MattermostContextSettings;
   access_mode?: MattermostAccessMode;
   allowed_usernames?: string[];
+  denied_reply?: MattermostDeniedReply;
 }
 
 /** Post-redemption echo: the Mattermost user id the token carried is now bound

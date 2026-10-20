@@ -1238,6 +1238,19 @@
     "connect_success_toast": "Mattermost ボットを接続しました",
     "connect_failed_toast": "Mattermost ボットを接続できませんでした",
     "not_enabled_description": "Multica の運用担当者に Mattermost の有効化とサーバーの HTTPS URL の許可を依頼してください。",
+    "denied_reply": {
+      "label": "リスト外のアカウントへの返信",
+      "text": "テキスト",
+      "image": "画像",
+      "help": "エージェントを起動せず、エージェントのトークンを消費せずに自動送信します。",
+      "text_label": "返信テキスト",
+      "text_help": "最大 4000 文字。空欄の場合は標準のアクセス拒否メッセージを送信します。",
+      "image_label": "返信画像",
+      "image_help": "PNG、JPEG、GIF、WebP に対応。最大 5 MiB。",
+      "preview": "自動返信画像のプレビュー",
+      "preview_failed": "保存した画像を読み込めません。再度アップロードしてください。",
+      "unknown": "不明な返信形式"
+    },
     "access": {
       "label": "このボットを利用できるユーザー",
       "members": "アカウント連携済みの Multica ワークスペースメンバー",

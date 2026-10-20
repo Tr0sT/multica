@@ -1053,16 +1053,20 @@ func (r *Router) scheduleReply(set ResolverSet, inst ResolvedInstallation, msg c
 	if set.Replier == nil {
 		return
 	}
+	timeout := set.ReplyTimeout
+	if timeout <= 0 {
+		timeout = r.replyTimeout
+	}
 	r.replyWg.Add(1)
 	go func() {
 		defer r.replyWg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), r.replyTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		set.Replier.Reply(ctx, inst, msg, res)
 		if ctx.Err() == context.DeadlineExceeded {
 			r.logger.Warn("channel router: outbound reply timed out",
 				"event_id", msg.EventID, "outcome", string(res.Outcome),
-				"timeout", r.replyTimeout.String())
+				"timeout", timeout.String())
 		}
 	}()
 }

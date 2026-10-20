@@ -157,6 +157,41 @@ func TestAllowlistRegistrationAndUpdatesDB(t *testing.T) {
 	check(cleared, []AllowedUser{})
 }
 
+func TestDeniedReplyImageSettingsDB(t *testing.T) {
+	fx, q, agent := mattermostDBFixture(t)
+	svc, params := mattermostInstallHarness(t, fx, q, agent)
+	svc.EnableReplyImages(&testObjectStore{data: map[string][]byte{"reply": replyPNG}})
+	imageID := fx.Insert(t, "attachment", dbfx.Cols{
+		"workspace_id": fx.WorkspaceID, "uploader_type": "member", "uploader_id": fx.UserID,
+		"filename": "reply.png", "content_type": "image/png", "size_bytes": len(replyPNG), "url": "https://objects.test/reply",
+	})
+	params.DeniedReply = DeniedReply{Mode: "image", ImageAttachmentID: imageID}
+	ctx := context.Background()
+	row, err := svc.Register(ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if DecodePublicConfig(row.Config).DeniedReply != params.DeniedReply {
+		t.Fatal("registration lost the reply image")
+	}
+	context := ContextSettings{Mode: ContextThread}
+	row, err = svc.UpdateSettings(ctx, row.ID, row.WorkspaceID, SettingsUpdate{Context: &context})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if DecodePublicConfig(row.Config).DeniedReply != params.DeniedReply {
+		t.Fatal("an older client's context-only save lost the reply image")
+	}
+	reply := DeniedReply{Mode: "text", Text: "Access is restricted."}
+	row, err = svc.UpdateSettings(ctx, row.ID, row.WorkspaceID, SettingsUpdate{DeniedReply: &reply})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info := DecodePublicConfig(row.Config); info.DeniedReply != reply || info.Context != context {
+		t.Fatalf("text replacement changed unrelated settings: %+v", info)
+	}
+}
+
 func TestInstallRotationAndSwapDB(t *testing.T) {
 	fx, q, agent := mattermostDBFixture(t)
 	svc, params := mattermostInstallHarness(t, fx, q, agent)

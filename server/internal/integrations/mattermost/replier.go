@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -51,6 +52,8 @@ type OutboundReplier struct {
 	bindingPath string
 	client      *http.Client
 	logger      *slog.Logger
+	queries     replyImageQueries
+	objects     objectStore
 }
 
 // OutboundReplierConfig configures the replier. Binding + AppURL are required
@@ -66,6 +69,8 @@ type OutboundReplierConfig struct {
 	BindingPath string // default "/mattermost/bind"
 	HTTPClient  *http.Client
 	Logger      *slog.Logger
+	Queries     replyImageQueries
+	Objects     objectStore
 }
 
 var _ engine.OutboundReplier = (*OutboundReplier)(nil)
@@ -91,6 +96,8 @@ func NewOutboundReplier(cfg OutboundReplierConfig) *OutboundReplier {
 		bindingPath: bindingPath,
 		client:      cfg.HTTPClient,
 		logger:      logger,
+		queries:     cfg.Queries,
+		objects:     cfg.Objects,
 	}
 }
 
@@ -103,23 +110,23 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			r.warn(ctx, "binding prompt failed", inst, err)
 		}
 	case engine.OutcomeAgentOffline:
-		if err := r.post(ctx, inst, msg, msgAgentOffline); err != nil {
+		if err := r.post(ctx, inst, msg, msgAgentOffline, ""); err != nil {
 			r.warn(ctx, "offline notice failed", inst, err)
 		}
 	case engine.OutcomeAgentArchived:
-		if err := r.post(ctx, inst, msg, msgAgentArchived); err != nil {
+		if err := r.post(ctx, inst, msg, msgAgentArchived, ""); err != nil {
 			r.warn(ctx, "archived notice failed", inst, err)
 		}
 	case engine.OutcomeFreshPending:
-		if err := r.post(ctx, inst, msg, msgFreshPending); err != nil {
+		if err := r.post(ctx, inst, msg, msgFreshPending, ""); err != nil {
 			r.warn(ctx, "fresh-start confirmation failed", inst, err)
 		}
 	case engine.OutcomeChatStarted:
-		if err := r.post(ctx, inst, msg, msgChatStarted); err != nil {
+		if err := r.post(ctx, inst, msg, msgChatStarted, ""); err != nil {
 			r.warn(ctx, "new-chat confirmation failed", inst, err)
 		}
 	case engine.OutcomeIssueUsage:
-		if err := r.post(ctx, inst, msg, msgIssueUsage); err != nil {
+		if err := r.post(ctx, inst, msg, msgIssueUsage, ""); err != nil {
 			r.warn(ctx, "issue usage reply failed", inst, err)
 		}
 	case engine.OutcomeIngested:
@@ -128,20 +135,25 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			if res.IssueDuplicate {
 				text = issueDuplicateText(res)
 			}
-			if err := r.post(ctx, inst, msg, text); err != nil {
+			if err := r.post(ctx, inst, msg, text, ""); err != nil {
 				r.warn(ctx, "issue outcome reply failed", inst, err)
 			}
 		}
 	case engine.OutcomeDropped:
 		config, err := installationAccess(inst)
-		if err == nil && config.AccessMode == AccessAllowlist && res.DropReason == engine.DropReasonNonWorkspaceMember {
-			if err := r.post(ctx, inst, msg, "This Mattermost account cannot use this bot. Ask a workspace admin to check the bot's access settings."); err != nil {
+		listed := slices.ContainsFunc(config.AllowedUsers, func(user AllowedUser) bool { return user.ID == msg.Source.SenderID })
+		if err == nil && config.AccessMode == AccessAllowlist && !listed && res.DropReason == engine.DropReasonNonWorkspaceMember {
+			reply, err := config.DeniedReply.normalized()
+			if err != nil || (reply.Mode == "text" && strings.TrimSpace(reply.Text) == "") {
+				reply = DeniedReply{Mode: "text", Text: defaultDeniedReplyText}
+			}
+			if err := r.post(ctx, inst, msg, reply.Text, reply.ImageAttachmentID); err != nil {
 				r.warn(ctx, "access refusal failed", inst, err)
 			}
 			return
 		}
 		if text := droppedReplyText(res, msg); text != "" {
-			if err := r.post(ctx, inst, msg, text); err != nil {
+			if err := r.post(ctx, inst, msg, text, ""); err != nil {
 				r.warn(ctx, "drop refusal failed", inst, err)
 			}
 		}
@@ -159,7 +171,7 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 	// Multica user. Ask the sender to open a direct chat first; only DM
 	// prompts carry a redeem token.
 	if msg.Source.ChatType == channel.ChatTypeGroup {
-		return r.post(ctx, inst, msg, msgBindingGroupHint)
+		return r.post(ctx, inst, msg, msgBindingGroupHint, "")
 	}
 	sender := res.Sender
 	if sender == "" {
@@ -181,12 +193,12 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 	bindURL := r.appURL + r.bindingPath + "?token=" + url.QueryEscape(token.Raw)
 	text := ":wave: To start chatting with me, link your Mattermost account to Multica:\n" +
 		bindURL + "\n(This link expires in 15 minutes.)"
-	return r.post(ctx, inst, msg, text)
+	return r.post(ctx, inst, msg, text, "")
 }
 
 // post resolves the installation's credentials from the carried platform row
-// and sends plain text back into the originating channel / thread.
-func (r *OutboundReplier) post(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, text string) error {
+// and sends a static reply back into the originating channel / thread.
+func (r *OutboundReplier) post(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, text, imageID string) error {
 	row, ok := inst.Platform.(db.ChannelInstallation)
 	if !ok {
 		return errors.New("installation platform row unavailable")
@@ -205,11 +217,28 @@ func (r *OutboundReplier) post(ctx context.Context, inst engine.ResolvedInstalla
 	// channel. Deriving this separately here is how they drifted — the notice
 	// opened a one-message thread in a DM while the agent reply sat inline.
 	_, _, replyThread := mattermostSessionRouting(msg)
-	if _, err := newRESTClient(base, creds.AccessToken, r.client).CreatePost(ctx, Post{
+	rest := newRESTClient(base, creds.AccessToken, r.client)
+	post := Post{
 		ChannelID: msg.Source.ChatID,
 		RootID:    replyThread,
 		Message:   text,
-	}); err != nil {
+	}
+	if imageID != "" {
+		imageCtx, cancel := context.WithTimeout(ctx, replyUploadTimeout)
+		defer cancel()
+		data, filename, err := loadDeniedReplyImage(imageCtx, r.queries, r.objects, inst.WorkspaceID, imageID)
+		var fileID string
+		if err == nil {
+			fileID, err = rest.UploadFile(imageCtx, msg.Source.ChatID, filename, data)
+		}
+		if err != nil {
+			r.warn(ctx, "automatic reply image unavailable", inst, err)
+			post.Message = defaultDeniedReplyText
+		} else {
+			post.FileIDs = []string{fileID}
+		}
+	}
+	if _, err := rest.CreatePost(ctx, post); err != nil {
 		return fmt.Errorf("post mattermost reply: %w", err)
 	}
 	return nil

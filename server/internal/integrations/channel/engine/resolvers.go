@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -411,6 +412,8 @@ type ResolverSet struct {
 	Media        MediaResolver
 	Audit        Auditor
 	Replier      OutboundReplier
+	// ReplyTimeout overrides the router's detached reply budget for adapters that upload files.
+	ReplyTimeout time.Duration
 	Typing       TypingNotifier
 	OriginType   string
 }

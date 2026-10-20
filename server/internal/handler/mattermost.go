@@ -29,6 +29,7 @@ type MattermostInstallationResponse struct {
 	Context         MattermostContextResponse `json:"context"`
 	AccessMode      mattermost.AccessMode     `json:"access_mode"`
 	AllowedUsers    []mattermost.AllowedUser  `json:"allowed_users"`
+	DeniedReply     mattermost.DeniedReply    `json:"denied_reply"`
 	InstallerUserID string                    `json:"installer_user_id"`
 	Status          string                    `json:"status"`
 	InstalledAt     string                    `json:"installed_at"`
@@ -59,6 +60,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		Context:         context,
 		AccessMode:      info.AccessMode,
 		AllowedUsers:    info.AllowedUsers,
+		DeniedReply:     info.DeniedReply,
 		InstallerUserID: uuidToString(row.InstallerUserID),
 		Status:          row.Status,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
@@ -109,6 +111,7 @@ type RegisterMattermostRequest struct {
 	Context          mattermost.ContextSettings `json:"context"`
 	AccessMode       mattermost.AccessMode      `json:"access_mode"`
 	AllowedUsernames []string                   `json:"allowed_usernames"`
+	DeniedReply      mattermost.DeniedReply     `json:"denied_reply"`
 }
 
 // RegisterMattermostBot
@@ -150,7 +153,7 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body RegisterMattermostRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -163,12 +166,13 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 		Context:          body.Context,
 		AccessMode:       body.AccessMode,
 		AllowedUsernames: body.AllowedUsernames,
+		DeniedReply:      body.DeniedReply,
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
 			writeError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable):
+		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable), errors.Is(err, mattermost.ErrDeniedReplyImageUnavailable):
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 		case errors.Is(err, mattermost.ErrInvalidServerURL):
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -219,20 +223,20 @@ func (h *Handler) UpdateMattermostInstallation(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var body mattermost.SettingsUpdate
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.Context == nil && body.AccessMode == nil && body.AllowedUsernames == nil {
-		writeError(w, http.StatusBadRequest, "context or access_mode is required")
+	if body.Context == nil && body.AccessMode == nil && body.AllowedUsernames == nil && body.DeniedReply == nil {
+		writeError(w, http.StatusBadRequest, "context, access_mode or denied_reply is required")
 		return
 	}
 	row, err := h.MattermostInstall.UpdateSettings(r.Context(), instUUID, wsUUID, body)
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
 			writeError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable):
+		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable), errors.Is(err, mattermost.ErrDeniedReplyImageUnavailable):
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 		case errors.Is(err, mattermost.ErrInstallationNotFound):
 			writeError(w, http.StatusNotFound, "active mattermost installation not found")

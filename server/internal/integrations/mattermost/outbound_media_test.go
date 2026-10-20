@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 type testObjectStore struct {
+	mu    sync.Mutex
 	data  map[string][]byte
 	reads []string
 }
@@ -27,6 +29,8 @@ func (s *testObjectStore) KeyFromURL(raw string) string {
 }
 
 func (s *testObjectStore) GetReader(_ context.Context, key string) (io.ReadCloser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.reads = append(s.reads, key)
 	data, ok := s.data[key]
 	if !ok {

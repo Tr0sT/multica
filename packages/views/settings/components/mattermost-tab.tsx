@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, LoaderCircle, Pencil, Trash2 } from "lucide-react";
 import { MattermostMark } from "./mattermost-mark";
+import { MattermostDeniedReplyFields, prepareMattermostDeniedReply, deniedReplyMatches, type MattermostReplyDraft } from "./mattermost-denied-reply-fields";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
 import { Card, CardContent } from "@multica/ui/components/ui/card";
@@ -45,6 +46,7 @@ import { mattermostInstallationsOptions, mattermostKeys } from "@multica/core/ma
 import { api } from "@multica/core/api";
 import type {
   MattermostAccessMode,
+  MattermostDeniedReply,
   MattermostContextMode,
   MattermostContextSettings,
   MattermostInstallation,
@@ -292,6 +294,7 @@ export function MattermostAgentBindButton({
   const [accessToken, setAccessToken] = useState("");
   const [accessMode, setAccessMode] = useState<MattermostAccessMode>("members");
   const [allowedUsers, setAllowedUsers] = useState("");
+  const [deniedReply, setDeniedReply] = useState<MattermostReplyDraft>({ mode: "text" });
   const [contextMode, setContextMode] = useState<MattermostContextMode>("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const [submitting, setSubmitting] = useState(false);
@@ -334,6 +337,7 @@ export function MattermostAgentBindButton({
     setAccessToken("");
     setAccessMode("members");
     setAllowedUsers("");
+    setDeniedReply({ mode: "text" });
     setContextMode("message");
     setLookbackHours(24);
   }
@@ -345,11 +349,14 @@ export function MattermostAgentBindButton({
     setSubmitting(true);
     try {
       const allowedUsernames = parseAllowedUsernames(allowedUsers);
+      const reply = accessMode === "allowlist" ? await prepareMattermostDeniedReply(deniedReply) : undefined;
+      if (reply) setDeniedReply(reply);
       const installation = await api.registerMattermostBot(wsId, agentId, {
         server_url,
         access_token,
         access_mode: accessMode,
         ...(accessMode === "allowlist" ? { allowed_usernames: allowedUsernames } : {}),
+        ...(reply ? { denied_reply: reply } : {}),
         context: {
           mode: contextMode,
           ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
@@ -357,7 +364,8 @@ export function MattermostAgentBindButton({
       });
       if (
         !installation.id || installation.status !== "active" || (installation.access_mode ?? "members") !== accessMode ||
-        (accessMode === "allowlist" && installation.allowed_users?.map((user) => user.username).join("\n") !== allowedUsernames.join("\n"))
+        (accessMode === "allowlist" && installation.allowed_users?.map((user) => user.username).join("\n") !== allowedUsernames.join("\n")) ||
+        (reply && !deniedReplyMatches(installation.denied_reply, reply))
       ) {
         throw new Error("Mattermost connection returned an invalid installation");
       }
@@ -370,6 +378,7 @@ export function MattermostAgentBindButton({
       setAccessToken("");
       setAccessMode("members");
       setAllowedUsers("");
+      setDeniedReply({ mode: "text" });
       setContextMode("message");
       setLookbackHours(24);
     } catch (e) {
@@ -381,7 +390,9 @@ export function MattermostAgentBindButton({
     }
   }
 
-  const canSubmit = serverUrl.trim() !== "" && accessToken.trim() !== "" && !submitting;
+  const canSubmit = serverUrl.trim() !== "" && accessToken.trim() !== "" && !submitting &&
+    (accessMode !== "allowlist" || (deniedReply.mode !== "unknown" &&
+      (deniedReply.mode !== "image" || !!deniedReply.file || !!deniedReply.image_attachment_id)));
 
   return (
     <div
@@ -470,6 +481,8 @@ export function MattermostAgentBindButton({
             setAllowedUsers={setAllowedUsers}
             disabled={submitting}
           />
+
+          {accessMode === "allowlist" && <MattermostDeniedReplyFields value={deniedReply} onChange={setDeniedReply} disabled={submitting} />}
 
           <MattermostContextFields
             contextMode={contextMode}
@@ -657,16 +670,23 @@ function MattermostEditButton({
   const [open, setOpen] = useState(false);
   const [accessMode, setAccessMode] = useState<MattermostAccessMode | "unknown">("members");
   const [allowedUsers, setAllowedUsers] = useState("");
+  const [deniedReply, setDeniedReply] = useState<MattermostReplyDraft>({ mode: "text" });
   const [contextMode, setContextMode] = useState<MattermostContextMode | "unknown">("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const update = useMutation({
     mutationFn: async (settings: { context: MattermostContextSettings; access_mode: MattermostAccessMode; allowed_usernames?: string[] }) => {
       const { context } = settings;
-      const saved = await api.updateMattermostInstallation(wsId, installation.id, settings);
+      let reply: MattermostDeniedReply | undefined;
+      if (settings.access_mode === "allowlist") {
+        reply = await prepareMattermostDeniedReply(deniedReply);
+        setDeniedReply(reply);
+      }
+      const saved = await api.updateMattermostInstallation(wsId, installation.id, { ...settings, ...(reply ? { denied_reply: reply } : {}) });
       if (
         saved.id !== installation.id || saved.status !== "active" ||
         saved.context?.mode !== context.mode ||
         (saved.access_mode ?? "members") !== settings.access_mode ||
+        (reply && !deniedReplyMatches(saved.denied_reply, reply)) ||
         (settings.access_mode === "allowlist" &&
           saved.allowed_users?.map((user) => user.username).join("\n") !== settings.allowed_usernames?.join("\n")) ||
         (context.mode === "channel" && saved.context.lookback_hours !== context.lookback_hours)
@@ -693,6 +713,7 @@ function MattermostEditButton({
         if (value) {
           setAccessMode(installation.access_mode ?? "members");
           setAllowedUsers(installation.allowed_users?.map((user) => `@${user.username}`).join("\n") ?? "");
+          setDeniedReply(installation.denied_reply ?? { mode: "text" });
           setContextMode(installation.context?.mode ?? "message");
           setLookbackHours(installation.context?.mode === "channel" ? installation.context.lookback_hours ?? 24 : 24);
         }
@@ -718,6 +739,7 @@ function MattermostEditButton({
           setAllowedUsers={setAllowedUsers}
           disabled={update.isPending}
         />
+        {accessMode === "allowlist" && <MattermostDeniedReplyFields value={deniedReply} onChange={setDeniedReply} disabled={update.isPending} />}
         <MattermostContextFields
           contextMode={contextMode}
           setContextMode={setContextMode}
@@ -731,7 +753,9 @@ function MattermostEditButton({
           </Button>
           <Button
             size="sm"
-            disabled={update.isPending || contextMode === "unknown" || accessMode === "unknown"}
+            disabled={update.isPending || contextMode === "unknown" || accessMode === "unknown" ||
+              (accessMode === "allowlist" && (deniedReply.mode === "unknown" ||
+                (deniedReply.mode === "image" && !deniedReply.file && !deniedReply.image_attachment_id)))}
             aria-busy={update.isPending}
             onClick={() => {
               if (contextMode === "unknown" || accessMode === "unknown") return;
