@@ -2,6 +2,7 @@ package mattermost
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/integrations/channel"
@@ -167,6 +168,21 @@ func TestInboundFromPostedFieldMapping(t *testing.T) {
 	// sender_name arrives as "@alice"; the @ is dropped so it reads as a name.
 	if raw.SenderName != "alice" {
 		t.Errorf("Raw.SenderName = %q, want alice", raw.SenderName)
+	}
+}
+
+func TestInboundFromPostedPreservesBareMentions(t *testing.T) {
+	for _, text := range []string{"@multica", " \n@MultiCa\t ", "@multica @multica", "@multica."} {
+		t.Run(text, func(t *testing.T) {
+			msg, ok := inboundFromPosted(textPost(text), channelData(), defaultParams())
+			if !ok || !msg.AddressedToBot || msg.Type != channel.MsgTypeText {
+				t.Fatalf("bare mention was not accepted as addressed text: %+v", msg)
+			}
+			want := strings.TrimSpace(text)
+			if msg.Text != want || msg.CommandText != want {
+				t.Fatalf("Text/CommandText = %q/%q, want the original mention %q", msg.Text, msg.CommandText, want)
+			}
+		})
 	}
 }
 

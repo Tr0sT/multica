@@ -1,3 +1,11 @@
+-- name: UpdateMattermostInstallationContext :one
+UPDATE channel_installation
+SET config = jsonb_set(config, '{context}', @context::jsonb),
+    updated_at = now()
+WHERE id = @id AND workspace_id = @workspace_id
+  AND channel_type = 'mattermost' AND status = 'active'
+RETURNING *;
+
 -- name: GetLiveMattermostBindingToken :one
 SELECT * FROM channel_binding_token
 WHERE token_hash = $1

@@ -1913,7 +1913,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 
 				// Mattermost integration. Same admin/member split as Telegram:
-				// listing is member-visible; install + revoke are admin-only.
+				// listing is member-visible; install, update and revoke are admin-only.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/mattermost/installations", h.ListMattermostInstallations)
@@ -1921,6 +1921,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Delete("/mattermost/installations/{installationId}", h.RevokeMattermostInstallation)
+					r.Patch("/mattermost/installations/{installationId}", h.UpdateMattermostInstallation)
 					r.Post("/mattermost/install", h.RegisterMattermostBot)
 				})
 			})

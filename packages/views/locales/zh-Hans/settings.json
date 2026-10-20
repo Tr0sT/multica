@@ -1170,6 +1170,10 @@
     "connect_failed_toast": "连接 Telegram 机器人失败"
   },
   "mattermost": {
+    "edit_button": "编辑",
+    "edit_dialog_title": "编辑 Mattermost 集成",
+    "edit_success_toast": "Mattermost 设置已保存",
+    "edit_failed_toast": "无法更新 Mattermost 设置",
     "context": {
       "label": "发送给智能体的历史记录",
       "message": "仅当前消息",
@@ -1183,6 +1187,11 @@
       "three_days": "最近 3 天",
       "week": "最近 7 天",
       "month": "最近 30 天",
+      "sixty_days": "最近 60 天",
+      "ninety_days": "最近 90 天",
+      "year": "最近一年",
+      "unlimited": "不限",
+      "channel_unlimited_summary": "聊天历史，不限日期",
       "help": "选择从 Mattermost 读取的历史记录。现有的 Multica 对话会保留。",
       "notice": "其他参与者的消息会保存到 Multica 并发送给智能体使用的模型。仅包含文本，最多 1,000 条消息 / 128 KiB；历史不完整时会注明。",
       "summary": "上下文：{{selection}}",

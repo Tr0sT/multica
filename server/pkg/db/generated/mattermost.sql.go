@@ -100,3 +100,38 @@ func (q *Queries) RotateMattermostInstallationIdentity(ctx context.Context, arg 
 	}
 	return result.RowsAffected(), nil
 }
+
+const updateMattermostInstallationContext = `-- name: UpdateMattermostInstallationContext :one
+UPDATE channel_installation
+SET config = jsonb_set(config, '{context}', $1::jsonb),
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+  AND channel_type = 'mattermost' AND status = 'active'
+RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at
+`
+
+type UpdateMattermostInstallationContextParams struct {
+	Context     []byte      `json:"context"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) UpdateMattermostInstallationContext(ctx context.Context, arg UpdateMattermostInstallationContextParams) (ChannelInstallation, error) {
+	row := q.db.QueryRow(ctx, updateMattermostInstallationContext, arg.Context, arg.ID, arg.WorkspaceID)
+	var i ChannelInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChannelType,
+		&i.Config,
+		&i.Status,
+		&i.WsLeaseToken,
+		&i.WsLeaseExpiresAt,
+		&i.InstallerUserID,
+		&i.InstalledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

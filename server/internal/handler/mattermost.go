@@ -20,22 +20,33 @@ import (
 // surface. The server URL IS included: unlike Slack or Telegram, it is the
 // only thing that tells an admin which deployment a row belongs to.
 type MattermostInstallationResponse struct {
-	ID              string                     `json:"id"`
-	WorkspaceID     string                     `json:"workspace_id"`
-	AgentID         string                     `json:"agent_id"`
-	ServerURL       string                     `json:"server_url"`
-	BotUserID       string                     `json:"bot_user_id"`
-	BotUsername     string                     `json:"bot_username"`
-	Context         mattermost.ContextSettings `json:"context"`
-	InstallerUserID string                     `json:"installer_user_id"`
-	Status          string                     `json:"status"`
-	InstalledAt     string                     `json:"installed_at"`
-	CreatedAt       string                     `json:"created_at"`
-	UpdatedAt       string                     `json:"updated_at"`
+	ID              string                    `json:"id"`
+	WorkspaceID     string                    `json:"workspace_id"`
+	AgentID         string                    `json:"agent_id"`
+	ServerURL       string                    `json:"server_url"`
+	BotUserID       string                    `json:"bot_user_id"`
+	BotUsername     string                    `json:"bot_username"`
+	Context         MattermostContextResponse `json:"context"`
+	InstallerUserID string                    `json:"installer_user_id"`
+	Status          string                    `json:"status"`
+	InstalledAt     string                    `json:"installed_at"`
+	CreatedAt       string                    `json:"created_at"`
+	UpdatedAt       string                    `json:"updated_at"`
+}
+
+type MattermostContextResponse struct {
+	Mode                  string `json:"mode"`
+	LookbackHours         int    `json:"lookback_hours,omitempty"`
+	ExtendedLookbackHours *int   `json:"extended_lookback_hours,omitempty"`
 }
 
 func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInstallationResponse {
 	info := mattermost.DecodePublicConfig(row.Config)
+	context := MattermostContextResponse{Mode: info.Context.Mode, LookbackHours: info.Context.LookbackHours}
+	if context.Mode == mattermost.ContextChannel && (context.LookbackHours == 0 || context.LookbackHours > 720) {
+		// Older clients cap lookback_hours at 720 but safely display unknown modes.
+		context = MattermostContextResponse{Mode: "channel_extended", ExtendedLookbackHours: &info.Context.LookbackHours}
+	}
 	return MattermostInstallationResponse{
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
@@ -43,7 +54,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		ServerURL:       info.ServerURL,
 		BotUserID:       info.BotUserID,
 		BotUsername:     info.BotUsername,
-		Context:         info.Context,
+		Context:         context,
 		InstallerUserID: uuidToString(row.InstallerUserID),
 		Status:          row.Status,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
@@ -175,6 +186,52 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 	// Broadcast so every open client invalidates its installations query and
 	// shows the new bot — matching the Slack and Telegram install semantics.
 	h.publish(protocol.EventMattermostInstallationCreated, uuidToString(row.WorkspaceID), "user", userID, map[string]any{
+		"id": uuidToString(row.ID),
+	})
+	writeJSON(w, http.StatusOK, mattermostInstallationToResponse(row))
+}
+
+func (h *Handler) UpdateMattermostInstallation(w http.ResponseWriter, r *http.Request) {
+	if h.MattermostInstall == nil {
+		writeError(w, http.StatusServiceUnavailable, "mattermost integration not configured")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	instUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "installationId"), "installation id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Context *mattermost.ContextSettings `json:"context"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Context == nil || body.Context.Mode == "" {
+		writeError(w, http.StatusBadRequest, "context.mode is required")
+		return
+	}
+	row, err := h.MattermostInstall.UpdateContext(r.Context(), instUUID, wsUUID, *body.Context)
+	if err != nil {
+		switch {
+		case errors.Is(err, mattermost.ErrInvalidContextSettings):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, mattermost.ErrInstallationNotFound):
+			writeError(w, http.StatusNotFound, "active mattermost installation not found")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to update mattermost installation")
+		}
+		return
+	}
+	h.publish(protocol.EventMattermostInstallationUpdated, uuidToString(wsUUID), "user", userID, map[string]any{
 		"id": uuidToString(row.ID),
 	})
 	writeJSON(w, http.StatusOK, mattermostInstallationToResponse(row))

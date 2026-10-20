@@ -214,6 +214,7 @@ import type {
   MattermostInstallation,
   ListMattermostInstallationsResponse,
   RegisterMattermostRequest,
+  MattermostContextSettings,
   RedeemMattermostBindingTokenResponse,
   MattermostBindingPreview,
   Squad,
@@ -5442,6 +5443,20 @@ export class ApiClient {
   async deleteMattermostInstallation(workspaceId: string, installationId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/mattermost/installations/${installationId}`, {
       method: "DELETE",
+    });
+  }
+
+  async updateMattermostInstallation(
+    workspaceId: string,
+    installationId: string,
+    context: MattermostContextSettings,
+  ): Promise<MattermostInstallation> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/mattermost/installations/${installationId}`,
+      { method: "PATCH", body: JSON.stringify({ context }) },
+    );
+    return parseWithFallback(raw, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
+      endpoint: "PATCH /api/workspaces/:id/mattermost/installations/:installationId",
     });
   }
 

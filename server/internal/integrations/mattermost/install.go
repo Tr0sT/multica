@@ -63,6 +63,7 @@ type installQueries interface {
 	LockChannelInstallationAppIDSlot(ctx context.Context, arg db.LockChannelInstallationAppIDSlotParams) error
 	ClearChannelInstallationBotScopedRows(ctx context.Context, id pgtype.UUID) (db.ClearChannelInstallationBotScopedRowsRow, error)
 	RotateMattermostInstallationIdentity(ctx context.Context, arg db.RotateMattermostInstallationIdentityParams) (int64, error)
+	UpdateMattermostInstallationContext(ctx context.Context, arg db.UpdateMattermostInstallationContextParams) (db.ChannelInstallation, error)
 }
 
 type dbInstallQueries struct{ *db.Queries }
@@ -336,6 +337,27 @@ func (s *InstallService) GetInWorkspace(ctx context.Context, id, wsID pgtype.UUI
 		return db.ChannelInstallation{}, err
 	}
 	return inst, nil
+}
+
+func (s *InstallService) UpdateContext(ctx context.Context, id, wsID pgtype.UUID, settings ContextSettings) (db.ChannelInstallation, error) {
+	settings, err := settings.normalized()
+	if err != nil {
+		return db.ChannelInstallation{}, err
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost context: %w", err)
+	}
+	row, err := s.q.UpdateMattermostInstallationContext(ctx, db.UpdateMattermostInstallationContextParams{
+		ID: id, WorkspaceID: wsID, Context: encoded,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.ChannelInstallation{}, ErrInstallationNotFound
+	}
+	if err != nil {
+		return db.ChannelInstallation{}, fmt.Errorf("update mattermost context: %w", err)
+	}
+	return row, nil
 }
 
 // Revoke flips status to 'revoked'. The row is preserved for audit; existing

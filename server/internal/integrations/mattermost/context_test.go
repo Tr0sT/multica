@@ -22,14 +22,17 @@ func TestContextSettingsValidation(t *testing.T) {
 		{Mode: ContextChannel, LookbackHours: 1}, {Mode: ContextChannel, LookbackHours: 6},
 		{Mode: ContextChannel, LookbackHours: 24}, {Mode: ContextChannel, LookbackHours: 72},
 		{Mode: ContextChannel, LookbackHours: 168}, {Mode: ContextChannel, LookbackHours: 720},
+		{Mode: ContextChannel}, {Mode: ContextChannel, LookbackHours: 1440},
+		{Mode: ContextChannel, LookbackHours: 2160}, {Mode: ContextChannel, LookbackHours: 8760},
 	} {
 		if normalized, err := settings.normalized(); err != nil || normalized.Mode == "" {
 			t.Fatalf("valid settings rejected: %+v: %v", settings, err)
 		}
 	}
 	for _, settings := range []ContextSettings{
-		{Mode: "all"}, {Mode: ContextChannel}, {Mode: ContextChannel, LookbackHours: -1},
+		{Mode: "all"}, {Mode: ContextChannel, LookbackHours: -1},
 		{Mode: ContextChannel, LookbackHours: 721}, {Mode: ContextChannel, LookbackHours: 2},
+		{Mode: ContextChannel, LookbackHours: 8761},
 		{Mode: ContextMessage, LookbackHours: 24}, {Mode: ContextThread, LookbackHours: 24},
 	} {
 		if _, err := settings.normalized(); !errors.Is(err, ErrInvalidContextSettings) {
@@ -53,7 +56,6 @@ func TestContextDoesNotFetchForMessageModeIdleChatOrBareCommands(t *testing.T) {
 		{ContextChannel, "@multica /clear", true},
 		{ContextThread, "@multica /new", true},
 		{ContextChannel, "@multica /issue", true},
-		{ContextThread, "@multica", true},
 	} {
 		t.Run(tc.mode+tc.text, func(t *testing.T) {
 			post := Post{ID: "trigger", ChannelID: "room", UserID: "alice", Message: tc.text}
@@ -161,6 +163,42 @@ func TestChannelContextUsesPeriodAndPagesWithoutLosingTimestampTies(t *testing.T
 	}
 }
 
+func TestChannelContextExtendedPeriodsAndNoDateLimit(t *testing.T) {
+	through := (800 * 24 * time.Hour).Milliseconds()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(historyTestPage([]Post{
+			{ID: "recent", ChannelID: "room", CreateAt: through - (45 * 24 * time.Hour).Milliseconds()},
+			{ID: "two-months", ChannelID: "room", CreateAt: through - (75 * 24 * time.Hour).Milliseconds()},
+			{ID: "half-year", ChannelID: "room", CreateAt: through - (180 * 24 * time.Hour).Milliseconds()},
+			{ID: "old", ChannelID: "room", CreateAt: through - (500 * 24 * time.Hour).Milliseconds()},
+		}, false))
+	}))
+	defer srv.Close()
+	for _, tc := range []struct {
+		hours int
+		count int
+		scope string
+	}{
+		{1440, 1, "last 1440 hours"},
+		{2160, 2, "last 2160 hours"},
+		{8760, 3, "last 8760 hours"},
+		{0, 4, "no date limit"},
+	} {
+		t.Run(tc.scope, func(t *testing.T) {
+			settings := ContextSettings{Mode: ContextChannel, LookbackHours: tc.hours}
+			posts, partial, err := newRESTClient(srv.URL, "token", srv.Client()).readHistory(context.Background(),
+				Post{ID: "trigger", ChannelID: "room", CreateAt: through}, settings)
+			if err != nil || partial || len(posts) != tc.count {
+				t.Fatalf("period: posts=%d partial=%v err=%v", len(posts), partial, err)
+			}
+			text := renderHistory("summarize", posts, nil, srv.URL, settings, through, false)
+			if !strings.Contains(text, tc.scope) {
+				t.Fatalf("agent context lost its period: %s", text)
+			}
+		})
+	}
+}
+
 func TestContextRejectsCrossChannelCrossThreadAndBrokenHistory(t *testing.T) {
 	for _, body := range []string{
 		`{"order":["p"],"posts":{"p":{"id":"p","channel_id":"other","root_id":"root","create_at":1}},"has_next":false}`,
@@ -197,7 +235,7 @@ func TestChannelContextMarksTheMessageLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 	posts, partial, err := newRESTClient(srv.URL, "token", srv.Client()).readHistory(context.Background(),
-		Post{ID: "trigger", ChannelID: "room", CreateAt: through}, ContextSettings{Mode: ContextChannel, LookbackHours: 24})
+		Post{ID: "trigger", ChannelID: "room", CreateAt: through}, ContextSettings{Mode: ContextChannel})
 	if err != nil || !partial || len(posts) != maxHistoryPosts || calls > maxHistoryPages {
 		t.Fatalf("unbounded or silently limited history: posts=%d partial=%v calls=%d err=%v", len(posts), partial, calls, err)
 	}
@@ -258,24 +296,49 @@ func TestContextSettingsReachDispatchWithoutChangingCommands(t *testing.T) {
 		}, false))
 	}))
 	defer srv.Close()
-	raw, _ := json.Marshal(installConfig{
-		AppID: "bot-key", ServerURL: srv.URL, BotUserID: "bot", BotUsername: "multica",
-		AccessTokenEncrypted: base64.StdEncoding.EncodeToString([]byte("token")),
-		Context:              ContextSettings{Mode: ContextThread},
-	})
-	var received channel.InboundMessage
-	ch, err := newMattermostFactory(ChannelDeps{Policy: testServerPolicy(srv.URL), HTTPClient: srv.Client()})(channel.Config{
-		Raw: raw, Handler: func(_ context.Context, msg channel.InboundMessage) error { received = msg; return nil },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	post, _ := json.Marshal(Post{ID: "trigger", ChannelID: "room", RootID: "root", UserID: "alice", CreateAt: 2, Message: "@multica /new summarize"})
-	data, _ := json.Marshal(postedData{Post: string(post), ChannelType: "O"})
-	if err := ch.(*mattermostChannel).dispatchPosted(context.Background(), wsFrame{Data: data}); err != nil {
-		t.Fatal(err)
-	}
-	if received.CommandText != "/new summarize" || !strings.Contains(received.Text, "first discussion") || !strings.HasSuffix(received.Text, "summarize") {
-		t.Fatalf("context lost or command polluted: %+v", received)
+	for _, tc := range []struct {
+		name        string
+		message     string
+		channelType string
+		settings    ContextSettings
+		command     string
+		text        string
+		history     bool
+	}{
+		{"new with body", "@multica /new summarize", "O", ContextSettings{Mode: ContextThread}, "/new summarize", "summarize", true},
+		{"bare mention in channel", "@multica", "O", ContextSettings{Mode: ContextMessage}, "@multica", "@multica", false},
+		{"bare mention in DM", "@multica", "D", ContextSettings{Mode: ContextMessage}, "@multica", "@multica", false},
+		{"bare mention with thread history", "@multica", "O", ContextSettings{Mode: ContextThread}, "@multica", "@multica", true},
+		{"bare mention with channel history", "@multica", "O", ContextSettings{Mode: ContextChannel, LookbackHours: 1}, "@multica", "@multica", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, _ := json.Marshal(installConfig{
+				AppID: "bot-key", ServerURL: srv.URL, BotUserID: "bot", BotUsername: "multica",
+				AccessTokenEncrypted: base64.StdEncoding.EncodeToString([]byte("token")),
+				Context:              tc.settings,
+			})
+			var received channel.InboundMessage
+			ch, err := newMattermostFactory(ChannelDeps{Policy: testServerPolicy(srv.URL), HTTPClient: srv.Client()})(channel.Config{
+				Raw: raw, Handler: func(_ context.Context, msg channel.InboundMessage) error { received = msg; return nil },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			post, _ := json.Marshal(Post{ID: "trigger", ChannelID: "room", RootID: "root", UserID: "alice", CreateAt: 2, Message: tc.message})
+			data, _ := json.Marshal(postedData{Post: string(post), ChannelType: tc.channelType})
+			if err := ch.(*mattermostChannel).dispatchPosted(context.Background(), wsFrame{Data: data}); err != nil {
+				t.Fatal(err)
+			}
+			if received.MessageID != "trigger" || !received.AddressedToBot || received.CommandText != tc.command {
+				t.Fatalf("addressed message lost or command polluted: %+v", received)
+			}
+			if tc.history {
+				if !strings.Contains(received.Text, "first discussion") || !strings.HasSuffix(received.Text, tc.text) {
+					t.Fatalf("history or current message lost: %q", received.Text)
+				}
+			} else if received.Text != tc.text {
+				t.Fatalf("Text = %q, want %q without history", received.Text, tc.text)
+			}
+		})
 	}
 }

@@ -910,6 +910,10 @@
     "connect_failed_toast": "Telegram 봇을 연결할 수 없습니다"
   },
   "mattermost": {
+    "edit_button": "수정",
+    "edit_dialog_title": "Mattermost 연동 수정",
+    "edit_success_toast": "Mattermost 설정을 저장했습니다",
+    "edit_failed_toast": "Mattermost 설정을 업데이트하지 못했습니다",
     "context": {
       "label": "에이전트에게 보낼 기록",
       "message": "현재 메시지만",
@@ -923,6 +927,11 @@
       "three_days": "최근 3일",
       "week": "최근 7일",
       "month": "최근 30일",
+      "sixty_days": "최근 60일",
+      "ninety_days": "최근 90일",
+      "year": "최근 1년",
+      "unlimited": "제한 없음",
+      "channel_unlimited_summary": "날짜 제한 없는 채팅 기록",
       "help": "Mattermost에서 불러올 기록을 설정합니다. 기존 Multica 대화는 유지됩니다.",
       "notice": "다른 참여자의 메시지가 Multica에 저장되고 에이전트 모델에 전송됩니다. 텍스트만 포함하며 최대 1,000개 메시지 / 128 KiB입니다. 불완전한 기록은 표시됩니다.",
       "summary": "컨텍스트: {{selection}}",

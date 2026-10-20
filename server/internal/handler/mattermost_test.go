@@ -8,8 +8,29 @@ import (
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/integrations/mattermost"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
+
+func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
+	h := &Handler{MattermostInstall: &mattermost.InstallService{}}
+	validID := "11111111-1111-4111-8111-111111111111"
+	for _, tc := range []struct{ workspace, installation, body string }{
+		{"bad-id", validID, `{"context":{"mode":"message"}}`},
+		{validID, "bad-id", `{"context":{"mode":"message"}}`},
+		{validID, validID, `{`},
+		{validID, validID, `{}`},
+		{validID, validID, `{"context":null}`},
+		{validID, validID, `{"context":{}}`},
+		{validID, validID, `{"context":{"mode":"unknown"}}`},
+		{validID, validID, `{"context":{"mode":"channel","lookback_hours":4}}`},
+	} {
+		r := testutil.JSONRequest(http.MethodPatch, "/", tc.body)
+		testutil.WithHeaders(r, "X-User-ID", validID)
+		r = testutil.WithURLParams(r, "id", tc.workspace, "installationId", tc.installation)
+		testutil.Call(t, h.UpdateMattermostInstallation, r).Want(http.StatusBadRequest)
+	}
+}
 
 func TestMattermostBindingRequiresExplicitConfirmation(t *testing.T) {
 	// No database is wired: these requests must be rejected before redemption.
@@ -38,5 +59,21 @@ func TestMattermostInstallationResponseExcludesCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "token") || strings.Contains(string(encoded), "ciphertext-sentinel") {
 		t.Fatal("management response exposed credentials")
+	}
+}
+
+func TestMattermostExtendedContextResponse(t *testing.T) {
+	for _, hours := range []int{0, 1440, 2160, 8760} {
+		config, err := json.Marshal(map[string]any{
+			"context": mattermost.ContextSettings{Mode: mattermost.ContextChannel, LookbackHours: hours},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: config})
+		if response.Context.Mode != "channel_extended" || response.Context.LookbackHours != 0 ||
+			response.Context.ExtendedLookbackHours == nil || *response.Context.ExtendedLookbackHours != hours {
+			t.Fatalf("period %d lost or incompatible with older clients: %+v", hours, response.Context)
+		}
 	}
 }

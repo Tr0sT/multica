@@ -68,6 +68,10 @@ func inboundFromPosted(post Post, data postedData, p inboundParams) (channel.Inb
 	addressed := chatType == channel.ChatTypeP2P || mentioned || p.rootAuthoredByBot
 
 	cleaned := strings.TrimSpace(stripBotMentions(post.Message, p.botUsername))
+	if cleaned == "" && mentioned {
+		// A bare mention is an invocation, so preserve the user's original text.
+		cleaned = strings.TrimSpace(post.Message)
+	}
 	commandText := cleaned
 	forceFresh := false
 	if control, ok := engine.ParseControlCommand(cleaned); ok {

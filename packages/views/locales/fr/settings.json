@@ -1445,6 +1445,10 @@
     "plugins": "Paquets installés pouvant ajouter des outils, des hooks planifiés et du stockage, chacun avec ses propres autorisations."
   },
   "mattermost": {
+    "edit_button": "Modifier",
+    "edit_dialog_title": "Modifier l’intégration Mattermost",
+    "edit_success_toast": "Paramètres Mattermost enregistrés",
+    "edit_failed_toast": "Impossible de modifier les paramètres Mattermost",
     "context": {
       "label": "Historique envoyé à l’agent",
       "message": "Message actuel uniquement",
@@ -1458,6 +1462,11 @@
       "three_days": "3 derniers jours",
       "week": "7 derniers jours",
       "month": "30 derniers jours",
+      "sixty_days": "60 derniers jours",
+      "ninety_days": "90 derniers jours",
+      "year": "Dernière année",
+      "unlimited": "Sans limite",
+      "channel_unlimited_summary": "Historique de la conversation, sans limite de date",
       "help": "Définit l’historique chargé depuis Mattermost. La conversation Multica existante est conservée.",
       "notice": "Les messages des autres participants sont enregistrés dans Multica et envoyés au modèle de l’agent. Texte uniquement, jusqu’à 1 000 messages / 128 Kio ; tout historique incomplet est signalé.",
       "summary": "Contexte : {{selection}}",

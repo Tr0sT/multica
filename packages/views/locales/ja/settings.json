@@ -1170,6 +1170,10 @@
     "connect_failed_toast": "Telegram ボットを接続できませんでした"
   },
   "mattermost": {
+    "edit_button": "編集",
+    "edit_dialog_title": "Mattermost 連携を編集",
+    "edit_success_toast": "Mattermost の設定を保存しました",
+    "edit_failed_toast": "Mattermost の設定を更新できませんでした",
     "context": {
       "label": "エージェントに送信する履歴",
       "message": "現在のメッセージのみ",
@@ -1183,6 +1187,11 @@
       "three_days": "過去3日間",
       "week": "過去7日間",
       "month": "過去30日間",
+      "sixty_days": "過去60日間",
+      "ninety_days": "過去90日間",
+      "year": "過去1年間",
+      "unlimited": "無制限",
+      "channel_unlimited_summary": "期間を制限しないチャット履歴",
       "help": "Mattermost から読み込む履歴を指定します。既存の Multica の会話は保持されます。",
       "notice": "他の参加者のメッセージは Multica に保存され、エージェントのモデルに送信されます。テキストのみ、最大1,000件 / 128 KiB。履歴が不完全な場合は明示されます。",
       "summary": "コンテキスト：{{selection}}",

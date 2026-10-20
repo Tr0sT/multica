@@ -2,12 +2,13 @@ export type MattermostContextMode = "message" | "thread" | "channel";
 
 export interface MattermostContextSettings {
   mode: MattermostContextMode;
+  /** Zero disables the date cutoff for channel history; volume limits still apply. */
   lookback_hours?: number;
 }
 
 /** A Mattermost bot installation bound to a single Multica agent.
  *
- * Wire shape mirrors `MattermostInstallationResponse` in
+ * Parsed from `MattermostInstallationResponse` in
  * `server/internal/handler/mattermost.go`. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing the
  * response — see CLAUDE.md → API Compatibility. */

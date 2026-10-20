@@ -3518,9 +3518,16 @@ export const MattermostInstallationSchema = z.object({
   bot_user_id: z.string().default(""),
   bot_username: z.string().default(""),
   context: z.object({
-    mode: z.enum(["message", "thread", "channel", "unknown"]).catch("unknown"),
+    mode: z.enum(["message", "thread", "channel", "channel_extended", "unknown"]).catch("unknown"),
     lookback_hours: z.number().int().min(0).max(720).default(0),
-  }).default({ mode: "message", lookback_hours: 0 }),
+    extended_lookback_hours: z.number().int().min(0).optional(),
+  }).refine((context) => context.mode !== "channel_extended" || context.extended_lookback_hours !== undefined)
+    .transform((context) => ({
+      mode: context.mode === "channel_extended" ? "channel" as const : context.mode,
+      lookback_hours: context.mode === "channel_extended"
+        ? context.extended_lookback_hours ?? 0
+        : context.lookback_hours,
+    })).default({ mode: "message", lookback_hours: 0 }),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
   installed_at: z.string().default(""),

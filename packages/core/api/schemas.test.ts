@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   AppConfigSchema,
   WecomInstallationSchema,
@@ -2068,12 +2069,32 @@ describe("Telegram installation schemas", () => {
 // self-hosted, so a missing or malformed server URL must render as "not
 // connected" rather than as a row pointing nowhere.
 describe("Mattermost installation schemas", () => {
+  it.each([0, 1440, 2160, 8760])("parses extended period %s without breaking older clients", (hours) => {
+    const wire = { id: "i1", status: "active", context: { mode: "channel_extended", extended_lookback_hours: hours } };
+    expect(MattermostInstallationSchema.parse(wire).context).toEqual({ mode: "channel", lookback_hours: hours });
+    // Installed clients reject hours over 720; unknown modes keep the installation visible.
+    const olderSchema = MattermostInstallationSchema.omit({ context: true }).extend({
+      context: z.object({
+        mode: z.enum(["message", "thread", "channel", "unknown"]).catch("unknown"),
+        lookback_hours: z.number().int().min(0).max(720).default(0),
+      }),
+    });
+    const older = olderSchema.parse(wire);
+    expect(older.status).toBe("active");
+    expect(older.context.mode).toBe("unknown");
+  });
+
   it("parses context settings and distinguishes unknown modes from message-only history", () => {
     expect(MattermostInstallationSchema.parse({ id: "old" }).context).toEqual({ mode: "message", lookback_hours: 0 });
     expect(MattermostInstallationSchema.parse({ id: "i1", context: { mode: "channel", lookback_hours: 168 } }).context)
       .toEqual({ mode: "channel", lookback_hours: 168 });
     expect(MattermostInstallationSchema.parse({ id: "i1", context: { mode: "future-mode" } }).context.mode).toBe("unknown");
-    for (const context of [null, "channel", { mode: "channel", lookback_hours: -1 }, { mode: "channel", lookback_hours: "24" }]) {
+    for (const context of [
+      null, "channel", { mode: "channel", lookback_hours: -1 }, { mode: "channel", lookback_hours: "24" },
+      { mode: "channel_extended" }, { mode: "channel_extended", extended_lookback_hours: -1 },
+      { mode: "channel_extended", extended_lookback_hours: 1.5 },
+      { mode: "channel_extended", extended_lookback_hours: "0" },
+    ]) {
       expect(parseWithFallback({ id: "i1", context }, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
         endpoint: "POST /api/workspaces/:id/mattermost/install",
       })).toEqual(EMPTY_MATTERMOST_INSTALLATION);

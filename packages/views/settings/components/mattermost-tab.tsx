@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useId, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
+import { ChevronRight, ExternalLink, LoaderCircle, Pencil, Trash2 } from "lucide-react";
 import { MattermostMark } from "./mattermost-mark";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
@@ -44,6 +44,7 @@ import { mattermostInstallationsOptions, mattermostKeys } from "@multica/core/ma
 import { api } from "@multica/core/api";
 import type {
   MattermostContextMode,
+  MattermostContextSettings,
   MattermostInstallation,
 } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -52,7 +53,7 @@ import { useT } from "../../i18n";
 
 // MattermostTab is the workspace settings panel for Mattermost bot
 // installations, mirroring TelegramTab: listing is member-visible; the
-// disconnect action is admin-only (backend-enforced; the UI hides the button
+// management actions are admin-only (backend-enforced; the UI hides the buttons
 // to match). Adding a new installation flows through the Agent detail page —
 // the install path is per-agent (one bot per agent, the
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation).
@@ -196,7 +197,7 @@ function InstallationRow({
   const isActive = installation.status === "active";
   const agentName = getAgentName(installation.agent_id);
   return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+    <div className="flex flex-wrap items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex min-w-0 items-start gap-3">
         <ActorAvatar
           actorType="agent"
@@ -234,10 +235,13 @@ function InstallationRow({
         </div>
       </div>
       {canManage && isActive && (
-        <Button variant="outline" size="sm" onClick={onDisconnect}>
-          <Trash2 className="h-3 w-3" />
-          {t(($) => $.mattermost.disconnect)}
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <MattermostEditButton installation={installation} />
+          <Button variant="outline" size="sm" onClick={onDisconnect}>
+            <Trash2 className="h-3 w-3" />
+            {t(($) => $.mattermost.disconnect)}
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -286,20 +290,6 @@ export function MattermostAgentBindButton({
   const [contextMode, setContextMode] = useState<MattermostContextMode>("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const [submitting, setSubmitting] = useState(false);
-
-  const contextOptions = [
-    { value: "message", label: t(($) => $.mattermost.context.message) },
-    { value: "thread", label: t(($) => $.mattermost.context.thread) },
-    { value: "channel", label: t(($) => $.mattermost.context.channel) },
-  ];
-  const periodOptions = [
-    { value: 1, label: t(($) => $.mattermost.context.hour) },
-    { value: 6, label: t(($) => $.mattermost.context.six_hours) },
-    { value: 24, label: t(($) => $.mattermost.context.day) },
-    { value: 72, label: t(($) => $.mattermost.context.three_days) },
-    { value: 168, label: t(($) => $.mattermost.context.week) },
-    { value: 720, label: t(($) => $.mattermost.context.month) },
-  ];
 
   const { data: listing } = useQuery({
     ...mattermostInstallationsOptions(wsId),
@@ -458,73 +448,13 @@ export function MattermostAgentBindButton({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="mattermost-context-mode">
-              {t(($) => $.mattermost.context.label)}
-            </Label>
-            <Select
-              items={contextOptions}
-              value={contextMode}
-              onValueChange={(value) => {
-                if (value === "message" || value === "thread" || value === "channel") {
-                  setContextMode(value);
-                }
-              }}
-              disabled={submitting}
-            >
-              <SelectTrigger
-                id="mattermost-context-mode"
-                className="w-full"
-                aria-describedby={contextMode === "message"
-                  ? "mattermost-context-help"
-                  : "mattermost-context-help mattermost-context-notice"}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {contextOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p id="mattermost-context-help" className="text-caption text-muted-foreground">
-              {t(($) => $.mattermost.context.help)}
-            </p>
-          </div>
-
-          {contextMode === "channel" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="mattermost-context-period">
-                {t(($) => $.mattermost.context.period)}
-              </Label>
-              <Select
-                items={periodOptions}
-                value={lookbackHours}
-                onValueChange={(value) => {
-                  if (value !== null) setLookbackHours(value);
-                }}
-                disabled={submitting}
-              >
-                <SelectTrigger id="mattermost-context-period" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {periodOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          {contextMode !== "message" && (
-            <p id="mattermost-context-notice" className="text-caption text-muted-foreground">
-              {t(($) => $.mattermost.context.notice)}
-            </p>
-          )}
+          <MattermostContextFields
+            contextMode={contextMode}
+            setContextMode={setContextMode}
+            lookbackHours={lookbackHours}
+            setLookbackHours={setLookbackHours}
+            disabled={submitting}
+          />
 
           <DialogFooter>
             <Button
@@ -580,7 +510,7 @@ function MattermostAgentBotStatusRow({
 }
 
 // MattermostAgentBotConnectedBadge is the full "already connected" affordance:
-// status + Disconnect, then an "Open in Mattermost" link to the deployment.
+// status and management actions, then an "Open in Mattermost" link.
 function MattermostAgentBotConnectedBadge({
   installation,
   className,
@@ -617,7 +547,7 @@ function MattermostAgentBotConnectedBadge({
       className={cn("space-y-2", className)}
       data-testid="mattermost-agent-bot-connected"
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
           <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
           <span className="truncate">
@@ -625,20 +555,23 @@ function MattermostAgentBotConnectedBadge({
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => setConfirmOpen(true)}
-          disabled={disconnecting}
-          title={t(($) => $.mattermost.agent_bot_disconnect_tooltip)}
-          aria-label={t(($) => $.mattermost.disconnect)}
-          data-testid="mattermost-agent-bot-disconnect"
-        >
-          <Trash2 className="h-3 w-3" />
-          {disconnecting
-            ? t(($) => $.mattermost.disconnecting)
-            : t(($) => $.mattermost.disconnect)}
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <MattermostEditButton installation={installation} disabled={disconnecting} />
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmOpen(true)}
+            disabled={disconnecting}
+            title={t(($) => $.mattermost.agent_bot_disconnect_tooltip)}
+            aria-label={t(($) => $.mattermost.disconnect)}
+            data-testid="mattermost-agent-bot-disconnect"
+          >
+            <Trash2 className="h-3 w-3" />
+            {disconnecting
+              ? t(($) => $.mattermost.disconnecting)
+              : t(($) => $.mattermost.disconnect)}
+          </Button>
+        </div>
       </div>
 
       <MattermostContextSummary context={installation.context} />
@@ -686,13 +619,213 @@ function MattermostAgentBotConnectedBadge({
   );
 }
 
+function MattermostEditButton({
+  installation,
+  disabled = false,
+}: {
+  installation: MattermostInstallation;
+  disabled?: boolean;
+}) {
+  const { t } = useT("settings");
+  const { t: common } = useT("common");
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [contextMode, setContextMode] = useState<MattermostContextMode | "unknown">("message");
+  const [lookbackHours, setLookbackHours] = useState(24);
+  const update = useMutation({
+    mutationFn: async (context: MattermostContextSettings) => {
+      const saved = await api.updateMattermostInstallation(wsId, installation.id, context);
+      if (
+        saved.id !== installation.id || saved.status !== "active" ||
+        saved.context?.mode !== context.mode ||
+        (context.mode === "channel" && saved.context.lookback_hours !== context.lookback_hours)
+      ) {
+        throw new Error(t(($) => $.mattermost.edit_failed_toast));
+      }
+      return saved;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: mattermostKeys.installations(wsId) });
+      toast.success(t(($) => $.mattermost.edit_success_toast));
+      setOpen(false);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : t(($) => $.mattermost.edit_failed_toast));
+    },
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (update.isPending) return;
+        if (value) {
+          setContextMode(installation.context?.mode ?? "message");
+          setLookbackHours(installation.context?.mode === "channel" ? installation.context.lookback_hours ?? 24 : 24);
+        }
+        setOpen(value);
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" size="sm" disabled={disabled} />}>
+        <Pencil className="h-3 w-3" />
+        {t(($) => $.mattermost.edit_button)}
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t(($) => $.mattermost.edit_dialog_title)}</DialogTitle>
+          <DialogDescription className="break-words">
+            {installation.bot_username ? `@${installation.bot_username} · ` : ""}
+            {installation.server_url}
+          </DialogDescription>
+        </DialogHeader>
+        <MattermostContextFields
+          contextMode={contextMode}
+          setContextMode={setContextMode}
+          lookbackHours={lookbackHours}
+          setLookbackHours={setLookbackHours}
+          disabled={update.isPending}
+        />
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={update.isPending}>
+            {common(($) => $.cancel)}
+          </Button>
+          <Button
+            size="sm"
+            disabled={update.isPending || contextMode === "unknown"}
+            aria-busy={update.isPending}
+            onClick={() => {
+              if (contextMode === "unknown") return;
+              update.mutate({
+                mode: contextMode,
+                ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
+              });
+            }}
+          >
+            {update.isPending && <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />}
+            {common(($) => $.save)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MattermostContextFields({
+  contextMode,
+  setContextMode,
+  lookbackHours,
+  setLookbackHours,
+  disabled,
+}: {
+  contextMode: MattermostContextMode | "unknown";
+  setContextMode: (mode: MattermostContextMode) => void;
+  lookbackHours: number;
+  setLookbackHours: (hours: number) => void;
+  disabled: boolean;
+}) {
+  const { t } = useT("settings");
+  const id = useId();
+  const contextOptions = [
+    { value: "message", label: t(($) => $.mattermost.context.message) },
+    { value: "thread", label: t(($) => $.mattermost.context.thread) },
+    { value: "channel", label: t(($) => $.mattermost.context.channel) },
+  ];
+  const periodOptions = [
+    { value: 1, label: t(($) => $.mattermost.context.hour) },
+    { value: 6, label: t(($) => $.mattermost.context.six_hours) },
+    { value: 24, label: t(($) => $.mattermost.context.day) },
+    { value: 72, label: t(($) => $.mattermost.context.three_days) },
+    { value: 168, label: t(($) => $.mattermost.context.week) },
+    { value: 720, label: t(($) => $.mattermost.context.month) },
+    { value: 1440, label: t(($) => $.mattermost.context.sixty_days) },
+    { value: 2160, label: t(($) => $.mattermost.context.ninety_days) },
+    { value: 8760, label: t(($) => $.mattermost.context.year) },
+    { value: 0, label: t(($) => $.mattermost.context.unlimited) },
+  ];
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${id}-mode`}>
+          {t(($) => $.mattermost.context.label)}
+        </Label>
+        <Select
+          items={contextOptions}
+          value={contextMode === "unknown" ? null : contextMode}
+          onValueChange={(value) => {
+            if (value === "message" || value === "thread" || value === "channel") {
+              setContextMode(value);
+            }
+          }}
+          disabled={disabled}
+        >
+          <SelectTrigger
+            id={`${id}-mode`}
+            className="w-full"
+            aria-describedby={contextMode === "message" || contextMode === "unknown"
+              ? `${id}-help`
+              : `${id}-help ${id}-notice`}
+          >
+            <SelectValue placeholder={t(($) => $.mattermost.context.unknown)} />
+          </SelectTrigger>
+          <SelectContent>
+            {contextOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p id={`${id}-help`} className="text-caption text-muted-foreground">
+          {t(($) => $.mattermost.context.help)}
+        </p>
+      </div>
+
+      {contextMode === "channel" && (
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-period`}>
+            {t(($) => $.mattermost.context.period)}
+          </Label>
+          <Select
+            items={periodOptions}
+            value={lookbackHours}
+            onValueChange={(value) => {
+              if (value !== null) setLookbackHours(value);
+            }}
+            disabled={disabled}
+          >
+            <SelectTrigger id={`${id}-period`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {periodOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {(contextMode === "thread" || contextMode === "channel") && (
+        <p id={`${id}-notice`} className="text-caption text-muted-foreground">
+          {t(($) => $.mattermost.context.notice)}
+        </p>
+      )}
+    </>
+  );
+}
+
 function MattermostContextSummary({ context }: { context?: MattermostInstallation["context"] }) {
   const { t } = useT("settings");
   const label =
     context?.mode === "unknown"
       ? t(($) => $.mattermost.context.unknown)
       : context?.mode === "channel"
-        ? t(($) => $.mattermost.context.channel_summary, { hours: context.lookback_hours })
+        ? context.lookback_hours === 0
+          ? t(($) => $.mattermost.context.channel_unlimited_summary)
+          : t(($) => $.mattermost.context.channel_summary, { hours: context.lookback_hours })
         : context?.mode === "thread"
           ? t(($) => $.mattermost.context.thread)
           : t(($) => $.mattermost.context.message);

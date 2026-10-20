@@ -49,11 +49,11 @@ You can connect multiple bots from the same or different servers to one workspac
 
 - **Current message only** (default): no extra Mattermost history is sent to the agent, including the thread root.
 - **Whole thread**: load the thread containing the request, up to that message. A top-level request has no earlier thread messages.
-- **Chat history**: load messages and replies from the current channel or direct message for the last **1 hour, 6 hours, 24 hours, 3 days, 7 days, or 30 days**, ending at the request.
+- **Chat history**: load messages and replies from the current channel or direct message for the last **1 hour, 6 hours, 24 hours, 3 days, 7 days, 30 days, 60 days, 90 days, or 1 year (365 days)**, ending at the request. **No limit** removes the date cutoff; the message, size, and read-budget limits below still apply.
 
 For a summary bot, select **Whole thread**, then mention it inside the discussion: `@summary summarize the decisions, action items, owners, and open questions`. Choose **Chat history** for summaries across discussions in the current channel. The adapter never follows a message URL to read a different channel.
 
-Selected history is saved with the request in Multica and sent to the agent's model, including other participants' messages. Existing Multica conversation history is separate: `/new` and `/clear` reset that conversation's context, but the configured Mattermost history can be loaded again on the next request. To change the selection, reconnect the bot from the agent's Integrations tab.
+Selected history is saved with the request in Multica and sent to the agent's model, including other participants' messages. Existing Multica conversation history is separate: `/new` and `/clear` reset that conversation's context, but the configured Mattermost history can be loaded again on the next request. To change the selection, choose **Edit** next to the connected bot in the agent's Integrations tab or **Settings → Messaging → Mattermost**, then save. No access token is needed. Changes apply automatically, usually within 30 seconds.
 
 History is text-only. It includes authors, timestamps, and post links, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. Files and images are not downloaded. More history increases model context usage.
 
@@ -74,6 +74,8 @@ Open a direct message with the bot and send text. No `@`-mention is required.
 ### Channels and group messages
 
 Add the bot to a channel, then `@`-mention it. Accepted messages continue the Multica conversation for that thread; unaddressed channel chatter is not collected.
+
+Sending only `@multica` also invokes the agent, with its configured instructions and selected context.
 
 A mention-free reply also reaches the bot when the thread's root post was written by the bot itself — so a conversation the bot started can continue without repeating its name. In a thread rooted by a person, mention the bot each time.
 

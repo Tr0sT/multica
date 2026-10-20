@@ -199,6 +199,61 @@ func TestMultipleBotsKeepIndependentAgentsAndContextDB(t *testing.T) {
 	}
 }
 
+func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
+	fx, q, agent := mattermostDBFixture(t)
+	svc, params := mattermostInstallHarness(t, fx, q, agent)
+	ctx := context.Background()
+	params.Context = ContextSettings{Mode: ContextChannel, LookbackHours: 72}
+	before, err := svc.Register(ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingID := fx.Insert(t, "channel_user_binding", dbfx.Cols{
+		"workspace_id": fx.WorkspaceID, "multica_user_id": fx.UserID, "installation_id": before.ID,
+		"channel_type": "mattermost", "channel_user_id": "external-user", "config": "{}",
+	})
+	chatID := fx.ChatSession(t, agent)
+	routeID := fx.Insert(t, "channel_chat_session_binding", dbfx.Cols{
+		"chat_session_id": chatID, "installation_id": before.ID, "channel_type": "mattermost",
+		"channel_chat_id": "room", "chat_type": "p2p", "config": "{}",
+	})
+	settings := ContextSettings{Mode: ContextChannel, LookbackHours: 720}
+	after, err := svc.UpdateContext(ctx, before.ID, before.WorkspaceID, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ID != before.ID || after.AgentID != before.AgentID || after.InstallerUserID != before.InstallerUserID ||
+		after.InstalledAt != before.InstalledAt || after.Status != "active" || DecodePublicConfig(after.Config).Context != settings {
+		t.Fatalf("context update changed installation identity: %+v", DecodePublicConfig(after.Config))
+	}
+	var original, updated installConfig
+	if err := json.Unmarshal(before.Config, &original); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(after.Config, &updated); err != nil {
+		t.Fatal(err)
+	}
+	original.Context = settings
+	if original != updated {
+		t.Fatal("context update changed credentials or bot identity")
+	}
+	if fx.Count(t, `SELECT count(*) FROM channel_user_binding WHERE id=$1`, bindingID) != 1 ||
+		fx.Count(t, `SELECT count(*) FROM channel_chat_session_binding WHERE id=$1`, routeID) != 1 ||
+		fx.Count(t, `SELECT count(*) FROM chat_session WHERE id=$1`, chatID) != 1 {
+		t.Fatal("context update removed a user binding, chat route or chat")
+	}
+	otherWorkspace := mmUUID(t, fx.Workspace(t, "Other workspace", "other-"+uuid.NewString()))
+	if _, err := svc.UpdateContext(ctx, before.ID, otherWorkspace, settings); !errors.Is(err, ErrInstallationNotFound) {
+		t.Fatalf("cross-workspace update was not rejected: %v", err)
+	}
+	if err := svc.Revoke(ctx, before.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateContext(ctx, before.ID, before.WorkspaceID, settings); !errors.Is(err, ErrInstallationNotFound) {
+		t.Fatalf("revoked installation was updated: %v", err)
+	}
+}
+
 func TestFailedSwapRollsBackBindingsDB(t *testing.T) {
 	fx, q, agent := mattermostDBFixture(t)
 	svc, params := mattermostInstallHarness(t, fx, q, agent)

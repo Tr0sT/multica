@@ -1176,6 +1176,10 @@
     "connect_failed_toast": "Could not connect the Telegram bot"
   },
   "mattermost": {
+    "edit_button": "Edit",
+    "edit_dialog_title": "Edit Mattermost integration",
+    "edit_success_toast": "Mattermost settings saved",
+    "edit_failed_toast": "Could not update Mattermost settings",
     "context": {
       "label": "History sent to agent",
       "message": "Current message only",
@@ -1189,6 +1193,11 @@
       "three_days": "Last 3 days",
       "week": "Last 7 days",
       "month": "Last 30 days",
+      "sixty_days": "Last 60 days",
+      "ninety_days": "Last 90 days",
+      "year": "Last year",
+      "unlimited": "No limit",
+      "channel_unlimited_summary": "Chat history, no date limit",
       "help": "Controls history loaded from Mattermost. The existing Multica conversation is kept.",
       "notice": "Other participants' messages are saved in Multica and sent to the agent's model. Text only, up to 1,000 posts / 128 KiB; incomplete history is marked.",
       "summary": "Context: {{selection}}",
