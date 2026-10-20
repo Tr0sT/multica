@@ -1,4 +1,5 @@
 export type MattermostContextMode = "message" | "thread" | "channel";
+export type MattermostAccessMode = "members" | "anyone";
 
 export interface MattermostContextSettings {
   mode: MattermostContextMode;
@@ -24,6 +25,7 @@ export interface MattermostInstallation {
   bot_user_id: string;
   /** The bot's Mattermost username (without the @). */
   bot_username: string;
+  access_mode?: MattermostAccessMode | "unknown";
   context?: {
     mode: MattermostContextMode | "unknown";
     lookback_hours?: number;
@@ -55,6 +57,12 @@ export interface RegisterMattermostRequest {
   server_url: string;
   access_token: string;
   context?: MattermostContextSettings;
+  access_mode?: MattermostAccessMode;
+}
+
+export interface UpdateMattermostInstallationRequest {
+  context?: MattermostContextSettings;
+  access_mode?: MattermostAccessMode;
 }
 
 /** Post-redemption echo: the Mattermost user id the token carried is now bound

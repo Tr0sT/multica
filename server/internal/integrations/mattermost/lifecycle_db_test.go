@@ -204,6 +204,7 @@ func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
 	svc, params := mattermostInstallHarness(t, fx, q, agent)
 	ctx := context.Background()
 	params.Context = ContextSettings{Mode: ContextChannel, LookbackHours: 72}
+	params.AccessMode = AccessAnyone
 	before, err := svc.Register(ctx, params)
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +219,7 @@ func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
 		"channel_chat_id": "room", "chat_type": "p2p", "config": "{}",
 	})
 	settings := ContextSettings{Mode: ContextChannel, LookbackHours: 720}
-	after, err := svc.UpdateContext(ctx, before.ID, before.WorkspaceID, settings)
+	after, err := svc.UpdateSettings(ctx, before.ID, before.WorkspaceID, SettingsUpdate{Context: &settings})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,19 +238,31 @@ func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
 	if original != updated {
 		t.Fatal("context update changed credentials or bot identity")
 	}
+	accessMode := AccessMembers
+	accessUpdated, err := svc.UpdateSettings(ctx, before.ID, before.WorkspaceID, SettingsUpdate{AccessMode: &accessMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(accessUpdated.Config, &updated); err != nil {
+		t.Fatal(err)
+	}
+	original.AccessMode = AccessMembers
+	if original != updated {
+		t.Fatal("access update changed history, credentials or bot identity")
+	}
 	if fx.Count(t, `SELECT count(*) FROM channel_user_binding WHERE id=$1`, bindingID) != 1 ||
 		fx.Count(t, `SELECT count(*) FROM channel_chat_session_binding WHERE id=$1`, routeID) != 1 ||
 		fx.Count(t, `SELECT count(*) FROM chat_session WHERE id=$1`, chatID) != 1 {
 		t.Fatal("context update removed a user binding, chat route or chat")
 	}
 	otherWorkspace := mmUUID(t, fx.Workspace(t, "Other workspace", "other-"+uuid.NewString()))
-	if _, err := svc.UpdateContext(ctx, before.ID, otherWorkspace, settings); !errors.Is(err, ErrInstallationNotFound) {
+	if _, err := svc.UpdateSettings(ctx, before.ID, otherWorkspace, SettingsUpdate{Context: &settings}); !errors.Is(err, ErrInstallationNotFound) {
 		t.Fatalf("cross-workspace update was not rejected: %v", err)
 	}
 	if err := svc.Revoke(ctx, before.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.UpdateContext(ctx, before.ID, before.WorkspaceID, settings); !errors.Is(err, ErrInstallationNotFound) {
+	if _, err := svc.UpdateSettings(ctx, before.ID, before.WorkspaceID, SettingsUpdate{Context: &settings}); !errors.Is(err, ErrInstallationNotFound) {
 		t.Fatalf("revoked installation was updated: %v", err)
 	}
 }

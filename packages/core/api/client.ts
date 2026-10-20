@@ -214,7 +214,7 @@ import type {
   MattermostInstallation,
   ListMattermostInstallationsResponse,
   RegisterMattermostRequest,
-  MattermostContextSettings,
+  UpdateMattermostInstallationRequest,
   RedeemMattermostBindingTokenResponse,
   MattermostBindingPreview,
   Squad,
@@ -5449,11 +5449,11 @@ export class ApiClient {
   async updateMattermostInstallation(
     workspaceId: string,
     installationId: string,
-    context: MattermostContextSettings,
+    settings: UpdateMattermostInstallationRequest,
   ): Promise<MattermostInstallation> {
     const raw = await this.fetch<unknown>(
       `/api/workspaces/${workspaceId}/mattermost/installations/${installationId}`,
-      { method: "PATCH", body: JSON.stringify({ context }) },
+      { method: "PATCH", body: JSON.stringify(settings) },
     );
     return parseWithFallback(raw, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
       endpoint: "PATCH /api/workspaces/:id/mattermost/installations/:installationId",

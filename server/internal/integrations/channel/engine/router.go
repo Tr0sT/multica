@@ -372,8 +372,9 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 	}
 
 	// 4b. Invoke permission (MUL-3963): the same verdict the web chat applies
-	//     before it opens a session. It judges the SENDER, never the installer
-	//     who owns a group's route, and it runs before anything is stored — so
+	//     before it opens a session. It judges the resolved authorization
+	//     principal; owning a group's route alone grants no access. It runs
+	//     before anything is stored — so
 	//     a refused turn reaches no Chat, no /issue, and no later run's context.
 	allowed, err := r.tasks.MemberMayInvokeAgent(ctx, inst.AgentID, identity.UserID)
 	if err != nil {

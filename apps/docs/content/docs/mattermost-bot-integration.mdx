@@ -39,11 +39,19 @@ Use a **bot account**, not a personal access token. Multica refuses a personal t
 1. In Multica, open **Agents**, select an agent, and open **Integrations**.
 2. Click **Connect Mattermost**.
 3. Paste your Mattermost server URL (for example `https://mattermost.example.com`) and the bot access token.
-4. Choose **History sent to agent** and, for **Chat history**, the period. Click **Connect**.
+4. Choose **Who can use this bot**.
+5. Choose **History sent to agent** and, for **Chat history**, the period. Click **Connect**.
 
 Multica calls your server to verify the token, confirms the account is a bot, encrypts the token, and opens one supervised WebSocket connection. A bot already connected to another agent or workspace must be disconnected there first.
 
 You can connect multiple bots from the same or different servers to one workspace. Each agent has its own bot token, connection, context setting, and conversation routes. One Mattermost bot can belong to only one agent, and each agent can have one Mattermost bot.
+
+### Who can use the bot
+
+- **Linked Multica workspace members** (default): requires account linking, current workspace membership, and permission to run the agent.
+- **Any Mattermost user**: accepts direct messages and addressed channel messages without a Multica account or account linking. Requests run on behalf of the bot installer, who must remain a workspace member with permission to run the agent. These users can use the agent’s tools and connected apps; the resulting Multica chats belong to the installer. No Multica accounts or memberships are created.
+
+Replies stay where the bot was invoked: in the direct conversation or the original channel thread. Direct conversations remain separate. Changing access mode applies to new requests without reconnecting the bot, and each mode keeps separate Multica conversation history. Owners and admins can change it with **Edit** beside the connected bot.
 
 ### Choose the context
 
@@ -58,6 +66,8 @@ Selected history is saved with the request in Multica and sent to the agent's mo
 History is text-only. It includes authors, timestamps, and post links, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. Files and images are not downloaded. More history increases model context usage.
 
 ## First use and account binding
+
+This account-linking flow applies only to **Linked Multica workspace members** mode.
 
 The first time a member messages the bot, it sends a single-use Multica account-binding link. Open it, sign in to the same Multica workspace, review and confirm the account link, then return to Mattermost and send the message again. The link expires after 15 minutes; message the bot again to get a new link.
 

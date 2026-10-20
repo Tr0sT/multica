@@ -2069,6 +2069,14 @@ describe("Telegram installation schemas", () => {
 // self-hosted, so a missing or malformed server URL must render as "not
 // connected" rather than as a row pointing nowhere.
 describe("Mattermost installation schemas", () => {
+  it("defaults missing access to members and preserves unsupported access as unknown", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).access_mode).toBe("members");
+    expect(MattermostInstallationSchema.parse({ id: "open", access_mode: "anyone" }).access_mode).toBe("anyone");
+    for (const access_mode of ["future-mode", null, true, 1, {}]) {
+      expect(MattermostInstallationSchema.parse({ id: "unknown", access_mode }).access_mode).toBe("unknown");
+    }
+  });
+
   it.each([0, 1440, 2160, 8760])("parses extended period %s without breaking older clients", (hours) => {
     const wire = { id: "i1", status: "active", context: { mode: "channel_extended", extended_lookback_hours: hours } };
     expect(MattermostInstallationSchema.parse(wire).context).toEqual({ mode: "channel", lookback_hours: hours });

@@ -139,19 +139,31 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 type identityResolver struct{ q *db.Queries }
 
 func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage) (engine.ResolvedIdentity, error) {
-	binding, err := r.q.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
-		InstallationID: inst.ID,
-		ChannelUserID:  msg.Source.SenderID,
-	})
+	if msg.Source.SenderID == "" {
+		return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
+	}
+	mode, err := installationAccessMode(inst)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
-		}
 		return engine.ResolvedIdentity{}, err
 	}
-	// Binding existence does not prove membership (no FK); re-check.
+	userID := inst.InstallerUserID
+	if mode == AccessMembers {
+		binding, err := r.q.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
+			InstallationID: inst.ID,
+			ChannelUserID:  msg.Source.SenderID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
+			}
+			return engine.ResolvedIdentity{}, err
+		}
+		userID = binding.MulticaUserID
+	}
+	// Anyone mode explicitly delegates the installer's access; the engine still
+	// checks that principal's agent permissions and records the Mattermost sender.
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      binding.MulticaUserID,
+		UserID:      userID,
 		WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -159,7 +171,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	return engine.ResolvedIdentity{UserID: binding.MulticaUserID}, nil
+	return engine.ResolvedIdentity{UserID: userID}, nil
 }
 
 // ---- dedup ----
@@ -215,6 +227,10 @@ type sessionBinder struct{ session chatSession }
 
 func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessionParams) (pgtype.UUID, error) {
 	bindingKey, config, _ := mattermostSessionRouting(p.Message)
+	bindingKey, err := sessionKeyForAccess(p.Installation, bindingKey)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
 	return r.session.EnsureSession(ctx, engine.EnsureSessionInput{
 		WorkspaceID:    p.Installation.WorkspaceID,
 		AgentID:        p.Installation.AgentID,
@@ -228,6 +244,10 @@ func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessio
 
 func (r *sessionBinder) StartSession(ctx context.Context, p engine.StartSessionParams) (engine.StartSessionResult, error) {
 	bindingKey, config, replyThread := mattermostSessionRouting(p.Message)
+	bindingKey, err := sessionKeyForAccess(p.Installation, bindingKey)
+	if err != nil {
+		return engine.StartSessionResult{}, err
+	}
 	result, err := r.session.StartSession(ctx, engine.StartSessionInput{
 		EnsureSessionInput: engine.EnsureSessionInput{
 			WorkspaceID: p.Installation.WorkspaceID, AgentID: p.Installation.AgentID,

@@ -276,10 +276,12 @@ export type {
 } from "./telegram";
 export type {
   MattermostContextMode,
+  MattermostAccessMode,
   MattermostContextSettings,
   MattermostInstallation,
   ListMattermostInstallationsResponse,
   RegisterMattermostRequest,
+  UpdateMattermostInstallationRequest,
   RedeemMattermostBindingTokenResponse,
   MattermostBindingPreview,
 } from "./mattermost";

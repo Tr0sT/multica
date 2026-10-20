@@ -63,7 +63,7 @@ type installQueries interface {
 	LockChannelInstallationAppIDSlot(ctx context.Context, arg db.LockChannelInstallationAppIDSlotParams) error
 	ClearChannelInstallationBotScopedRows(ctx context.Context, id pgtype.UUID) (db.ClearChannelInstallationBotScopedRowsRow, error)
 	RotateMattermostInstallationIdentity(ctx context.Context, arg db.RotateMattermostInstallationIdentityParams) (int64, error)
-	UpdateMattermostInstallationContext(ctx context.Context, arg db.UpdateMattermostInstallationContextParams) (db.ChannelInstallation, error)
+	UpdateMattermostInstallationSettings(ctx context.Context, arg db.UpdateMattermostInstallationSettingsParams) (db.ChannelInstallation, error)
 }
 
 type dbInstallQueries struct{ *db.Queries }
@@ -128,6 +128,7 @@ type RegisterParams struct {
 	ServerURL   string
 	AccessToken string
 	Context     ContextSettings
+	AccessMode  AccessMode
 }
 
 // Register installs a user-supplied Mattermost bot for an agent: canonicalize
@@ -137,6 +138,10 @@ type RegisterParams struct {
 // the composed server+bot key in the routing slot.
 func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.ChannelInstallation, error) {
 	settings, err := p.Context.normalized()
+	if err != nil {
+		return db.ChannelInstallation{}, err
+	}
+	accessMode, err := p.AccessMode.normalized()
 	if err != nil {
 		return db.ChannelInstallation{}, err
 	}
@@ -175,6 +180,7 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		BotUsername:          me.Username,
 		AccessTokenEncrypted: base64.StdEncoding.EncodeToString(sealed),
 		Context:              settings,
+		AccessMode:           accessMode,
 	})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost installation config: %w", err)
@@ -339,23 +345,47 @@ func (s *InstallService) GetInWorkspace(ctx context.Context, id, wsID pgtype.UUI
 	return inst, nil
 }
 
-func (s *InstallService) UpdateContext(ctx context.Context, id, wsID pgtype.UUID, settings ContextSettings) (db.ChannelInstallation, error) {
-	settings, err := settings.normalized()
-	if err != nil {
-		return db.ChannelInstallation{}, err
+type SettingsUpdate struct {
+	Context    *ContextSettings `json:"context,omitempty"`
+	AccessMode *AccessMode      `json:"access_mode,omitempty"`
+}
+
+func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUID, settings SettingsUpdate) (db.ChannelInstallation, error) {
+	if settings.Context == nil && settings.AccessMode == nil {
+		return db.ChannelInstallation{}, ErrInvalidContextSettings
+	}
+	if settings.Context != nil {
+		if settings.Context.Mode == "" {
+			return db.ChannelInstallation{}, ErrInvalidContextSettings
+		}
+		normalized, err := settings.Context.normalized()
+		if err != nil {
+			return db.ChannelInstallation{}, err
+		}
+		settings.Context = &normalized
+	}
+	if settings.AccessMode != nil {
+		if *settings.AccessMode == "" {
+			return db.ChannelInstallation{}, ErrInvalidAccessMode
+		}
+		normalized, err := settings.AccessMode.normalized()
+		if err != nil {
+			return db.ChannelInstallation{}, err
+		}
+		settings.AccessMode = &normalized
 	}
 	encoded, err := json.Marshal(settings)
 	if err != nil {
-		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost context: %w", err)
+		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost settings: %w", err)
 	}
-	row, err := s.q.UpdateMattermostInstallationContext(ctx, db.UpdateMattermostInstallationContextParams{
-		ID: id, WorkspaceID: wsID, Context: encoded,
+	row, err := s.q.UpdateMattermostInstallationSettings(ctx, db.UpdateMattermostInstallationSettingsParams{
+		ID: id, WorkspaceID: wsID, Settings: encoded,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.ChannelInstallation{}, ErrInstallationNotFound
 	}
 	if err != nil {
-		return db.ChannelInstallation{}, fmt.Errorf("update mattermost context: %w", err)
+		return db.ChannelInstallation{}, fmt.Errorf("update mattermost settings: %w", err)
 	}
 	return row, nil
 }

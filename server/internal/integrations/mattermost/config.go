@@ -57,6 +57,7 @@ type installConfig struct {
 	BotUsername          string          `json:"bot_username,omitempty"`
 	AccessTokenEncrypted string          `json:"access_token_encrypted"`
 	Context              ContextSettings `json:"context"`
+	AccessMode           AccessMode      `json:"access_mode"`
 }
 
 // credentials is the decoded, decrypted form the transports run on. The
@@ -207,6 +208,7 @@ type PublicConfig struct {
 	BotUserID   string
 	BotUsername string
 	Context     ContextSettings
+	AccessMode  AccessMode
 }
 
 // DecodePublicConfig extracts the display-safe fields from a stored config
@@ -221,11 +223,16 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	if err != nil {
 		settings = ContextSettings{Mode: "unknown"}
 	}
+	accessMode, err := cfg.AccessMode.normalized()
+	if err != nil {
+		accessMode = "unknown"
+	}
 	return PublicConfig{
 		ServerURL:   cfg.ServerURL,
 		BotUserID:   cfg.BotUserID,
 		BotUsername: cfg.BotUsername,
 		Context:     settings,
+		AccessMode:  accessMode,
 	}
 }
 

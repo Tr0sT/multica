@@ -1237,7 +1237,15 @@
     "connect_cancel": "キャンセル",
     "connect_success_toast": "Mattermost ボットを接続しました",
     "connect_failed_toast": "Mattermost ボットを接続できませんでした",
-    "not_enabled_description": "Multica の運用担当者に Mattermost の有効化とサーバーの HTTPS URL の許可を依頼してください。"
+    "not_enabled_description": "Multica の運用担当者に Mattermost の有効化とサーバーの HTTPS URL の許可を依頼してください。",
+    "access": {
+      "label": "このボットを利用できるユーザー",
+      "members": "アカウント連携済みの Multica ワークスペースメンバー",
+      "anyone": "すべての Mattermost ユーザー",
+      "unknown": "不明なアクセスモード",
+      "notice": "Multica アカウントは不要です。リクエストはボットを接続したユーザーに代わって実行され、エージェントのツールと接続済みアプリを利用できます。",
+      "summary": "アクセス：{{selection}}"
+    }
   },
   "repositories": {
     "section_title": "リポジトリ",

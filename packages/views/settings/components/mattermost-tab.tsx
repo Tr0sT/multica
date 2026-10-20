@@ -43,6 +43,7 @@ import { useActorName } from "@multica/core/workspace/hooks";
 import { mattermostInstallationsOptions, mattermostKeys } from "@multica/core/mattermost";
 import { api } from "@multica/core/api";
 import type {
+  MattermostAccessMode,
   MattermostContextMode,
   MattermostContextSettings,
   MattermostInstallation,
@@ -227,6 +228,7 @@ function InstallationRow({
             <p className="truncate text-micro text-muted-foreground">{installation.server_url}</p>
           ) : null}
           <MattermostContextSummary context={installation.context} />
+          <MattermostAccessSummary accessMode={installation.access_mode} />
           <p className="text-micro text-muted-foreground">
             {t(($) => $.mattermost.installed_at_label, {
               when: new Date(installation.installed_at).toLocaleString(),
@@ -287,6 +289,7 @@ export function MattermostAgentBindButton({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [serverUrl, setServerUrl] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [accessMode, setAccessMode] = useState<MattermostAccessMode>("members");
   const [contextMode, setContextMode] = useState<MattermostContextMode>("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const [submitting, setSubmitting] = useState(false);
@@ -327,6 +330,7 @@ export function MattermostAgentBindButton({
     setDialogOpen(false);
     setServerUrl("");
     setAccessToken("");
+    setAccessMode("members");
     setContextMode("message");
     setLookbackHours(24);
   }
@@ -340,12 +344,13 @@ export function MattermostAgentBindButton({
       const installation = await api.registerMattermostBot(wsId, agentId, {
         server_url,
         access_token,
+        access_mode: accessMode,
         context: {
           mode: contextMode,
           ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
         },
       });
-      if (!installation.id || installation.status !== "active") {
+      if (!installation.id || installation.status !== "active" || (installation.access_mode ?? "members") !== accessMode) {
         throw new Error("Mattermost connection returned an invalid installation");
       }
       // The mattermost_installation realtime event also refreshes this list,
@@ -355,6 +360,7 @@ export function MattermostAgentBindButton({
       setDialogOpen(false);
       setServerUrl("");
       setAccessToken("");
+      setAccessMode("members");
       setContextMode("message");
       setLookbackHours(24);
     } catch (e) {
@@ -447,6 +453,8 @@ export function MattermostAgentBindButton({
               disabled={submitting}
             />
           </div>
+
+          <MattermostAccessFields accessMode={accessMode} setAccessMode={setAccessMode} disabled={submitting} />
 
           <MattermostContextFields
             contextMode={contextMode}
@@ -575,6 +583,7 @@ function MattermostAgentBotConnectedBadge({
       </div>
 
       <MattermostContextSummary context={installation.context} />
+      <MattermostAccessSummary accessMode={installation.access_mode} />
 
       {installation.server_url && (
         <button
@@ -631,14 +640,17 @@ function MattermostEditButton({
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [accessMode, setAccessMode] = useState<MattermostAccessMode | "unknown">("members");
   const [contextMode, setContextMode] = useState<MattermostContextMode | "unknown">("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const update = useMutation({
-    mutationFn: async (context: MattermostContextSettings) => {
-      const saved = await api.updateMattermostInstallation(wsId, installation.id, context);
+    mutationFn: async (settings: { context: MattermostContextSettings; access_mode: MattermostAccessMode }) => {
+      const { context } = settings;
+      const saved = await api.updateMattermostInstallation(wsId, installation.id, settings);
       if (
         saved.id !== installation.id || saved.status !== "active" ||
         saved.context?.mode !== context.mode ||
+        (saved.access_mode ?? "members") !== settings.access_mode ||
         (context.mode === "channel" && saved.context.lookback_hours !== context.lookback_hours)
       ) {
         throw new Error(t(($) => $.mattermost.edit_failed_toast));
@@ -661,6 +673,7 @@ function MattermostEditButton({
       onOpenChange={(value) => {
         if (update.isPending) return;
         if (value) {
+          setAccessMode(installation.access_mode ?? "members");
           setContextMode(installation.context?.mode ?? "message");
           setLookbackHours(installation.context?.mode === "channel" ? installation.context.lookback_hours ?? 24 : 24);
         }
@@ -679,6 +692,7 @@ function MattermostEditButton({
             {installation.server_url}
           </DialogDescription>
         </DialogHeader>
+        <MattermostAccessFields accessMode={accessMode} setAccessMode={setAccessMode} disabled={update.isPending} />
         <MattermostContextFields
           contextMode={contextMode}
           setContextMode={setContextMode}
@@ -692,13 +706,16 @@ function MattermostEditButton({
           </Button>
           <Button
             size="sm"
-            disabled={update.isPending || contextMode === "unknown"}
+            disabled={update.isPending || contextMode === "unknown" || accessMode === "unknown"}
             aria-busy={update.isPending}
             onClick={() => {
-              if (contextMode === "unknown") return;
+              if (contextMode === "unknown" || accessMode === "unknown") return;
               update.mutate({
-                mode: contextMode,
-                ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
+                access_mode: accessMode,
+                context: {
+                  mode: contextMode,
+                  ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
+                },
               });
             }}
           >
@@ -709,6 +726,64 @@ function MattermostEditButton({
       </DialogContent>
     </Dialog>
   );
+}
+
+function MattermostAccessFields({
+  accessMode,
+  setAccessMode,
+  disabled,
+}: {
+  accessMode: MattermostAccessMode | "unknown";
+  setAccessMode: (mode: MattermostAccessMode) => void;
+  disabled: boolean;
+}) {
+  const { t } = useT("settings");
+  const id = useId();
+  const options = [
+    { value: "members", label: t(($) => $.mattermost.access.members) },
+    { value: "anyone", label: t(($) => $.mattermost.access.anyone) },
+  ];
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={`${id}-access`}>{t(($) => $.mattermost.access.label)}</Label>
+      <Select
+        items={options}
+        value={accessMode === "unknown" ? null : accessMode}
+        onValueChange={(value) => {
+          if (value === "members" || value === "anyone") setAccessMode(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id={`${id}-access`}
+          className="w-full"
+          aria-describedby={accessMode === "anyone" ? `${id}-notice` : undefined}
+        >
+          <SelectValue placeholder={t(($) => $.mattermost.access.unknown)} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {accessMode === "anyone" && (
+        <p id={`${id}-notice`} className="text-caption text-muted-foreground">
+          {t(($) => $.mattermost.access.notice)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MattermostAccessSummary({ accessMode }: { accessMode?: MattermostInstallation["access_mode"] }) {
+  const { t } = useT("settings");
+  const label = accessMode === "anyone"
+    ? t(($) => $.mattermost.access.anyone)
+    : accessMode === "unknown"
+      ? t(($) => $.mattermost.access.unknown)
+      : t(($) => $.mattermost.access.members);
+  return <p className="text-caption text-muted-foreground">{t(($) => $.mattermost.access.summary, { selection: label })}</p>;
 }
 
 function MattermostContextFields({

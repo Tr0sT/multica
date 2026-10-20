@@ -1237,7 +1237,15 @@
     "connect_cancel": "取消",
     "connect_success_toast": "已连接 Mattermost 机器人",
     "connect_failed_toast": "连接 Mattermost 机器人失败",
-    "not_enabled_description": "请联系 Multica 运维人员启用 Mattermost，并批准服务器的 HTTPS 地址。"
+    "not_enabled_description": "请联系 Multica 运维人员启用 Mattermost，并批准服务器的 HTTPS 地址。",
+    "access": {
+      "label": "谁可以使用此机器人",
+      "members": "已绑定账号的 Multica 工作区成员",
+      "anyone": "任何 Mattermost 用户",
+      "unknown": "未知访问模式",
+      "notice": "无需 Multica 账号。请求以机器人安装者的身份运行，可以使用智能体的工具和已连接应用。",
+      "summary": "访问权限：{{selection}}"
+    }
   },
   "repositories": {
     "section_title": "代码仓库",

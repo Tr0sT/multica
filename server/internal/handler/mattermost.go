@@ -27,6 +27,7 @@ type MattermostInstallationResponse struct {
 	BotUserID       string                    `json:"bot_user_id"`
 	BotUsername     string                    `json:"bot_username"`
 	Context         MattermostContextResponse `json:"context"`
+	AccessMode      mattermost.AccessMode     `json:"access_mode"`
 	InstallerUserID string                    `json:"installer_user_id"`
 	Status          string                    `json:"status"`
 	InstalledAt     string                    `json:"installed_at"`
@@ -55,6 +56,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		BotUserID:       info.BotUserID,
 		BotUsername:     info.BotUsername,
 		Context:         context,
+		AccessMode:      info.AccessMode,
 		InstallerUserID: uuidToString(row.InstallerUserID),
 		Status:          row.Status,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
@@ -103,6 +105,7 @@ type RegisterMattermostRequest struct {
 	ServerURL   string                     `json:"server_url"`
 	AccessToken string                     `json:"access_token"`
 	Context     mattermost.ContextSettings `json:"context"`
+	AccessMode  mattermost.AccessMode      `json:"access_mode"`
 }
 
 // RegisterMattermostBot
@@ -155,10 +158,11 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 		ServerURL:   body.ServerURL,
 		AccessToken: body.AccessToken,
 		Context:     body.Context,
+		AccessMode:  body.AccessMode,
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, mattermost.ErrInvalidServerURL):
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -208,21 +212,19 @@ func (h *Handler) UpdateMattermostInstallation(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	var body struct {
-		Context *mattermost.ContextSettings `json:"context"`
-	}
+	var body mattermost.SettingsUpdate
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.Context == nil || body.Context.Mode == "" {
-		writeError(w, http.StatusBadRequest, "context.mode is required")
+	if body.Context == nil && body.AccessMode == nil {
+		writeError(w, http.StatusBadRequest, "context or access_mode is required")
 		return
 	}
-	row, err := h.MattermostInstall.UpdateContext(r.Context(), instUUID, wsUUID, *body.Context)
+	row, err := h.MattermostInstall.UpdateSettings(r.Context(), instUUID, wsUUID, body)
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, mattermost.ErrInstallationNotFound):
 			writeError(w, http.StatusNotFound, "active mattermost installation not found")

@@ -1243,7 +1243,15 @@
     "connect_cancel": "Cancel",
     "connect_success_toast": "Mattermost bot connected",
     "connect_failed_toast": "Could not connect the Mattermost bot",
-    "not_enabled_description": "Ask your Multica operator to enable Mattermost and approve your server’s HTTPS URL."
+    "not_enabled_description": "Ask your Multica operator to enable Mattermost and approve your server’s HTTPS URL.",
+    "access": {
+      "label": "Who can use this bot",
+      "members": "Linked Multica workspace members",
+      "anyone": "Any Mattermost user",
+      "unknown": "Unknown access mode",
+      "notice": "No Multica account is required. Requests run on behalf of the bot installer and can use the agent's tools and connected apps.",
+      "summary": "Access: {{selection}}"
+    }
   },
   "repositories": {
     "section_title": "Repositories",

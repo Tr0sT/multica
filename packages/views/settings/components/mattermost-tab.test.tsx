@@ -65,8 +65,8 @@ const connectedInstallation = {
 describe("Mattermost settings editing", () => {
   beforeEach(() => {
     mockList.mockResolvedValue({ configured: true, installations: [connectedInstallation] });
-    mockUpdate.mockImplementation(async (_workspaceId, _installationId, context) => {
-      const updated = { ...connectedInstallation, context };
+    mockUpdate.mockImplementation(async (_workspaceId, _installationId, settings) => {
+      const updated = { ...connectedInstallation, ...settings };
       mockList.mockResolvedValue({ configured: true, installations: [updated] });
       return updated;
     });
@@ -83,7 +83,7 @@ describe("Mattermost settings editing", () => {
     await user.click(await screen.findByRole("option", { name: "Last 30 days" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
-      mode: "channel", lookback_hours: 720,
+      access_mode: "members", context: { mode: "channel", lookback_hours: 720 },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await screen.findByText("Context: Chat history, last 720 hours")).toBeInTheDocument();
@@ -97,7 +97,9 @@ describe("Mattermost settings editing", () => {
     await user.click(screen.getByRole("combobox", { name: "History sent to agent" }));
     await user.click(await screen.findByRole("option", { name: "Whole thread" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", { mode: "thread" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
+      access_mode: "members", context: { mode: "thread" },
+    }));
   });
 
   it.each([
@@ -113,7 +115,7 @@ describe("Mattermost settings editing", () => {
     await user.click(await screen.findByRole("option", { name: label }));
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
-      mode: "channel", lookback_hours: hours,
+      access_mode: "members", context: { mode: "channel", lookback_hours: hours },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     if (hours === 0) {
@@ -201,6 +203,50 @@ describe("Mattermost settings editing", () => {
     expect(screen.getByRole("combobox", { name: "History sent to agent" })).toHaveTextContent("Unknown history setting");
   });
 
+  it.each([false, true])("saves public access and restores it on reopen (workspace settings: %s)", async (workspaceSettings) => {
+    const user = userEvent.setup();
+    renderConnect(workspaceSettings);
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }))
+      .toHaveTextContent(enSettings.mattermost.access.members);
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.anyone }));
+    expect(screen.getByText(enSettings.mattermost.access.notice)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
+      access_mode: "anyone", context: connectedInstallation.context,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }))
+      .toHaveTextContent(enSettings.mattermost.access.anyone);
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
+  it("does not report public access enabled when the server ignored it", async () => {
+    mockUpdate.mockResolvedValue(connectedInstallation);
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.anyone }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith(enSettings.mattermost.edit_failed_toast));
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
+
+  it("requires a choice for an unknown server access mode", async () => {
+    mockList.mockResolvedValue({ configured: true, installations: [
+      { ...connectedInstallation, access_mode: "unknown" },
+    ] });
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }))
+      .toHaveTextContent(enSettings.mattermost.access.unknown);
+  });
+
   it.each([false, true])("hides editing from members (workspace settings: %s)", async (workspaceSettings) => {
     role.current = "member";
     renderConnect(workspaceSettings);
@@ -210,6 +256,24 @@ describe("Mattermost settings editing", () => {
 });
 
 describe("Mattermost context selection", () => {
+  it("can connect a new bot with public access", async () => {
+    mockRegister.mockResolvedValue({ id: "new-installation", status: "active", access_mode: "anyone" });
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByTestId("mattermost-agent-connect"));
+    await user.type(screen.getByLabelText(enSettings.mattermost.server_url_label), "https://chat.test");
+    await user.type(screen.getByLabelText(enSettings.mattermost.access_token_label), "token");
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.anyone }));
+    expect(screen.getByText(enSettings.mattermost.access.notice)).toBeVisible();
+    await user.click(screen.getByTestId("mattermost-connect-submit"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("workspace-1", "agent-2", {
+      server_url: "https://chat.test", access_token: "token",
+      access_mode: "anyone", context: { mode: "message" },
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it.each<{ mode: MattermostContextMode; label: string }>([
     { mode: "message", label: "Current message only" },
     { mode: "thread", label: "Whole thread" },
@@ -234,6 +298,7 @@ describe("Mattermost context selection", () => {
     await user.click(screen.getByTestId("mattermost-connect-submit"));
     await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("workspace-1", "agent-2", {
       server_url: "https://chat.test", access_token: "bot-two-token",
+      access_mode: "members",
       context: { mode, ...(mode === "channel" ? { lookback_hours: 0 } : {}) },
     }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

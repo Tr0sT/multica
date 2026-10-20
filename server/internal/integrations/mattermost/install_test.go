@@ -7,18 +7,19 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 type contextUpdateQueries struct {
 	installQueries
-	params db.UpdateMattermostInstallationContextParams
+	params db.UpdateMattermostInstallationSettingsParams
 	row    db.ChannelInstallation
 	err    error
 }
 
-func (q *contextUpdateQueries) UpdateMattermostInstallationContext(_ context.Context, params db.UpdateMattermostInstallationContextParams) (db.ChannelInstallation, error) {
+func (q *contextUpdateQueries) UpdateMattermostInstallationSettings(_ context.Context, params db.UpdateMattermostInstallationSettingsParams) (db.ChannelInstallation, error) {
 	q.params = params
 	return q.row, q.err
 }
@@ -29,15 +30,15 @@ func TestUpdateContextScopesWrite(t *testing.T) {
 	q := &contextUpdateQueries{row: db.ChannelInstallation{ID: id, WorkspaceID: wsID}}
 	service := &InstallService{q: q}
 	settings := ContextSettings{Mode: ContextChannel, LookbackHours: 720}
-	row, err := service.UpdateContext(context.Background(), id, wsID, settings)
+	row, err := service.UpdateSettings(context.Background(), id, wsID, SettingsUpdate{Context: &settings})
 	if err != nil || row.ID != id || row.WorkspaceID != wsID {
 		t.Fatalf("update: row=%+v err=%v", row, err)
 	}
 	if q.params.ID != id || q.params.WorkspaceID != wsID {
 		t.Fatal("update lost installation or workspace scope")
 	}
-	var got ContextSettings
-	if err := json.Unmarshal(q.params.Context, &got); err != nil || got != settings {
+	var got SettingsUpdate
+	if err := json.Unmarshal(q.params.Settings, &got); err != nil || got.Context == nil || *got.Context != settings || got.AccessMode != nil {
 		t.Fatalf("persisted context = %+v, err=%v", got, err)
 	}
 }
@@ -48,8 +49,8 @@ func TestUpdateContextRejectsInvalidSettingsBeforeWriting(t *testing.T) {
 		{Mode: "unknown"}, {Mode: ContextChannel, LookbackHours: 4},
 		{Mode: ContextThread, LookbackHours: 72},
 	} {
-		if _, err := service.UpdateContext(context.Background(), mmUUID(t, "11111111-1111-4111-8111-111111111111"),
-			mmUUID(t, "22222222-2222-4222-8222-222222222222"), settings); !errors.Is(err, ErrInvalidContextSettings) {
+		if _, err := service.UpdateSettings(context.Background(), mmUUID(t, "11111111-1111-4111-8111-111111111111"),
+			mmUUID(t, "22222222-2222-4222-8222-222222222222"), SettingsUpdate{Context: &settings}); !errors.Is(err, ErrInvalidContextSettings) {
 			t.Fatalf("invalid settings %+v accepted: %v", settings, err)
 		}
 	}
@@ -58,7 +59,7 @@ func TestUpdateContextRejectsInvalidSettingsBeforeWriting(t *testing.T) {
 func TestUpdateContextReportsMissingInstallationsAndWriteFailures(t *testing.T) {
 	for _, cause := range []error{pgx.ErrNoRows, errors.New("database unavailable")} {
 		q := &contextUpdateQueries{err: cause}
-		_, err := (&InstallService{q: q}).UpdateContext(context.Background(), q.row.ID, q.row.WorkspaceID, ContextSettings{Mode: ContextMessage})
+		_, err := (&InstallService{q: q}).UpdateSettings(context.Background(), q.row.ID, q.row.WorkspaceID, SettingsUpdate{Context: &ContextSettings{Mode: ContextMessage}})
 		want := cause
 		if errors.Is(cause, pgx.ErrNoRows) {
 			want = ErrInstallationNotFound
@@ -66,5 +67,21 @@ func TestUpdateContextReportsMissingInstallationsAndWriteFailures(t *testing.T) 
 		if !errors.Is(err, want) {
 			t.Fatalf("error = %v, want %v", err, want)
 		}
+	}
+}
+
+func TestUpdateAccessValidatesBeforeWriting(t *testing.T) {
+	for _, mode := range []AccessMode{"", "unknown", "everyone"} {
+		if _, err := (&InstallService{}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, SettingsUpdate{AccessMode: &mode}); !errors.Is(err, ErrInvalidAccessMode) {
+			t.Fatalf("invalid access %q accepted: %v", mode, err)
+		}
+	}
+	mode := AccessAnyone
+	q := &contextUpdateQueries{}
+	if _, err := (&InstallService{q: q}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, SettingsUpdate{AccessMode: &mode}); err != nil {
+		t.Fatal(err)
+	}
+	if string(q.params.Settings) != `{"access_mode":"anyone"}` {
+		t.Fatalf("access-only update overwrote other settings: %s", q.params.Settings)
 	}
 }

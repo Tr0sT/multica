@@ -24,11 +24,28 @@ func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
 		{validID, validID, `{"context":{}}`},
 		{validID, validID, `{"context":{"mode":"unknown"}}`},
 		{validID, validID, `{"context":{"mode":"channel","lookback_hours":4}}`},
+		{validID, validID, `{"access_mode":"unknown"}`},
+		{validID, validID, `{"access_mode":""}`},
+		{validID, validID, `{"access_mode":true}`},
+		{validID, validID, `{"access_mode":null}`},
 	} {
 		r := testutil.JSONRequest(http.MethodPatch, "/", tc.body)
 		testutil.WithHeaders(r, "X-User-ID", validID)
 		r = testutil.WithURLParams(r, "id", tc.workspace, "installationId", tc.installation)
 		testutil.Call(t, h.UpdateMattermostInstallation, r).Want(http.StatusBadRequest)
+	}
+}
+
+func TestMattermostAccessResponse(t *testing.T) {
+	for _, tc := range []struct{ config, want string }{
+		{`{}`, "members"},
+		{`{"access_mode":"anyone"}`, "anyone"},
+		{`{"access_mode":"future-mode"}`, "unknown"},
+	} {
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)})
+		if string(response.AccessMode) != tc.want {
+			t.Fatalf("access for %s = %s, want %s", tc.config, response.AccessMode, tc.want)
+		}
 	}
 }
 

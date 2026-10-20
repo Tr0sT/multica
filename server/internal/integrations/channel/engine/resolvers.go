@@ -97,7 +97,8 @@ type ResolvedInstallation struct {
 	Platform        any
 }
 
-// ResolvedIdentity is the sender mapped to a Multica user.
+// ResolvedIdentity is the sender's Multica authorization principal. An adapter
+// may delegate an explicit public-access grant, but must verify its principal.
 type ResolvedIdentity struct {
 	UserID pgtype.UUID
 }

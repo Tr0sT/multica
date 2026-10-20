@@ -1,6 +1,6 @@
--- name: UpdateMattermostInstallationContext :one
+-- name: UpdateMattermostInstallationSettings :one
 UPDATE channel_installation
-SET config = jsonb_set(config, '{context}', @context::jsonb),
+SET config = config || @settings::jsonb,
     updated_at = now()
 WHERE id = @id AND workspace_id = @workspace_id
   AND channel_type = 'mattermost' AND status = 'active'
