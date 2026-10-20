@@ -693,6 +693,10 @@ func buildChatPrompt(task Task) string {
 		fmt.Fprintf(&b, "Reply to %s with the final outcome only. Do NOT narrate planned or in-progress steps (\"我先读取…\"); completed actions are part of the outcome.\n", platform)
 		b.WriteString("\n")
 	}
+	if task.ChatChannelType == execenv.ChannelTypeMattermost {
+		// Per-turn guidance also reaches resumed bot sessions with a cached brief.
+		b.WriteString("Repository convention: task references usually appear in branch names and commit messages. When reviewing changes, extract task keys/numbers (for example ABC-123 or #123), link related branches and commits to the task, and use available issue-tracker tools to read its description and current status. Preserve the full project key; a bare number needs its repository/tracker context. Verify the changes from diffs: a branch name or commit alone does not prove completion or deployment. If the tracker is unavailable, say what you could not verify rather than inventing task details.\n\n")
+	}
 	if task.Agent != nil && len(task.Agent.Skills) > 0 {
 		refs := ExtractSlashSkills(task.ChatMessage)
 		if len(refs) > 0 {

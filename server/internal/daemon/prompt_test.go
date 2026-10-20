@@ -642,6 +642,26 @@ func TestBuildChatPromptNoNarrationOnEveryChannel(t *testing.T) {
 	}
 }
 
+func TestMattermostPromptConnectsGitHistoryToTasks(t *testing.T) {
+	for _, channelType := range []string{execenv.ChannelTypeMattermost, execenv.ChannelTypeSlack, ""} {
+		for _, chatType := range []string{execenv.ChatTypeP2P, execenv.ChatTypeGroup} {
+			out := buildChatPrompt(Task{ChatChannelType: channelType, ChatType: chatType, ChatMessage: "Review recent changes."})
+			for _, rule := range []string{
+				"branch names and commit messages",
+				"full project key",
+				"issue-tracker tools",
+				"diffs",
+				"does not prove completion",
+				"tracker is unavailable",
+			} {
+				if strings.Contains(out, rule) != (channelType == execenv.ChannelTypeMattermost) {
+					t.Fatalf("channel=%q audience=%q: Git task guidance %q missing or leaked to another surface", channelType, chatType, rule)
+				}
+			}
+		}
+	}
+}
+
 // TestBuildChatPromptTwoLayerChannelPolicy pins the two INDEPENDENT axes of the
 // chat channel policy (MUL-4899). Collapsing them into one condition is exactly
 // the bug this matrix exists to catch:
