@@ -16,7 +16,8 @@ import (
 // This file is the minimal Mattermost REST surface the adapter needs:
 // GET /users/me (install-time validation and the bot identity),
 // GET /posts/{id} (thread-root authorship for group addressing),
-// POST /posts (outbound), PUT /posts/{id} (reserved for a future streaming
+// POST /files (reply attachments), POST /posts (outbound),
+// PUT /posts/{id} (reserved for a future streaming
 // edit). It is a thin hand-rolled client over net/http — the Mattermost API is
 // plain JSON-over-HTTP with a bearer token, so no SDK dependency is warranted.
 
@@ -113,13 +114,17 @@ func (c *restClient) do(ctx context.Context, method, path string, body any, out 
 		}
 		reader = bytes.NewReader(buf)
 	}
+	return c.doReader(ctx, method, path, "application/json", reader, out)
+}
+
+func (c *restClient) doReader(ctx context.Context, method, path, contentType string, reader io.Reader, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+apiPath+path, reader)
 	if err != nil {
 		return fmt.Errorf("mattermost: build %s %s request: %w", method, path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if reader != nil {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -271,6 +276,25 @@ func (c *restClient) CreatePost(ctx context.Context, p Post) (Post, error) {
 	var created Post
 	err := c.do(ctx, http.MethodPost, "/posts", p, &created)
 	return created, err
+}
+
+// UploadFile stores one file; it becomes visible in the channel only when a
+// subsequent CreatePost includes the returned ID.
+func (c *restClient) UploadFile(ctx context.Context, channelID, filename string, data []byte) (string, error) {
+	var uploaded struct {
+		FileInfos []struct {
+			ID string `json:"id"`
+		} `json:"file_infos"`
+	}
+	query := url.Values{"channel_id": {channelID}, "filename": {filename}}
+	if err := c.doReader(ctx, http.MethodPost, "/files?"+query.Encode(),
+		"application/octet-stream", bytes.NewReader(data), &uploaded); err != nil {
+		return "", err
+	}
+	if len(uploaded.FileInfos) != 1 || uploaded.FileInfos[0].ID == "" {
+		return "", errors.New("mattermost: invalid file upload acknowledgement")
+	}
+	return uploaded.FileInfos[0].ID, nil
 }
 
 // UpdatePost replaces a post's text. Not called in v1 — it is the primitive a

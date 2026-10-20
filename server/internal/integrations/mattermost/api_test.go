@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -206,5 +207,59 @@ func TestRESTClientGetPost(t *testing.T) {
 	}
 	if got.UserID != "bot1" {
 		t.Errorf("author = %q, want bot1", got.UserID)
+	}
+}
+
+func TestRESTClientUploadFile(t *testing.T) {
+	data := []byte{0, 1, 0xff, '\n'}
+	const filename = "схема & report.png"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/subpath"+apiPath+"/files" ||
+			r.URL.Query().Get("channel_id") != "room" || r.URL.Query().Get("filename") != filename {
+			t.Errorf("unexpected upload request: %s %s", r.Method, r.URL)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" || r.Header.Get("Content-Type") != "application/octet-stream" {
+			t.Error("upload headers missing")
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil || string(body) != string(data) {
+			t.Errorf("uploaded bytes = %v, %v", body, err)
+		}
+		_, _ = io.WriteString(w, `{"file_infos":[{"id":"file-1"}]}`)
+	}))
+	defer srv.Close()
+	id, err := newRESTClient(srv.URL+"/subpath", "test-token", srv.Client()).UploadFile(context.Background(), "room", filename, data)
+	if err != nil || id != "file-1" {
+		t.Fatalf("UploadFile = %q, %v", id, err)
+	}
+}
+
+func TestRESTClientUploadRejectsInvalidAcknowledgements(t *testing.T) {
+	for _, body := range []string{`{}`, `{"file_infos":[]}`, `{"file_infos":[{}]}`, `{"file_infos":[{"id":"a"},{"id":"b"}]}`, `not json`} {
+		t.Run(body, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			if _, err := newRESTClient(srv.URL, "test-token", srv.Client()).UploadFile(context.Background(), "room", "file.txt", []byte("hello")); err == nil {
+				t.Fatal("malformed upload response accepted")
+			}
+		})
+	}
+}
+
+func TestRESTClientUploadRefusesRedirects(t *testing.T) {
+	var leaked bool
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = true
+	}))
+	defer elsewhere.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	_, err := newRESTClient(srv.URL, "test-token", nil).UploadFile(context.Background(), "room", "secret.txt", []byte("private"))
+	if statusOf(err) != http.StatusTemporaryRedirect || leaked {
+		t.Fatalf("redirect result = %v, leaked = %v", err, leaked)
 	}
 }

@@ -684,6 +684,20 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 		wantPhrases   []string
 	}{
 		{
+			name:          "mattermost with storage: upload and history",
+			channelType:   execenv.ChannelTypeMattermost,
+			deliversFiles: true,
+			wantUpload:    true,
+			wantHistory:   true,
+			wantPhrases:   []string{"sends it into the Mattermost conversation as a separate message"},
+		},
+		{
+			name:        "mattermost without storage: text only",
+			channelType: execenv.ChannelTypeMattermost,
+			wantHistory: true,
+			wantPhrases: []string{"delivered to Mattermost as text"},
+		},
+		{
 			name:        "direct chat: upload, no history",
 			channelType: "",
 			wantUpload:  true,

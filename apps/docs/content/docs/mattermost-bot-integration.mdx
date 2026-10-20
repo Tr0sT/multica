@@ -95,7 +95,9 @@ Examples use `@multica`; replace it with your bot’s username. Include the ment
 
 The bot replies in the thread the request came from, renders the agent's Markdown natively, and splits long replies under the server's maximum post size. The reply is posted once the agent finishes rather than streamed.
 
-This version accepts text only. A post that carries text plus an attachment is handled as text. A post with only files, images, or other non-text content receives a clear unsupported-message response in direct messages and when it explicitly addresses the bot; unaddressed channel media stays silent.
+The bot can send images and files produced by the agent. The agent uses `multica attachment upload <local-path>`; after the reply text, each attachment appears in a separate post in the same thread. Replies containing only attachments are supported. This requires Multica object storage and the bot's `upload_file` permission in Mattermost. Each file is limited to 100 MiB, or the Mattermost server's lower limit. If a file is unavailable or its upload is rejected permanently, the bot posts a notice and continues with the remaining files.
+
+Incoming messages still accept text only. A post that carries text plus an attachment is handled as text. A post with only files, images, or other non-text content receives a clear unsupported-message response in direct messages and when it explicitly addresses the bot; unaddressed channel media stays silent.
 
 There is no typing indicator: Mattermost exposes typing only over its WebSocket API, with no server-side equivalent Multica can call for a message it is already processing.
 

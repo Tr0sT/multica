@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +34,7 @@ type Outbound struct {
 	policy  *ServerPolicy
 	client  *http.Client
 	logger  *slog.Logger
+	objects objectStore
 	wake    chan struct{}
 	done    chan struct{}
 	start   sync.Once
@@ -140,9 +143,6 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
-	if message.Content == "" {
-		return nil
-	}
 	inst, err := o.q.GetChannelInstallation(ctx, db.GetChannelInstallationParams{
 		ID: delivery.InstallationID, ChannelType: string(TypeMattermost),
 	})
@@ -195,16 +195,36 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
+	rawConfig, err := o.q.SnapshotMattermostReplyAttachments(ctx, db.SnapshotMattermostReplyAttachmentsParams{
+		TaskID: taskID, WorkspaceID: inst.WorkspaceID,
+	})
+	if err != nil {
+		return err
+	}
+	var config struct {
+		AttachmentIDs []pgtype.UUID `json:"reply_attachment_ids"`
+	}
+	if err := json.Unmarshal(rawConfig, &config); err != nil {
+		return fmt.Errorf("mattermost: decode reply attachment snapshot: %w", err)
+	}
 	chunks := chunkMessage(message.Content, maxPostRunes)
+	if strings.TrimSpace(message.Content) == "" {
+		chunks = nil
+	}
+	totalChunks := len(chunks) + len(config.AttachmentIDs)
 	ids := append([]string(nil), message.ChannelOutboundMessageIds...)
-	if len(ids) != int(lease.ChunksSent) || len(ids) > len(chunks) {
+	if len(ids) != int(lease.ChunksSent) || len(ids) > totalChunks {
 		return errors.New("mattermost: reply progress is inconsistent; refusing to duplicate it")
 	}
 	if root == "" && len(ids) > 0 {
 		root = ids[0]
 	}
-	rest := newRESTClient(base, creds.AccessToken, o.client)
-	for index := len(ids); index < len(chunks); index++ {
+	client := o.client
+	if client == nil {
+		client = newHTTPClient(replyUploadTimeout)
+	}
+	rest := newRESTClient(base, creds.AccessToken, client)
+	for index := len(ids); index < totalChunks; index++ {
 		owned, err := o.q.RenewChannelReplyDelivery(ctx, db.RenewChannelReplyDeliveryParams{
 			TurnID: lease.TurnID, OwnerToken: token, LeaseSeconds: replyLeaseSeconds,
 		})
@@ -216,6 +236,7 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 		}
 		marker := replyMarker(lease.TurnID, index)
 		var post Post
+		var sentFileIDs []string
 		if lease.SendState == "in_flight" || lease.SendState == "unknown" {
 			// Mattermost's pending_post_id cache expires. A lost POST is only
 			// reconciled by reading its durable marker, never blindly repeated.
@@ -238,6 +259,44 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 			}
 			post = found
 		} else {
+			out := Post{
+				ChannelID: channelID, RootID: root, PendingPostID: marker,
+				Props: map[string]any{"multica_reply_id": marker},
+			}
+			if index < len(chunks) {
+				out.Message = chunks[index]
+			} else {
+				attachmentID := config.AttachmentIDs[index-len(chunks)]
+				out.Props["multica_attachment_id"] = attachmentID.String()
+				row, readErr := o.q.GetAttachment(ctx, db.GetAttachmentParams{
+					ID: attachmentID, WorkspaceID: inst.WorkspaceID,
+				})
+				if readErr != nil && !errors.Is(readErr, pgx.ErrNoRows) {
+					return readErr
+				}
+				if errors.Is(readErr, pgx.ErrNoRows) || row.ChatMessageID != message.ID {
+					out.Message = attachmentUnavailableText
+				} else {
+					uploadCtx, cancel := context.WithTimeout(ctx, replyUploadTimeout)
+					fileID, uploadErr := o.uploadAttachment(uploadCtx, rest, channelID, row)
+					cancel()
+					if uploadErr != nil {
+						if retryableUploadError(uploadErr) {
+							return uploadErr
+						}
+						o.logger.WarnContext(ctx, "mattermost: attachment unavailable", "attachment_id", attachmentID.String(), "error", uploadErr)
+						out.Message = attachmentUnavailableText
+					} else {
+						out.FileIDs = []string{fileID}
+						sentFileIDs = out.FileIDs
+					}
+				}
+				if len(out.FileIDs) == 0 {
+					out.Props["multica_attachment_unavailable"] = true
+				}
+			}
+			// Uploads do not publish a post. Only the following CreatePost
+			// enters the ambiguous-send state and needs reconciliation.
 			claimed, err := o.q.MarkChannelReplyDeliverySending(ctx, db.MarkChannelReplyDeliverySendingParams{TurnID: lease.TurnID, OwnerToken: token})
 			if err != nil {
 				return err
@@ -246,10 +305,7 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 				return errors.New("mattermost: reply send not owned")
 			}
 			callCtx, cancel := context.WithTimeout(ctx, replyCallTimeout)
-			post, err = rest.CreatePost(callCtx, Post{
-				ChannelID: channelID, RootID: root, Message: chunks[index], PendingPostID: marker,
-				Props: map[string]any{"multica_reply_id": marker},
-			})
+			post, err = rest.CreatePost(callCtx, out)
 			cancel()
 			if err != nil {
 				recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyRecordTimeout)
@@ -275,6 +331,17 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 		}
 		if post.ID == "" || post.ChannelID != channelID || post.RootID != root {
 			return errors.New("mattermost: inconsistent post acknowledgement")
+		}
+		if len(sentFileIDs) > 0 && !slices.Equal(post.FileIDs, sentFileIDs) {
+			return errors.New("mattermost: post acknowledgement omitted its attachment")
+		}
+		if index >= len(chunks) {
+			attachmentID := config.AttachmentIDs[index-len(chunks)].String()
+			unavailable := post.Props["multica_attachment_unavailable"] == true && post.Message == attachmentUnavailableText
+			if post.Props["multica_attachment_id"] != attachmentID ||
+				(!unavailable && (len(post.FileIDs) != 1 || post.FileIDs[0] == "")) {
+				return errors.New("mattermost: inconsistent attachment acknowledgement")
+			}
 		}
 		ids = append(ids, post.ID)
 		if err := o.recordChunk(ctx, lease.TurnID, token, delivery, channelID, taskID, ids); err != nil {

@@ -1265,6 +1265,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// could call from the request path. See the adapter's design note.
 			channelRouter.Register(mattermost.TypeMattermost, mattermost.NewMattermostResolverSet(queries, pool, mattermostReplier))
 			h.MattermostOutbound = mattermost.NewOutbound(queries, pool, box.Open, policy, nil, slog.Default())
+			if store != nil {
+				h.MattermostOutbound.EnableFileDelivery(store)
+				h.DeclareChannelFileDelivery(string(mattermost.TypeMattermost))
+			}
 			h.MattermostOutbound.Register(bus)
 
 			// Per-installation inbound: the Supervisor builds + supervises one

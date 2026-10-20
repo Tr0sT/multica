@@ -22,9 +22,12 @@
 package mattermost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
@@ -36,6 +39,71 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/integrations/channel"
 )
+
+func TestE2EUploadReplyAttachments(t *testing.T) {
+	env := requireE2E(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	rest := newRESTClient(env.URL, env.BotToken, nil)
+	root := postAs(t, env, env.HumanToken, Post{ChannelID: env.ChannelID, Message: "Attachment delivery test"})
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []struct {
+		name string
+		data []byte
+	}{
+		{"chart.png", pngBytes.Bytes()},
+		{"report.txt", []byte("Mattermost attachment round trip\n")},
+	} {
+		t.Run(file.name, func(t *testing.T) {
+			id, err := rest.UploadFile(ctx, env.ChannelID, file.name, file.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			marker := strings.Repeat("a", 64-len(id)) + id
+			post, err := rest.CreatePost(ctx, Post{
+				ChannelID: env.ChannelID, RootID: root.ID, FileIDs: []string{id}, PendingPostID: marker,
+				Props: map[string]any{"multica_reply_id": marker, "multica_attachment_id": id},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := rest.GetPost(ctx, post.ID)
+			if err != nil || stored.RootID != root.ID || len(stored.FileIDs) != 1 || stored.FileIDs[0] != id {
+				t.Fatalf("attached post = %+v, %v", stored, err)
+			}
+			recovered, found, err := rest.FindReply(ctx, env.ChannelID, env.BotUserID, marker, root.CreateAt)
+			if err != nil || !found || recovered.ID != post.ID || recovered.Props["multica_attachment_id"] != id {
+				t.Fatalf("attachment reconciliation = %+v, found=%v, error=%v", recovered, found, err)
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, env.URL+apiPath+"/files/"+id, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+env.HumanToken)
+			resp, err := rest.client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+			if err != nil || resp.StatusCode != http.StatusOK || !bytes.Equal(data, file.data) {
+				t.Fatalf("recipient download: status=%d, bytes match=%v, error=%v", resp.StatusCode, bytes.Equal(data, file.data), err)
+			}
+			if file.name == "chart.png" {
+				var info struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+				}
+				if err := rest.do(ctx, http.MethodGet, "/files/"+id+"/info", nil, &info); err != nil || info.Width != 2 || info.Height != 2 {
+					t.Fatalf("image metadata = %+v, %v", info, err)
+				}
+			}
+		})
+	}
+}
 
 // e2eEnv is the connection block scripts/mattermost-e2e-up.sh prints.
 type e2eEnv struct {

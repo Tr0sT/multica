@@ -49,7 +49,11 @@ WHERE delivery.channel_type = 'mattermost'
       SELECT 1 FROM chat_message input_message
       WHERE input_message.task_id = task.chat_input_task_id AND input_message.role = 'user' AND input_message.channel_ingested
   ))
-  AND message.content <> ''
+  AND (message.content <> '' OR EXISTS (
+      SELECT 1 FROM attachment
+      WHERE attachment.chat_message_id = message.id
+        AND attachment.workspace_id = installation.workspace_id
+  ) OR delivery.config ? 'reply_attachment_ids')
   AND (reply.turn_id IS NULL OR (reply.phase <> 'settled' AND reply.updated_at < now() - interval '30 seconds'))
 ORDER BY COALESCE(reply.updated_at, message.created_at), delivery.task_id
 LIMIT 32
@@ -99,6 +103,33 @@ func (q *Queries) RotateMattermostInstallationIdentity(ctx context.Context, arg 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const snapshotMattermostReplyAttachments = `-- name: SnapshotMattermostReplyAttachments :one
+UPDATE channel_task_delivery AS delivery
+SET config = jsonb_set(delivery.config, '{reply_attachment_ids}',
+    COALESCE(delivery.config->'reply_attachment_ids', (
+        SELECT COALESCE(jsonb_agg(attachment.id ORDER BY attachment.created_at, attachment.id), '[]'::jsonb)
+        FROM attachment
+        JOIN chat_message message ON message.id = attachment.chat_message_id
+        WHERE message.task_id = delivery.task_id AND message.role = 'assistant'
+          AND attachment.workspace_id = $1
+    )))
+WHERE delivery.task_id = $2 AND delivery.channel_type = 'mattermost'
+RETURNING config
+`
+
+type SnapshotMattermostReplyAttachmentsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+// Keep chunk positions stable across retries and attachment deletion.
+func (q *Queries) SnapshotMattermostReplyAttachments(ctx context.Context, arg SnapshotMattermostReplyAttachmentsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, snapshotMattermostReplyAttachments, arg.WorkspaceID, arg.TaskID)
+	var config []byte
+	err := row.Scan(&config)
+	return config, err
 }
 
 const updateMattermostInstallationContext = `-- name: UpdateMattermostInstallationContext :one

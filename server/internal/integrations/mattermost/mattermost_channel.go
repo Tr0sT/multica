@@ -73,7 +73,8 @@ func (c *mattermostChannel) Type() channel.Type { return TypeMattermost }
 // typing signal is a WebSocket action with no REST equivalent, so delivering it
 // would need a cross-replica sender registry (see the design note in
 // docs/superpowers/specs/2026-09-01-mattermost-integration-design.md).
-// No CapAttachment: v1 ingests and sends text.
+// Attachments on agent replies use the durable Outbound worker; this Channel
+// interface handles text sends and does not ingest attachments.
 func (c *mattermostChannel) Capabilities() channel.Capability {
 	return channel.CapText | channel.CapThreadReply
 }
