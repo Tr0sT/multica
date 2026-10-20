@@ -28,6 +28,7 @@ type MattermostInstallationResponse struct {
 	BotUsername     string                    `json:"bot_username"`
 	Context         MattermostContextResponse `json:"context"`
 	AccessMode      mattermost.AccessMode     `json:"access_mode"`
+	AllowedUsers    []mattermost.AllowedUser  `json:"allowed_users"`
 	InstallerUserID string                    `json:"installer_user_id"`
 	Status          string                    `json:"status"`
 	InstalledAt     string                    `json:"installed_at"`
@@ -57,6 +58,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		BotUsername:     info.BotUsername,
 		Context:         context,
 		AccessMode:      info.AccessMode,
+		AllowedUsers:    info.AllowedUsers,
 		InstallerUserID: uuidToString(row.InstallerUserID),
 		Status:          row.Status,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
@@ -102,10 +104,11 @@ func (h *Handler) ListMattermostInstallations(w http.ResponseWriter, r *http.Req
 // RegisterMattermostRequest is the body for a bot install: the server URL and
 // the access token the admin generated for a Mattermost bot account.
 type RegisterMattermostRequest struct {
-	ServerURL   string                     `json:"server_url"`
-	AccessToken string                     `json:"access_token"`
-	Context     mattermost.ContextSettings `json:"context"`
-	AccessMode  mattermost.AccessMode      `json:"access_mode"`
+	ServerURL        string                     `json:"server_url"`
+	AccessToken      string                     `json:"access_token"`
+	Context          mattermost.ContextSettings `json:"context"`
+	AccessMode       mattermost.AccessMode      `json:"access_mode"`
+	AllowedUsernames []string                   `json:"allowed_usernames"`
 }
 
 // RegisterMattermostBot
@@ -152,18 +155,21 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	row, err := h.MattermostInstall.Register(r.Context(), mattermost.RegisterParams{
-		WorkspaceID: wsUUID,
-		AgentID:     agentUUID,
-		InitiatorID: initiatorUUID,
-		ServerURL:   body.ServerURL,
-		AccessToken: body.AccessToken,
-		Context:     body.Context,
-		AccessMode:  body.AccessMode,
+		WorkspaceID:      wsUUID,
+		AgentID:          agentUUID,
+		InitiatorID:      initiatorUUID,
+		ServerURL:        body.ServerURL,
+		AccessToken:      body.AccessToken,
+		Context:          body.Context,
+		AccessMode:       body.AccessMode,
+		AllowedUsernames: body.AllowedUsernames,
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers):
 			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable):
+			writeError(w, http.StatusServiceUnavailable, err.Error())
 		case errors.Is(err, mattermost.ErrInvalidServerURL):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, mattermost.ErrServerNotAllowed):
@@ -217,15 +223,17 @@ func (h *Handler) UpdateMattermostInstallation(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.Context == nil && body.AccessMode == nil {
+	if body.Context == nil && body.AccessMode == nil && body.AllowedUsernames == nil {
 		writeError(w, http.StatusBadRequest, "context or access_mode is required")
 		return
 	}
 	row, err := h.MattermostInstall.UpdateSettings(r.Context(), instUUID, wsUUID, body)
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers):
 			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable):
+			writeError(w, http.StatusServiceUnavailable, err.Error())
 		case errors.Is(err, mattermost.ErrInstallationNotFound):
 			writeError(w, http.StatusNotFound, "active mattermost installation not found")
 		default:

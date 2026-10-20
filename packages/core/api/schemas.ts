@@ -3517,7 +3517,11 @@ export const MattermostInstallationSchema = z.object({
   server_url: z.string().default(""),
   bot_user_id: z.string().default(""),
   bot_username: z.string().default(""),
-  access_mode: z.enum(["members", "anyone", "unknown"]).catch("unknown").default("members"),
+  access_mode: z.enum(["members", "anyone", "allowlist", "unknown"]).catch("unknown").default("members"),
+  allowed_users: z.array(z.object({
+    id: z.string().min(1),
+    username: z.string().min(1),
+  })).default([]),
   context: z.object({
     mode: z.enum(["message", "thread", "channel", "channel_extended", "unknown"]).catch("unknown"),
     lookback_hours: z.number().int().min(0).max(720).default(0),

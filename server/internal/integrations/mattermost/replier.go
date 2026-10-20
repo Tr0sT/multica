@@ -133,6 +133,13 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			}
 		}
 	case engine.OutcomeDropped:
+		config, err := installationAccess(inst)
+		if err == nil && config.AccessMode == AccessAllowlist && res.DropReason == engine.DropReasonNonWorkspaceMember {
+			if err := r.post(ctx, inst, msg, "This Mattermost account cannot use this bot. Ask a workspace admin to check the bot's access settings."); err != nil {
+				r.warn(ctx, "access refusal failed", inst, err)
+			}
+			return
+		}
 		if text := droppedReplyText(res, msg); text != "" {
 			if err := r.post(ctx, inst, msg, text); err != nil {
 				r.warn(ctx, "drop refusal failed", inst, err)

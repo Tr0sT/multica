@@ -132,6 +132,29 @@ func TestReplierBindingPromptInDM(t *testing.T) {
 	}
 }
 
+func TestReplierAllowlistRefusalDoesNotOfferAccountLinking(t *testing.T) {
+	h := newReplierHarness(t)
+	row := h.inst.Platform.(db.ChannelInstallation)
+	var config installConfig
+	if err := json.Unmarshal(row.Config, &config); err != nil {
+		t.Fatal(err)
+	}
+	config.AccessMode = AccessAllowlist
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.Config = raw
+	h.inst.Platform = row
+	h.replier.Reply(context.Background(), h.inst, dmInbound(), engine.Result{
+		Outcome: engine.OutcomeDropped, DropReason: engine.DropReasonNonWorkspaceMember,
+	})
+	posts := h.sent()
+	if len(posts) != 1 || !strings.Contains(posts[0].Message, "access settings") || strings.Contains(posts[0].Message, "https://") {
+		t.Fatalf("missing access refusal or unexpected binding link: %+v", posts)
+	}
+}
+
 // A bearer link posted in a channel could be redeemed by any member, binding
 // the sender's identity to the wrong Multica user. The prompt must stay out of
 // group conversations.

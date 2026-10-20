@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -142,12 +143,17 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 	if msg.Source.SenderID == "" {
 		return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
 	}
-	mode, err := installationAccessMode(inst)
+	config, err := installationAccess(inst)
 	if err != nil {
 		return engine.ResolvedIdentity{}, err
 	}
 	userID := inst.InstallerUserID
-	if mode == AccessMembers {
+	if config.AccessMode == AccessAllowlist && !slices.ContainsFunc(config.AllowedUsers, func(user AllowedUser) bool {
+		return user.ID == msg.Source.SenderID
+	}) {
+		return engine.ResolvedIdentity{}, engine.ErrSenderNotMember
+	}
+	if config.AccessMode == AccessMembers {
 		binding, err := r.q.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
 			InstallationID: inst.ID,
 			ChannelUserID:  msg.Source.SenderID,
@@ -160,7 +166,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		}
 		userID = binding.MulticaUserID
 	}
-	// Anyone mode explicitly delegates the installer's access; the engine still
+	// Unlinked access explicitly delegates the installer's access; the engine still
 	// checks that principal's agent permissions and records the Mattermost sender.
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      userID,

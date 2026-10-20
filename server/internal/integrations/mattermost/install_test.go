@@ -85,3 +85,25 @@ func TestUpdateAccessValidatesBeforeWriting(t *testing.T) {
 		t.Fatalf("access-only update overwrote other settings: %s", q.params.Settings)
 	}
 }
+
+func TestUpdateAllowlistRequiresAnExplicitListAndClearsItAtomically(t *testing.T) {
+	mode := AccessAllowlist
+	for _, settings := range []SettingsUpdate{
+		{AccessMode: &mode},
+		{AllowedUsernames: []string{"alice"}},
+		{AccessMode: &mode, AllowedUsernames: []string{"alice/bob"}},
+	} {
+		if _, err := (&InstallService{}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, settings); !errors.Is(err, ErrInvalidAllowedUsers) {
+			t.Fatalf("invalid allowlist accepted: %v", err)
+		}
+	}
+	q := &contextUpdateQueries{}
+	if _, err := (&InstallService{q: q}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, SettingsUpdate{
+		AccessMode: &mode, AllowedUsernames: []string{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if string(q.params.Settings) != `{"access_mode":"allowlist","allowed_users":[]}` {
+		t.Fatalf("empty list did not revoke access in the same write: %s", q.params.Settings)
+	}
+}

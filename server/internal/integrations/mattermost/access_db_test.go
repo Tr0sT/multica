@@ -2,7 +2,9 @@ package mattermost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -65,15 +67,28 @@ func TestAnyoneAccessDoesNotRequireAnAccountBindingDB(t *testing.T) {
 }
 
 func TestPublicAccessRoutesAndRevocationDB(t *testing.T) {
+	for _, mode := range []AccessMode{AccessAnyone, AccessAllowlist} {
+		t.Run(string(mode), func(t *testing.T) { testUnlinkedAccessRoutesAndRevocation(t, mode) })
+	}
+}
+
+func testUnlinkedAccessRoutesAndRevocation(t *testing.T, accessMode AccessMode) {
 	fx, q, agent := mattermostDBFixture(t)
 	ctx := context.Background()
 	runtime := fx.Runtime(t, "Mattermost public access")
 	if _, err := fx.Pool.Exec(ctx, `UPDATE agent SET runtime_id=$1 WHERE id=$2`, runtime, agent); err != nil {
 		t.Fatal(err)
 	}
+	config, err := json.Marshal(installConfig{
+		AppID: "public-bot", AccessMode: accessMode,
+		AllowedUsers: []AllowedUser{{ID: "alice", Username: "alice"}, {ID: "bob", Username: "bob"}, {ID: "carol", Username: "carol"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	installation := fx.Insert(t, "channel_installation", dbfx.Cols{
 		"workspace_id": fx.WorkspaceID, "agent_id": agent, "channel_type": "mattermost",
-		"config": `{"app_id":"public-bot","access_mode":"anyone"}`, "status": "active", "installer_user_id": fx.UserID,
+		"config": config, "status": "active", "installer_user_id": fx.UserID,
 	})
 	fx.Cleanup(t, `DELETE FROM chat_session WHERE workspace_id=$1`, fx.WorkspaceID)
 	fx.Cleanup(t, `DELETE FROM chat_message WHERE chat_session_id IN (SELECT id FROM chat_session WHERE workspace_id=$1)`, fx.WorkspaceID)
@@ -104,6 +119,17 @@ func TestPublicAccessRoutesAndRevocationDB(t *testing.T) {
 	if got := fx.Count(t, `SELECT count(*) FROM agent_task_queue WHERE agent_id=$1`, agent); got != 3 {
 		t.Fatalf("queued tasks = %d, want three addressed requests", got)
 	}
+	if accessMode == AccessAllowlist {
+		fx.Insert(t, "channel_user_binding", dbfx.Cols{
+			"workspace_id": fx.WorkspaceID, "installation_id": installation, "channel_type": "mattermost",
+			"channel_user_id": "unlisted-member", "multica_user_id": fx.UserID, "config": "{}",
+		})
+		send("unlisted-external", "outsider", "outside-dm", "", "D", "hello")
+		send("unlisted-linked", "unlisted-member", "member-dm", "", "D", "hello")
+		if got := fx.Count(t, `SELECT count(*) FROM agent_task_queue WHERE agent_id=$1`, agent); got != 3 {
+			t.Fatal("allowlist admitted an unlisted sender")
+		}
+	}
 	var aliceSession pgtype.UUID
 	rows, err := fx.Pool.Query(ctx, `
 		SELECT task.initiator_user_id, delivery.channel_sender_id, delivery.channel_chat_id,
@@ -123,7 +149,11 @@ func TestPublicAccessRoutesAndRevocationDB(t *testing.T) {
 		if err := rows.Scan(&initiator, &sender, &key, &root, &config, &session); err != nil {
 			t.Fatal(err)
 		}
-		if initiator != mmUUID(t, fx.UserID) || !strings.HasPrefix(key, "public:") {
+		prefix := "public:"
+		if accessMode == AccessAllowlist {
+			prefix = "allowlist:"
+		}
+		if initiator != mmUUID(t, fx.UserID) || !strings.HasPrefix(key, prefix) {
 			t.Fatalf("public authorization or history namespace lost: %v, %s", initiator, key)
 		}
 		room, thread := outboundTarget(db.ChannelChatSessionBinding{ChannelChatID: key, LastThreadID: root, Config: config})
@@ -161,6 +191,25 @@ func TestPublicAccessRoutesAndRevocationDB(t *testing.T) {
 	}
 	mode := AccessMembers
 	svc := &InstallService{q: dbInstallQueries{q}}
+	if accessMode == AccessAllowlist {
+		if _, err := svc.UpdateSettings(ctx, mmUUID(t, installation), mmUUID(t, fx.WorkspaceID), SettingsUpdate{
+			AccessMode: &accessMode, AllowedUsernames: []string{},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for i, text := range []string{"hello", "@bot /new", "@bot /clear", "@bot /issue Forbidden"} {
+			send(fmt.Sprintf("removed-account-%d", i), "alice", "dm-a", "", "D", text)
+		}
+		if got := fx.Count(t, `SELECT count(*) FROM agent_task_queue WHERE agent_id=$1`, agent); got != 3 {
+			t.Fatal("removed account could still enqueue a request")
+		}
+		if got := fx.Count(t, `SELECT count(*) FROM issue WHERE workspace_id=$1`, fx.WorkspaceID); got != 0 {
+			t.Fatal("removed account could still create an issue")
+		}
+		if got := fx.Count(t, `SELECT count(*) FROM channel_chat_session_binding WHERE installation_id=$1`, installation); got != 3 {
+			t.Fatal("removed account could still start or replace a chat")
+		}
+	}
 	if _, err := svc.UpdateSettings(ctx, mmUUID(t, installation), mmUUID(t, fx.WorkspaceID), SettingsUpdate{AccessMode: &mode}); err != nil {
 		t.Fatal(err)
 	}

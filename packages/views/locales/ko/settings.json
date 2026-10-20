@@ -982,6 +982,9 @@
       "label": "이 봇을 사용할 수 있는 사용자",
       "members": "계정을 연결한 Multica 워크스페이스 멤버",
       "anyone": "모든 Mattermost 사용자",
+      "allowlist": "지정한 Mattermost 계정",
+      "users_label": "허용할 Mattermost 사용자 이름",
+      "users_help": "@사용자이름을 쉼표나 줄바꿈으로 구분하여 최대 100개 입력하세요. 목록이 비어 있으면 모두 차단됩니다. 사용자 이름이 바뀌어도 접근 권한은 같은 계정에 유지됩니다.",
       "unknown": "알 수 없는 접근 모드",
       "notice": "Multica 계정이 필요하지 않습니다. 요청은 봇을 연결한 사용자를 대신해 실행되며 에이전트의 도구와 연결된 앱을 사용할 수 있습니다.",
       "summary": "접근 권한: {{selection}}"

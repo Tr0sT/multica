@@ -1242,6 +1242,9 @@
       "label": "谁可以使用此机器人",
       "members": "已绑定账号的 Multica 工作区成员",
       "anyone": "任何 Mattermost 用户",
+      "allowlist": "指定的 Mattermost 账号",
+      "users_label": "允许访问的 Mattermost 用户名",
+      "users_help": "输入最多 100 个 @用户名，以逗号或换行分隔。列表为空时，所有人均无法访问。用户名变更不会转移账号的访问权限。",
       "unknown": "未知访问模式",
       "notice": "无需 Multica 账号。请求以机器人安装者的身份运行，可以使用智能体的工具和已连接应用。",
       "summary": "访问权限：{{selection}}"

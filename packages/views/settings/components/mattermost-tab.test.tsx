@@ -66,7 +66,11 @@ describe("Mattermost settings editing", () => {
   beforeEach(() => {
     mockList.mockResolvedValue({ configured: true, installations: [connectedInstallation] });
     mockUpdate.mockImplementation(async (_workspaceId, _installationId, settings) => {
-      const updated = { ...connectedInstallation, ...settings };
+      const updated = { ...connectedInstallation, ...settings,
+        ...(settings.allowed_usernames ? {
+          allowed_users: settings.allowed_usernames.map((username: string) => ({ id: `${username}-id`, username })),
+        } : {}),
+      };
       mockList.mockResolvedValue({ configured: true, installations: [updated] });
       return updated;
     });
@@ -235,6 +239,45 @@ describe("Mattermost settings editing", () => {
     expect(screen.getByRole("dialog")).toBeVisible();
   });
 
+  it.each([false, true])("saves, restores and clears selected accounts (workspace settings: %s)", async (workspaceSettings) => {
+    const user = userEvent.setup();
+    renderConnect(workspaceSettings);
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    expect(screen.getByText(enSettings.mattermost.access.notice)).toBeVisible();
+    await user.type(screen.getByLabelText(enSettings.mattermost.access.users_label), "@Alice,\nbob @alice");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("workspace-1", "existing", {
+      access_mode: "allowlist", allowed_usernames: ["alice", "bob"], context: connectedInstallation.context,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const users = screen.getByLabelText(enSettings.mattermost.access.users_label);
+    expect(users).toHaveValue("@alice\n@bob");
+    await user.clear(users);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenLastCalledWith("workspace-1", "existing", {
+      access_mode: "allowlist", allowed_usernames: [], context: connectedInstallation.context,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it.each(["failure", "ignored list"])("retains the account list after %s", async (outcome) => {
+    if (outcome === "failure") mockUpdate.mockRejectedValue(new Error("Account not found"));
+    else mockUpdate.mockResolvedValue({ ...connectedInstallation, access_mode: "allowlist", allowed_users: [] });
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.type(screen.getByLabelText(enSettings.mattermost.access.users_label), "@alice");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+    expect(screen.getByLabelText(enSettings.mattermost.access.users_label)).toHaveValue("@alice");
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
+
   it("requires a choice for an unknown server access mode", async () => {
     mockList.mockResolvedValue({ configured: true, installations: [
       { ...connectedInstallation, access_mode: "unknown" },
@@ -256,6 +299,26 @@ describe("Mattermost settings editing", () => {
 });
 
 describe("Mattermost context selection", () => {
+  it("connects a bot with selected Mattermost accounts", async () => {
+    mockRegister.mockResolvedValue({ id: "new-installation", status: "active", access_mode: "allowlist",
+      allowed_users: [{ id: "alice-id", username: "alice" }],
+    });
+    const user = userEvent.setup();
+    renderConnect();
+    await user.click(await screen.findByTestId("mattermost-agent-connect"));
+    await user.type(screen.getByLabelText(enSettings.mattermost.server_url_label), "https://chat.test");
+    await user.type(screen.getByLabelText(enSettings.mattermost.access_token_label), "token");
+    await user.click(screen.getByRole("combobox", { name: enSettings.mattermost.access.label }));
+    await user.click(await screen.findByRole("option", { name: enSettings.mattermost.access.allowlist }));
+    await user.type(screen.getByLabelText(enSettings.mattermost.access.users_label), "@alice");
+    await user.click(screen.getByTestId("mattermost-connect-submit"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("workspace-1", "agent-2", {
+      server_url: "https://chat.test", access_token: "token", access_mode: "allowlist",
+      allowed_usernames: ["alice"], context: { mode: "message" },
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("can connect a new bot with public access", async () => {
     mockRegister.mockResolvedValue({ id: "new-installation", status: "active", access_mode: "anyone" });
     const user = userEvent.setup();

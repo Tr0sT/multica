@@ -1248,6 +1248,9 @@
       "label": "Who can use this bot",
       "members": "Linked Multica workspace members",
       "anyone": "Any Mattermost user",
+      "allowlist": "Selected Mattermost accounts",
+      "users_label": "Allowed Mattermost usernames",
+      "users_help": "Enter up to 100 @usernames, separated by commas or new lines. An empty list blocks everyone. Access stays with the account if its username changes.",
       "unknown": "Unknown access mode",
       "notice": "No Multica account is required. Requests run on behalf of the bot installer and can use the agent's tools and connected apps.",
       "summary": "Access: {{selection}}"

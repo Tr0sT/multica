@@ -58,6 +58,7 @@ type installConfig struct {
 	AccessTokenEncrypted string          `json:"access_token_encrypted"`
 	Context              ContextSettings `json:"context"`
 	AccessMode           AccessMode      `json:"access_mode"`
+	AllowedUsers         []AllowedUser   `json:"allowed_users,omitempty"`
 }
 
 // credentials is the decoded, decrypted form the transports run on. The
@@ -204,20 +205,21 @@ func decodeCredentials(raw json.RawMessage, decrypt Decrypter) (credentials, err
 // PublicConfig is the non-secret subset of an installation config, safe to
 // surface on the management API (the encrypted token is never included).
 type PublicConfig struct {
-	ServerURL   string
-	BotUserID   string
-	BotUsername string
-	Context     ContextSettings
-	AccessMode  AccessMode
+	ServerURL    string
+	BotUserID    string
+	BotUsername  string
+	Context      ContextSettings
+	AccessMode   AccessMode
+	AllowedUsers []AllowedUser
 }
 
 // DecodePublicConfig extracts the display-safe fields from a stored config
-// blob. A decode miss yields a zero PublicConfig rather than an error so the
+// blob. A decode miss yields empty public fields rather than an error so the
 // management list still renders the row.
 func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	var cfg installConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return PublicConfig{}
+		return PublicConfig{AllowedUsers: []AllowedUser{}}
 	}
 	settings, err := cfg.Context.normalized()
 	if err != nil {
@@ -227,12 +229,16 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	if err != nil {
 		accessMode = "unknown"
 	}
+	if cfg.AllowedUsers == nil {
+		cfg.AllowedUsers = []AllowedUser{}
+	}
 	return PublicConfig{
-		ServerURL:   cfg.ServerURL,
-		BotUserID:   cfg.BotUserID,
-		BotUsername: cfg.BotUsername,
-		Context:     settings,
-		AccessMode:  accessMode,
+		ServerURL:    cfg.ServerURL,
+		BotUserID:    cfg.BotUserID,
+		BotUsername:  cfg.BotUsername,
+		Context:      settings,
+		AccessMode:   accessMode,
+		AllowedUsers: cfg.AllowedUsers,
 	}
 }
 

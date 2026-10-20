@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from "@multica/ui/components/ui/dialog";
 import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Label } from "@multica/ui/components/ui/label";
 import {
   Select,
@@ -290,6 +291,7 @@ export function MattermostAgentBindButton({
   const [serverUrl, setServerUrl] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [accessMode, setAccessMode] = useState<MattermostAccessMode>("members");
+  const [allowedUsers, setAllowedUsers] = useState("");
   const [contextMode, setContextMode] = useState<MattermostContextMode>("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const [submitting, setSubmitting] = useState(false);
@@ -331,6 +333,7 @@ export function MattermostAgentBindButton({
     setServerUrl("");
     setAccessToken("");
     setAccessMode("members");
+    setAllowedUsers("");
     setContextMode("message");
     setLookbackHours(24);
   }
@@ -341,16 +344,21 @@ export function MattermostAgentBindButton({
     if (submitting || !agentId || !server_url || !access_token) return;
     setSubmitting(true);
     try {
+      const allowedUsernames = parseAllowedUsernames(allowedUsers);
       const installation = await api.registerMattermostBot(wsId, agentId, {
         server_url,
         access_token,
         access_mode: accessMode,
+        ...(accessMode === "allowlist" ? { allowed_usernames: allowedUsernames } : {}),
         context: {
           mode: contextMode,
           ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
         },
       });
-      if (!installation.id || installation.status !== "active" || (installation.access_mode ?? "members") !== accessMode) {
+      if (
+        !installation.id || installation.status !== "active" || (installation.access_mode ?? "members") !== accessMode ||
+        (accessMode === "allowlist" && installation.allowed_users?.map((user) => user.username).join("\n") !== allowedUsernames.join("\n"))
+      ) {
         throw new Error("Mattermost connection returned an invalid installation");
       }
       // The mattermost_installation realtime event also refreshes this list,
@@ -361,6 +369,7 @@ export function MattermostAgentBindButton({
       setServerUrl("");
       setAccessToken("");
       setAccessMode("members");
+      setAllowedUsers("");
       setContextMode("message");
       setLookbackHours(24);
     } catch (e) {
@@ -454,7 +463,13 @@ export function MattermostAgentBindButton({
             />
           </div>
 
-          <MattermostAccessFields accessMode={accessMode} setAccessMode={setAccessMode} disabled={submitting} />
+          <MattermostAccessFields
+            accessMode={accessMode}
+            setAccessMode={setAccessMode}
+            allowedUsers={allowedUsers}
+            setAllowedUsers={setAllowedUsers}
+            disabled={submitting}
+          />
 
           <MattermostContextFields
             contextMode={contextMode}
@@ -641,16 +656,19 @@ function MattermostEditButton({
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [accessMode, setAccessMode] = useState<MattermostAccessMode | "unknown">("members");
+  const [allowedUsers, setAllowedUsers] = useState("");
   const [contextMode, setContextMode] = useState<MattermostContextMode | "unknown">("message");
   const [lookbackHours, setLookbackHours] = useState(24);
   const update = useMutation({
-    mutationFn: async (settings: { context: MattermostContextSettings; access_mode: MattermostAccessMode }) => {
+    mutationFn: async (settings: { context: MattermostContextSettings; access_mode: MattermostAccessMode; allowed_usernames?: string[] }) => {
       const { context } = settings;
       const saved = await api.updateMattermostInstallation(wsId, installation.id, settings);
       if (
         saved.id !== installation.id || saved.status !== "active" ||
         saved.context?.mode !== context.mode ||
         (saved.access_mode ?? "members") !== settings.access_mode ||
+        (settings.access_mode === "allowlist" &&
+          saved.allowed_users?.map((user) => user.username).join("\n") !== settings.allowed_usernames?.join("\n")) ||
         (context.mode === "channel" && saved.context.lookback_hours !== context.lookback_hours)
       ) {
         throw new Error(t(($) => $.mattermost.edit_failed_toast));
@@ -674,6 +692,7 @@ function MattermostEditButton({
         if (update.isPending) return;
         if (value) {
           setAccessMode(installation.access_mode ?? "members");
+          setAllowedUsers(installation.allowed_users?.map((user) => `@${user.username}`).join("\n") ?? "");
           setContextMode(installation.context?.mode ?? "message");
           setLookbackHours(installation.context?.mode === "channel" ? installation.context.lookback_hours ?? 24 : 24);
         }
@@ -692,7 +711,13 @@ function MattermostEditButton({
             {installation.server_url}
           </DialogDescription>
         </DialogHeader>
-        <MattermostAccessFields accessMode={accessMode} setAccessMode={setAccessMode} disabled={update.isPending} />
+        <MattermostAccessFields
+          accessMode={accessMode}
+          setAccessMode={setAccessMode}
+          allowedUsers={allowedUsers}
+          setAllowedUsers={setAllowedUsers}
+          disabled={update.isPending}
+        />
         <MattermostContextFields
           contextMode={contextMode}
           setContextMode={setContextMode}
@@ -712,6 +737,7 @@ function MattermostEditButton({
               if (contextMode === "unknown" || accessMode === "unknown") return;
               update.mutate({
                 access_mode: accessMode,
+                ...(accessMode === "allowlist" ? { allowed_usernames: parseAllowedUsernames(allowedUsers) } : {}),
                 context: {
                   mode: contextMode,
                   ...(contextMode === "channel" ? { lookback_hours: lookbackHours } : {}),
@@ -731,10 +757,14 @@ function MattermostEditButton({
 function MattermostAccessFields({
   accessMode,
   setAccessMode,
+  allowedUsers,
+  setAllowedUsers,
   disabled,
 }: {
   accessMode: MattermostAccessMode | "unknown";
   setAccessMode: (mode: MattermostAccessMode) => void;
+  allowedUsers: string;
+  setAllowedUsers: (users: string) => void;
   disabled: boolean;
 }) {
   const { t } = useT("settings");
@@ -742,6 +772,7 @@ function MattermostAccessFields({
   const options = [
     { value: "members", label: t(($) => $.mattermost.access.members) },
     { value: "anyone", label: t(($) => $.mattermost.access.anyone) },
+    { value: "allowlist", label: t(($) => $.mattermost.access.allowlist) },
   ];
   return (
     <div className="space-y-1.5">
@@ -750,14 +781,14 @@ function MattermostAccessFields({
         items={options}
         value={accessMode === "unknown" ? null : accessMode}
         onValueChange={(value) => {
-          if (value === "members" || value === "anyone") setAccessMode(value);
+          if (value === "members" || value === "anyone" || value === "allowlist") setAccessMode(value);
         }}
         disabled={disabled}
       >
         <SelectTrigger
           id={`${id}-access`}
           className="w-full"
-          aria-describedby={accessMode === "anyone" ? `${id}-notice` : undefined}
+          aria-describedby={accessMode === "anyone" || accessMode === "allowlist" ? `${id}-notice` : undefined}
         >
           <SelectValue placeholder={t(($) => $.mattermost.access.unknown)} />
         </SelectTrigger>
@@ -767,7 +798,25 @@ function MattermostAccessFields({
           ))}
         </SelectContent>
       </Select>
-      {accessMode === "anyone" && (
+      {accessMode === "allowlist" && (
+        <div className="space-y-1.5 pt-2">
+          <Label htmlFor={`${id}-users`}>{t(($) => $.mattermost.access.users_label)}</Label>
+          <Textarea
+            id={`${id}-users`}
+            value={allowedUsers}
+            onChange={(event) => setAllowedUsers(event.target.value)}
+            aria-describedby={`${id}-users-help`}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={disabled}
+            rows={4}
+          />
+          <p id={`${id}-users-help`} className="text-caption text-muted-foreground">
+            {t(($) => $.mattermost.access.users_help)}
+          </p>
+        </div>
+      )}
+      {(accessMode === "anyone" || accessMode === "allowlist") && (
         <p id={`${id}-notice`} className="text-caption text-muted-foreground">
           {t(($) => $.mattermost.access.notice)}
         </p>
@@ -776,13 +825,19 @@ function MattermostAccessFields({
   );
 }
 
+function parseAllowedUsernames(value: string): string[] {
+  return [...new Set(value.split(/[\s,]+/).filter(Boolean).map((name) => name.replace(/^@/, "").toLowerCase()))];
+}
+
 function MattermostAccessSummary({ accessMode }: { accessMode?: MattermostInstallation["access_mode"] }) {
   const { t } = useT("settings");
   const label = accessMode === "anyone"
     ? t(($) => $.mattermost.access.anyone)
-    : accessMode === "unknown"
-      ? t(($) => $.mattermost.access.unknown)
-      : t(($) => $.mattermost.access.members);
+    : accessMode === "allowlist"
+      ? t(($) => $.mattermost.access.allowlist)
+      : accessMode === "unknown"
+        ? t(($) => $.mattermost.access.unknown)
+        : t(($) => $.mattermost.access.members);
   return <p className="text-caption text-muted-foreground">{t(($) => $.mattermost.access.summary, { selection: label })}</p>;
 }
 

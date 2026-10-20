@@ -28,6 +28,13 @@ func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
 		{validID, validID, `{"access_mode":""}`},
 		{validID, validID, `{"access_mode":true}`},
 		{validID, validID, `{"access_mode":null}`},
+		{validID, validID, `{"access_mode":"allowlist"}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":null}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":"alice"}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":["alice/bob"]}`},
+		{validID, validID, `{"allowed_usernames":["alice"]}`},
+		{validID, validID, `{"access_mode":"anyone","allowed_usernames":["alice"]}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_users":[{"id":"forged","username":"alice"}]}`},
 	} {
 		r := testutil.JSONRequest(http.MethodPatch, "/", tc.body)
 		testutil.WithHeaders(r, "X-User-ID", validID)
@@ -40,11 +47,26 @@ func TestMattermostAccessResponse(t *testing.T) {
 	for _, tc := range []struct{ config, want string }{
 		{`{}`, "members"},
 		{`{"access_mode":"anyone"}`, "anyone"},
+		{`{"access_mode":"allowlist"}`, "allowlist"},
 		{`{"access_mode":"future-mode"}`, "unknown"},
 	} {
 		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)})
 		if string(response.AccessMode) != tc.want {
 			t.Fatalf("access for %s = %s, want %s", tc.config, response.AccessMode, tc.want)
+		}
+	}
+}
+
+func TestMattermostAllowedUsersResponse(t *testing.T) {
+	response := mattermostInstallationToResponse(db.ChannelInstallation{
+		Config: []byte(`{"access_mode":"allowlist","allowed_users":[{"id":"alice-id","username":"alice"}]}`),
+	})
+	if len(response.AllowedUsers) != 1 || response.AllowedUsers[0].ID != "alice-id" || response.AllowedUsers[0].Username != "alice" {
+		t.Fatalf("allowlist missing from response: %+v", response)
+	}
+	for _, config := range []string{`{}`, `{broken`} {
+		if users := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(config)}).AllowedUsers; users == nil {
+			t.Fatal("old and malformed installations must return an empty array")
 		}
 	}
 }

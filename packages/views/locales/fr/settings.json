@@ -1477,6 +1477,9 @@
       "label": "Qui peut utiliser ce bot",
       "members": "Membres Multica ayant lié leur compte",
       "anyone": "Tous les utilisateurs Mattermost",
+      "allowlist": "Comptes Mattermost sélectionnés",
+      "users_label": "Noms d’utilisateur Mattermost autorisés",
+      "users_help": "Saisissez jusqu’à 100 @noms, séparés par des virgules ou des retours à la ligne. Une liste vide bloque tout le monde. L’accès reste associé au compte si son nom change.",
       "unknown": "Mode d’accès inconnu",
       "notice": "Aucun compte Multica n’est requis. Les demandes sont exécutées au nom de la personne qui a installé le bot et peuvent utiliser les outils et applications connectées de l’agent.",
       "summary": "Accès : {{selection}}"

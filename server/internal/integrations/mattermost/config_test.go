@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -187,8 +188,8 @@ func TestDecodePublicConfig(t *testing.T) {
 		t.Fatalf("PublicConfig leaked the token: %s", blob)
 	}
 
-	if got := DecodePublicConfig(json.RawMessage("{broken")); got != (PublicConfig{}) {
-		t.Fatalf("malformed config = %+v, want zero value (row still renders)", got)
+	if got := DecodePublicConfig(json.RawMessage("{broken")); !reflect.DeepEqual(got, PublicConfig{AllowedUsers: []AllowedUser{}}) {
+		t.Fatalf("malformed config = %+v, want empty public fields (row still renders)", got)
 	}
 }
 

@@ -2072,9 +2072,17 @@ describe("Mattermost installation schemas", () => {
   it("defaults missing access to members and preserves unsupported access as unknown", () => {
     expect(MattermostInstallationSchema.parse({ id: "old" }).access_mode).toBe("members");
     expect(MattermostInstallationSchema.parse({ id: "open", access_mode: "anyone" }).access_mode).toBe("anyone");
+    expect(MattermostInstallationSchema.parse({ id: "selected", access_mode: "allowlist" }).access_mode).toBe("allowlist");
     for (const access_mode of ["future-mode", null, true, 1, {}]) {
       expect(MattermostInstallationSchema.parse({ id: "unknown", access_mode }).access_mode).toBe("unknown");
     }
+  });
+
+  it("defaults old allowlists and parses account identities", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).allowed_users).toEqual([]);
+    const allowed_users = [{ id: "alice-id", username: "alice" }];
+    expect(MattermostInstallationSchema.parse({ id: "selected", access_mode: "allowlist", allowed_users }).allowed_users)
+      .toEqual(allowed_users);
   });
 
   it.each([0, 1440, 2160, 8760])("parses extended period %s without breaking older clients", (hours) => {

@@ -122,13 +122,14 @@ func newInstallService(q installQueries, tx engine.TxStarter, box *secretbox.Box
 // RegisterParams are the inputs for a bot install: the agent this bot
 // represents, who is installing, and the pasted server URL plus access token.
 type RegisterParams struct {
-	WorkspaceID pgtype.UUID
-	AgentID     pgtype.UUID
-	InitiatorID pgtype.UUID
-	ServerURL   string
-	AccessToken string
-	Context     ContextSettings
-	AccessMode  AccessMode
+	WorkspaceID      pgtype.UUID
+	AgentID          pgtype.UUID
+	InitiatorID      pgtype.UUID
+	ServerURL        string
+	AccessToken      string
+	Context          ContextSettings
+	AccessMode       AccessMode
+	AllowedUsernames []string
 }
 
 // Register installs a user-supplied Mattermost bot for an agent: canonicalize
@@ -145,6 +146,10 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 	if err != nil {
 		return db.ChannelInstallation{}, err
 	}
+	names, err := normalizeAllowedUsernames(accessMode, p.AllowedUsernames)
+	if err != nil {
+		return db.ChannelInstallation{}, err
+	}
 	serverURL, err := s.policy.validate(p.ServerURL)
 	if err != nil {
 		return db.ChannelInstallation{}, err
@@ -154,7 +159,8 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		return db.ChannelInstallation{}, err
 	}
 
-	me, err := newRESTClient(serverURL, token, s.httpClient).GetMe(ctx)
+	client := newRESTClient(serverURL, token, s.httpClient)
+	me, err := client.GetMe(ctx)
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("mattermost getMe: %w", classifyCredentialVerificationError(err))
 	}
@@ -166,6 +172,10 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 	}
 	if me.Username == "" {
 		return db.ChannelInstallation{}, fmt.Errorf("%w: bot account has no username", ErrCredentialsRejected)
+	}
+	allowedUsers, err := client.resolveAllowedUsers(ctx, names, nil)
+	if err != nil {
+		return db.ChannelInstallation{}, err
 	}
 
 	sealed, err := s.box.Seal([]byte(token))
@@ -181,6 +191,7 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		AccessTokenEncrypted: base64.StdEncoding.EncodeToString(sealed),
 		Context:              settings,
 		AccessMode:           accessMode,
+		AllowedUsers:         allowedUsers,
 	})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost installation config: %w", err)
@@ -346,11 +357,15 @@ func (s *InstallService) GetInWorkspace(ctx context.Context, id, wsID pgtype.UUI
 }
 
 type SettingsUpdate struct {
-	Context    *ContextSettings `json:"context,omitempty"`
-	AccessMode *AccessMode      `json:"access_mode,omitempty"`
+	Context          *ContextSettings `json:"context,omitempty"`
+	AccessMode       *AccessMode      `json:"access_mode,omitempty"`
+	AllowedUsernames []string         `json:"allowed_usernames"`
 }
 
 func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUID, settings SettingsUpdate) (db.ChannelInstallation, error) {
+	if settings.AllowedUsernames != nil && settings.AccessMode == nil {
+		return db.ChannelInstallation{}, ErrInvalidAllowedUsers
+	}
 	if settings.Context == nil && settings.AccessMode == nil {
 		return db.ChannelInstallation{}, ErrInvalidContextSettings
 	}
@@ -364,6 +379,7 @@ func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUI
 		}
 		settings.Context = &normalized
 	}
+	var allowedUsers *[]AllowedUser
 	if settings.AccessMode != nil {
 		if *settings.AccessMode == "" {
 			return db.ChannelInstallation{}, ErrInvalidAccessMode
@@ -373,8 +389,39 @@ func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUI
 			return db.ChannelInstallation{}, err
 		}
 		settings.AccessMode = &normalized
+		names, err := normalizeAllowedUsernames(normalized, settings.AllowedUsernames)
+		if err != nil {
+			return db.ChannelInstallation{}, err
+		}
+		if normalized == AccessAllowlist {
+			users := []AllowedUser{}
+			if len(names) > 0 {
+				row, err := s.GetInWorkspace(ctx, id, wsID)
+				if err != nil {
+					return db.ChannelInstallation{}, err
+				}
+				creds, err := decodeCredentials(row.Config, s.box.Open)
+				if err != nil {
+					return db.ChannelInstallation{}, err
+				}
+				serverURL, err := s.policy.validate(creds.ServerURL)
+				if err != nil {
+					return db.ChannelInstallation{}, err
+				}
+				users, err = newRESTClient(serverURL, creds.AccessToken, s.httpClient).
+					resolveAllowedUsers(ctx, names, DecodePublicConfig(row.Config).AllowedUsers)
+				if err != nil {
+					return db.ChannelInstallation{}, err
+				}
+			}
+			allowedUsers = &users
+		}
 	}
-	encoded, err := json.Marshal(settings)
+	encoded, err := json.Marshal(struct {
+		Context      *ContextSettings `json:"context,omitempty"`
+		AccessMode   *AccessMode      `json:"access_mode,omitempty"`
+		AllowedUsers *[]AllowedUser   `json:"allowed_users,omitempty"`
+	}{settings.Context, settings.AccessMode, allowedUsers})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost settings: %w", err)
 	}

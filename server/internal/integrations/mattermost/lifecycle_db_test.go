@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -64,6 +65,23 @@ func mattermostInstallHarness(t *testing.T, fx *dbfx.Fixture, q *db.Queries, age
 	t.Helper()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == apiPath+"/users/usernames" {
+			var names []string
+			if err := json.NewDecoder(r.Body).Decode(&names); err != nil {
+				t.Error(err)
+			}
+			users := []User{}
+			for _, name := range names {
+				if name == "alice" {
+					users = append(users, User{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaa", Username: name})
+				}
+				if name == "bob" {
+					users = append(users, User{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbb", Username: name})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(users)
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, apiPath+"/users/external-user") {
 			_ = json.NewEncoder(w).Encode(User{ID: "external-user", Username: "alice"})
 			return
@@ -94,6 +112,49 @@ func mattermostInstallHarness(t *testing.T, fx *dbfx.Fixture, q *db.Queries, age
 	svc.httpClient = srv.Client()
 	return svc, RegisterParams{WorkspaceID: mmUUID(t, fx.WorkspaceID), AgentID: mmUUID(t, agentID),
 		InitiatorID: mmUUID(t, fx.UserID), ServerURL: srv.URL, AccessToken: "original-secret-sentinel"}
+}
+
+func TestAllowlistRegistrationAndUpdatesDB(t *testing.T) {
+	fx, q, agent := mattermostDBFixture(t)
+	svc, params := mattermostInstallHarness(t, fx, q, agent)
+	params.AccessMode = AccessAllowlist
+	params.AllowedUsernames = []string{"@Alice"}
+	ctx := context.Background()
+	row, err := svc.Register(ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(row db.ChannelInstallation, want []AllowedUser) {
+		t.Helper()
+		info := DecodePublicConfig(row.Config)
+		if info.AccessMode != AccessAllowlist || !reflect.DeepEqual(info.AllowedUsers, want) {
+			t.Fatalf("stored access=%s users=%v, want %v", info.AccessMode, info.AllowedUsers, want)
+		}
+	}
+	check(row, []AllowedUser{{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaa", Username: "alice"}})
+	settings := SettingsUpdate{AccessMode: &params.AccessMode, AllowedUsernames: []string{"bob"}}
+	updated, err := svc.UpdateSettings(ctx, row.ID, row.WorkspaceID, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(updated, []AllowedUser{{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbb", Username: "bob"}})
+	if updated.ID != row.ID || updated.InstallerUserID != row.InstallerUserID || updated.InstalledAt != row.InstalledAt {
+		t.Fatal("list update reconnected the bot or changed its authorization principal")
+	}
+	settings.AllowedUsernames = []string{"unknown-account"}
+	if _, err := svc.UpdateSettings(ctx, row.ID, row.WorkspaceID, settings); !errors.Is(err, ErrInvalidAllowedUsers) {
+		t.Fatalf("unknown account was not rejected: %v", err)
+	}
+	unchanged, err := svc.GetInWorkspace(ctx, row.ID, row.WorkspaceID)
+	if err != nil || !bytes.Equal(unchanged.Config, updated.Config) {
+		t.Fatalf("failed lookup changed stored access: %v", err)
+	}
+	settings.AllowedUsernames = []string{}
+	cleared, err := svc.UpdateSettings(ctx, row.ID, row.WorkspaceID, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(cleared, []AllowedUser{})
 }
 
 func TestInstallRotationAndSwapDB(t *testing.T) {
@@ -235,7 +296,7 @@ func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	original.Context = settings
-	if original != updated {
+	if !reflect.DeepEqual(original, updated) {
 		t.Fatal("context update changed credentials or bot identity")
 	}
 	accessMode := AccessMembers
@@ -247,7 +308,7 @@ func TestUpdateContextPreservesCredentialsAndBindingsDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	original.AccessMode = AccessMembers
-	if original != updated {
+	if !reflect.DeepEqual(original, updated) {
 		t.Fatal("access update changed history, credentials or bot identity")
 	}
 	if fx.Count(t, `SELECT count(*) FROM channel_user_binding WHERE id=$1`, bindingID) != 1 ||
