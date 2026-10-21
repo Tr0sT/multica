@@ -188,6 +188,7 @@ See [Daemon and runtimes](/daemon-runtimes) for how it works and for custom prof
 | `repo` | Manage workspace repositories and check them out locally |
 | `daemon`, `runtime` | Start and stop the local daemon; view and manage runtimes |
 | `attachment` | Upload or download attachments |
+| `teambridge` (`mattermost`) | Manage TeamBridge/Mattermost bots, verify account identities, and transfer refusal images |
 | `user profile` | View or update the current user's profile |
 | `auth`, `login`, `setup` | Log in, check auth status, and initialize a connection |
 | `config` | View or edit the current CLI profile's local configuration |
@@ -320,9 +321,19 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | `login` | — | Sign in via the browser and configure all workspaces automatically | `--token` (prompts interactively in the terminal when passed without a value) |
 | `setup` | `cloud` (default), `self-host` | Save the server address, complete sign-in, and start the daemon | `self-host`: `--server-url`, `--app-url`, `--port`, `--frontend-port` |
 | `attachment` | `download <attachment-id>`, `upload <path>` | Download or upload attachments | `download`: `--output-dir`; `upload`: `--task` |
+| `teambridge` | `list`, `install`, `update <installation-id>`, `revoke <installation-id>` | Manage the workspace's TeamBridge/Mattermost installations | `install`: `--agent`, `--config-file` / `--config-stdin`; `update`: `--config-file` / `--config-stdin`; `--output json` |
+| | `verify` | Check a bot token and optional pinned allowed-account IDs without changing accounts | `--config-file` / `--config-stdin`, `--output json` |
+| | `image download <attachment-id>`, `image upload <path>` | Transfer standalone refusal images | `download`: `--output-file`; `--output json` |
 | `config` | `show`, `set <key> <value>` | View or edit the current profile's local configuration | Precedence: command-line flags > environment variables > `config.json` > built-in defaults; set an empty string to clear a value |
 | `update` | — | Update the CLI to the latest version | |
 | `version` | — | Print version information | `--output` (`text` or `json`) |
+
+`teambridge` is also available as `mattermost`. These commands use the selected
+profile and workspace and require a human CLI context. Bot tokens are accepted
+only in a JSON file or on stdin, never as an inline flag. See
+[TeamBridge/Mattermost CLI management](/mattermost-bot-integration#cli-management)
+for payload formats, image handling, and the distinction between settings updates
+and reinstalling a bot.
 
 ## Driving Multica from another coding agent
 

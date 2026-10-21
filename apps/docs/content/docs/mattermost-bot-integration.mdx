@@ -122,6 +122,134 @@ Replies and delivered chunks are recorded in the database. The worker resumes af
 
 Open **Settings → Messaging → Mattermost** to view connected bots and the server each one belongs to. Owners and admins can disconnect one. Disconnecting closes the connection and stops outbound replies but preserves Multica conversations and audit records.
 
+### CLI management
+
+The fork exposes the same integration through `multica teambridge`. `multica
+mattermost` is an alias. All commands return structured JSON with `--output json`
+and honor the normal `--profile`, `--workspace-id`, and Multica authentication
+settings. They require a human CLI context; daemon tasks and task-scoped tokens
+cannot use them for administration.
+
+```bash
+multica --profile production teambridge list --output json
+```
+
+The list response contains `installations`, `configured`, and
+`install_supported`. Each installation includes the agent binding, server and bot
+identity, context selection, access mode, allowed accounts, refusal reply,
+active/revoked status, installer, and timestamps. Existing bot tokens are never
+returned. The list includes revoked installations so an export does not silently
+lose their public settings.
+
+To connect or reactivate a bot, put the request in a private JSON file outside
+your source repository:
+
+```json
+{
+  "server_url": "https://teambridge.example.com",
+  "access_token": "<bot-access-token>",
+  "context": {"mode": "channel", "lookback_hours": 8760},
+  "access_mode": "allowlist",
+  "allowed_usernames": ["sergey"],
+  "denied_reply": {"mode": "text", "text": "Please contact the bot administrator."}
+}
+```
+
+```bash
+chmod 600 ./bot-install.json
+multica teambridge install --agent <agent-uuid> \
+  --config-file ./bot-install.json --output json
+```
+
+`--config-stdin` accepts the same JSON from a secret manager or other pipe.
+There is no inline token flag. Remove a temporary credential file when finished.
+Installing activates the bot and records the current user as installer. Installing
+over an existing binding can rotate its token; changing its server or bot account
+also disconnects old account/chat routes. Use `update` for ordinary settings
+changes, which preserve the token and original installer.
+
+The update file contains only the editable settings:
+
+```json
+{
+  "context": {"mode": "thread", "lookback_hours": 0},
+  "access_mode": "allowlist",
+  "allowed_usernames": ["sergey"],
+  "denied_reply": {"mode": "text", "text": "Please contact the bot administrator."}
+}
+```
+
+```bash
+multica teambridge update <installation-uuid> \
+  --config-file ./bot-settings.json --output json
+multica teambridge revoke <installation-uuid> --output json
+```
+
+Use `allowed_usernames: []` to block everyone in `allowlist` mode. Omit
+`allowed_usernames` for `members` and `anyone`. Context mode is `message`, `thread`
+or `channel`; channel lookback accepts 0, 1, 6, 24, 72, 168, 720, 1440, 2160 or
+8760 hours. Zero means no date cutoff for channel context. List responses retain
+the server's compatibility shapes, including `channel_extended` for extended
+history and `image` for a one-image refusal.
+
+#### Verify exported account identities
+
+`verify` checks an active bot token and optional allowed-account IDs through
+read-only TeamBridge lookups. This helps a configuration importer detect a
+username that was renamed or later assigned to a different account before it
+grants access. Put the request in a private file or pass it on stdin:
+
+```json
+{
+  "server_url": "https://teambridge.example.com",
+  "access_token": "<bot-access-token>",
+  "expected_bot_user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "allowed_users": [
+    {"id": "bbbbbbbbbbbbbbbbbbbbbbbbbb", "username": "sergey"}
+  ]
+}
+```
+
+```bash
+multica teambridge verify --config-file ./bot-verification.json --output json
+```
+
+The result is `{"verified":true}` on success. An omitted account ID requests a
+username existence check. The CLI machine must be able to reach the TeamBridge
+server over HTTPS. Verification does not install a bot, change accounts, send a
+message, or start an agent.
+
+#### Transfer refusal images
+
+```bash
+multica teambridge image upload ./denied.png --output json
+multica teambridge image download <attachment-uuid> \
+  --output-file ./denied.png --output json
+```
+
+These commands transfer standalone workspace images for refusal replies. They
+validate PNG, JPEG, GIF or WebP content up to 5 MiB and reject images associated
+with a task, chat, issue or comment. Downloads return attachment metadata and the
+written file path; uploads return the new attachment ID. To use uploaded images,
+set `denied_reply` in an install/update request:
+
+```json
+{
+  "mode": "images",
+  "image_attachment_ids": ["<first-attachment-uuid>", "<second-attachment-uuid>"]
+}
+```
+
+The general `multica attachment upload` command remains for files produced inside
+a task. Its task attachments are unsuitable for these standalone refusal images.
+
+[`multica-declarative`](https://github.com/Tr0sT/multica-declarative) uses these
+commands for optional TeamBridge export and import, including actual image bytes,
+agent-name remapping, account identity checks, and idempotent settings updates.
+Its ordinary declarations continue to work with the official CLI. Export covers
+public integration configuration; bot tokens, account/chat bindings and runtime
+conversation state are outside this configuration contract.
+
 ## Self-hosting setup
 
 Set a stable 32-byte encryption key before starting the API server:
