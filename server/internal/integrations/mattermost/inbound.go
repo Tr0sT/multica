@@ -22,7 +22,8 @@ type mattermostRawEvent struct {
 	// EventType is a coarse label for drop audits ("posted").
 	EventType string `json:"event_type"`
 	// SenderName is the poster's display name, carried for group attribution.
-	SenderName string `json:"sender_name,omitempty"`
+	SenderName  string `json:"sender_name,omitempty"`
+	ChannelName string `json:"channel_name,omitempty"`
 	// TeamID is the Mattermost team the post belongs to. Empty for DMs and
 	// group DMs, which are team-independent.
 	TeamID string `json:"team_id,omitempty"`
@@ -81,10 +82,11 @@ func inboundFromPosted(post Post, data postedData, p inboundParams) (channel.Inb
 	agentText := cleaned
 
 	raw, _ := json.Marshal(mattermostRawEvent{
-		AppID:      p.appID,
-		EventType:  eventPosted,
-		SenderName: senderDisplayName(data),
-		TeamID:     data.TeamID,
+		AppID:       p.appID,
+		EventType:   eventPosted,
+		SenderName:  senderDisplayName(data),
+		ChannelName: data.ChannelDisplayName,
+		TeamID:      data.TeamID,
 	})
 
 	var reply *channel.ReplyCtx

@@ -33,7 +33,7 @@ func NewMattermostResolverSet(q *db.Queries, tx engine.TxStarter, replier engine
 		Installation: &installationResolver{q: q},
 		Identity:     &identityResolver{q: q},
 		Dedup:        &deduper{q: q},
-		Session: &sessionBinder{session: engine.NewChatSession(q, tx, TypeMattermost, engine.SessionTitles{
+		Session: &sessionBinder{q: q, session: engine.NewChatSession(q, tx, TypeMattermost, engine.SessionTitles{
 			Group:    "Mattermost channel",
 			Direct:   "Mattermost direct message",
 			Fallback: "Mattermost chat",
@@ -57,7 +57,9 @@ var (
 // binding's config: the real channel id survives even when the binding key is
 // a composite (channel:threadRoot thread isolation).
 type mattermostBindingConfig struct {
-	ChannelID string `json:"channel_id"`
+	ChannelID      string `json:"channel_id"`
+	SenderUsername string `json:"sender_username,omitempty"`
+	ChannelName    string `json:"channel_name,omitempty"`
 }
 
 // mattermostSessionRouting derives the session-isolation key, the binding
@@ -75,7 +77,13 @@ type mattermostBindingConfig struct {
 // Pure function, unit-tested without a DB.
 func mattermostSessionRouting(msg channel.InboundMessage) (bindingKey string, config []byte, replyThread string) {
 	chatID := msg.Source.ChatID
-	cfg, _ := json.Marshal(mattermostBindingConfig{ChannelID: chatID})
+	raw, _ := decodeMattermostRaw(msg)
+	metadata := mattermostBindingConfig{ChannelID: chatID, ChannelName: raw.ChannelName}
+	if msg.Source.ChatType == channel.ChatTypeP2P {
+		metadata.SenderUsername = raw.SenderName
+		metadata.ChannelName = ""
+	}
+	cfg, _ := json.Marshal(metadata)
 	if msg.Source.ChatType == channel.ChatTypeP2P {
 		return chatID, cfg, msg.Source.ThreadID
 	}
@@ -230,7 +238,10 @@ type chatSession interface {
 	BindMediaRefs(ctx context.Context, in engine.BindMediaInput) error
 }
 
-type sessionBinder struct{ session chatSession }
+type sessionBinder struct {
+	session chatSession
+	q       *db.Queries
+}
 
 func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessionParams) (pgtype.UUID, error) {
 	bindingKey, config, _ := mattermostSessionRouting(p.Message)
@@ -238,7 +249,7 @@ func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessio
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
-	return r.session.EnsureSession(ctx, engine.EnsureSessionInput{
+	id, err := r.session.EnsureSession(ctx, engine.EnsureSessionInput{
 		WorkspaceID:    p.Installation.WorkspaceID,
 		AgentID:        p.Installation.AgentID,
 		InstallationID: p.Installation.ID,
@@ -247,6 +258,15 @@ func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessio
 		BindingConfig:  config,
 		ChatType:       p.Message.Source.ChatType,
 	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	if err := r.q.UpdateMattermostChatSessionMetadata(ctx, db.UpdateMattermostChatSessionMetadataParams{
+		ChatSessionID: id, InstallationID: p.Installation.ID, Config: config,
+	}); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return id, nil
 }
 
 func (r *sessionBinder) StartSession(ctx context.Context, p engine.StartSessionParams) (engine.StartSessionResult, error) {

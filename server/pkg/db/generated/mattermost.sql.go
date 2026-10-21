@@ -132,6 +132,25 @@ func (q *Queries) SnapshotMattermostReplyAttachments(ctx context.Context, arg Sn
 	return config, err
 }
 
+const updateMattermostChatSessionMetadata = `-- name: UpdateMattermostChatSessionMetadata :exec
+UPDATE channel_chat_session_binding
+SET config = config || $1::jsonb
+WHERE chat_session_id = $2 AND installation_id = $3
+  AND channel_type = 'mattermost'
+  AND config IS DISTINCT FROM config || $1::jsonb
+`
+
+type UpdateMattermostChatSessionMetadataParams struct {
+	Config         []byte      `json:"config"`
+	ChatSessionID  pgtype.UUID `json:"chat_session_id"`
+	InstallationID pgtype.UUID `json:"installation_id"`
+}
+
+func (q *Queries) UpdateMattermostChatSessionMetadata(ctx context.Context, arg UpdateMattermostChatSessionMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateMattermostChatSessionMetadata, arg.Config, arg.ChatSessionID, arg.InstallationID)
+	return err
+}
+
 const updateMattermostInstallationSettings = `-- name: UpdateMattermostInstallationSettings :one
 UPDATE channel_installation
 SET config = config || $1::jsonb,

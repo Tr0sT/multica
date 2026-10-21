@@ -11,6 +11,14 @@ Mattermost support is [community-maintained](/community-maintained): it ships in
 
 Opening the link only previews the account. Check the Mattermost username, server, workspace, and signed-in Multica account, then select **Link account**. Do not confirm a link sent by someone else for an account you do not own. Replacing the server or bot disconnects its old user/chat routes and invalidates old links; the Multica chat history is retained.
 
+## Chat participants and visibility
+
+The Chat list and header show the Mattermost username for direct conversations and the channel name for group threads. These names are saved with incoming messages; an older chat without a saved name is updated when its next message arrives.
+
+Workspace owners and admins can use **Chat owner** to view their own chats, all members’ chats, or one member’s chats, including other admins. Inspection is read-only and does not mark the owner's messages as read. Sending, renaming, pinning, archiving and deleting remain restricted to the chat owner. Other workspace members can only list and open their own chats.
+
+The filter selects the Multica chat owner. For Mattermost users without a linked Multica account, this is the bot installer; the Mattermost username identifies the actual correspondent.
+
 ## Before you start
 
 - A Multica workspace owner or admin must connect the bot.

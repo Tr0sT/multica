@@ -1,5 +1,7 @@
 "use client";
 
+import { chatChannelLabel } from "../lib/channel-label";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
@@ -1035,6 +1037,7 @@ export function ChatWindow() {
         contextItems={contextItems}
         focusRequest={focusRequest}
       />
+      <p className="px-4 pb-2 text-caption text-muted-foreground">{t(($) => $.owner_filter.visibility)}</p>
     </motion.div>
   );
 }
@@ -1213,7 +1216,7 @@ function SessionDropdown({
   const wsId = useWorkspaceId();
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const title = activeSession?.title?.trim() || t(($) => $.window.untitled);
+  const title = [activeSession ? chatChannelLabel(activeSession) : null, activeSession?.title?.trim() || t(($) => $.window.untitled)].filter(Boolean).join(" · ");
   const triggerAgent = activeSession ? agentById.get(activeSession.agent_id) ?? null : null;
 
   // The old soft-archive feature was removed. Pre-existing rows with
@@ -1394,7 +1397,7 @@ function SessionDropdown({
     const isRenaming = renamingId === session.id;
     const isConfirmingStop = confirmingStopId === session.id && !!pendingTask;
     const isConfirmingAction = isConfirmingStop;
-    const titleText = session.title?.trim() || t(($) => $.window.untitled);
+    const titleText = [chatChannelLabel(session), session.title?.trim() || t(($) => $.window.untitled)].filter(Boolean).join(" · ");
     const trailingStatus = isRunning
       ? t(($) => $.session_history.row_subtitle.working)
       : showCompleted

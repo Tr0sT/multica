@@ -32,6 +32,7 @@ import { isImeComposing } from "@multica/core/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
+import { chatChannelLabel } from "../lib/channel-label";
 
 /**
  * Per-session header for the conversation pane: agent avatar + editable chat
@@ -43,9 +44,13 @@ export function ChatSessionHeader({
   session,
   agent,
   onArchive,
+  readOnly = false,
+  ownerName,
 }: {
   session: ChatSession;
   agent: Agent | null;
+  readOnly?: boolean;
+  ownerName?: string;
   // Archiving the open conversation must move the pane off it (advance to the
   // next chat on desktop, back to the list on mobile), so the parent owns it —
   // see ChatPage.handleArchive. Falls back to a plain status flip if unwired.
@@ -71,6 +76,8 @@ export function ChatSessionHeader({
   const blurCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const title = session.title?.trim() || t(($) => $.window.untitled);
+  const channelLabel = chatChannelLabel(session);
+  const subtitle = [agent?.name, channelLabel, ownerName || (!channelLabel ? agent?.description : null)].filter(Boolean).join(" · ");
 
   useEffect(() => {
     if (editing) {
@@ -133,7 +140,7 @@ export function ChatSessionHeader({
       )}
 
       <div className="min-w-0 flex-1">
-        {editing ? (
+        {editing && !readOnly ? (
           <input
             ref={inputRef}
             value={draft}
@@ -193,21 +200,21 @@ export function ChatSessionHeader({
           <button
             type="button"
             onClick={startRename}
-            title={t(($) => $.header.rename)}
+            disabled={readOnly}
+            title={readOnly ? title : t(($) => $.header.rename)}
             className="block max-w-full truncate text-left text-body font-semibold text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
           >
             {title}
           </button>
         )}
-        {agent && (
-          <div className="truncate text-caption text-muted-foreground">
-            {agent.name}
-            {agent.description ? ` · ${agent.description}` : ""}
+        {subtitle && (
+          <div className="truncate text-caption text-muted-foreground" title={subtitle}>
+            {subtitle}
           </div>
         )}
       </div>
 
-      <DropdownMenu>
+      {!readOnly && <DropdownMenu>
         <DropdownMenuTrigger
           render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
         >
@@ -246,7 +253,7 @@ export function ChatSessionHeader({
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>}
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

@@ -61,3 +61,10 @@ SET config = jsonb_set(delivery.config, '{reply_attachment_ids}',
     )))
 WHERE delivery.task_id = @task_id AND delivery.channel_type = 'mattermost'
 RETURNING config;
+
+-- name: UpdateMattermostChatSessionMetadata :exec
+UPDATE channel_chat_session_binding
+SET config = config || @config::jsonb
+WHERE chat_session_id = @chat_session_id AND installation_id = @installation_id
+  AND channel_type = 'mattermost'
+  AND config IS DISTINCT FROM config || @config::jsonb;

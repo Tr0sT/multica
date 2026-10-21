@@ -26,7 +26,7 @@ import {
   useSetChatSessionPinned,
 } from "@multica/core/chat/mutations";
 import { useChatStore } from "@multica/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
+import type { Agent, ChatSession, MemberWithUser, PendingChatTasksResponse } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   RowActionsMenu,
@@ -37,6 +37,7 @@ import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
 import { createLogger } from "@multica/core/logger";
 import { removeChatMessageFromCaches } from "@multica/core/realtime";
 import { useLocale, useT } from "../../i18n";
+import { chatChannelLabel } from "../lib/channel-label";
 
 const apiLogger = createLogger("chat.api");
 
@@ -84,8 +85,14 @@ export function ChatThreadList({
   activeSessionId,
   onSelectSession,
   onArchive,
+  viewerId,
+  members = [],
+  creatorFilter,
 }: {
   sessions: ChatSession[];
+  viewerId?: string;
+  members?: MemberWithUser[];
+  creatorFilter?: string;
   agents: Agent[];
   activeSessionId: string | null;
   onSelectSession: (session: ChatSession) => void;
@@ -102,7 +109,7 @@ export function ChatThreadList({
   // affordance simply stays off.
   const slug = useWorkspaceSlug();
   const sessionHref = (sessionId: string) =>
-    slug ? `${paths.workspace(slug).chat()}?session=${sessionId}` : null;
+    slug ? `${paths.workspace(slug).chat()}?session=${sessionId}${creatorFilter ? `&creator=${encodeURIComponent(creatorFilter)}` : ""}` : null;
   // Optional: the list renders bare in tests; without an adapter the web
   // modifier-click affordance stays off (desktop keeps selection anyway).
   const navigation = useOptionalNavigation();
@@ -205,6 +212,10 @@ export function ChatThreadList({
 
   const renderRow = (session: ChatSession) => {
     const isCurrent = session.id === activeSessionId;
+    const readOnly = !!viewerId && session.creator_id !== viewerId;
+    const ownerName = readOnly
+      ? members.find((member) => member.user_id === session.creator_id)?.name || t(($) => $.owner_filter.former_member)
+      : null;
     const agent = agentById.get(session.agent_id) ?? null;
     const agentName = agent?.name.trim() || null;
     const pendingTask = pendingTaskBySessionId.get(session.id);
@@ -219,7 +230,7 @@ export function ChatThreadList({
     const isConfirmingDelete = confirmingDeleteId === session.id;
     const isConfirmingStop = confirmingStopId === session.id && !!pendingTask;
     const isConfirmingAction = isConfirmingDelete || isConfirmingStop;
-    const titleText = session.title?.trim() || t(($) => $.window.untitled);
+    const titleText = [chatChannelLabel(session), ownerName, session.title?.trim() || t(($) => $.window.untitled)].filter(Boolean).join(" · ");
     const last = session.last_message ?? null;
     const timeText = last
       ? formatChatTime(last.created_at, locale)
@@ -257,7 +268,7 @@ export function ChatThreadList({
     } else if (last) {
       previewNode = (
         <span className={cn("block truncate", unread > 0 ? "text-foreground" : "text-muted-foreground")}>
-          {last.role === "user" ? t(($) => $.list.you_prefix) : ""}
+          {last.role === "user" && !readOnly && session.channel_source?.channel_type !== "mattermost" ? t(($) => $.list.you_prefix) : ""}
           {toPreview(last.content)}
         </span>
       );
@@ -270,7 +281,7 @@ export function ChatThreadList({
     // is the only place hard-delete lives; the history view offers the
     // reversible archive instead.
     const rowActions: RowActionItem[] =
-      view === "archived"
+      readOnly ? [] : view === "archived"
         ? [
             {
               key: "unarchive",
@@ -382,7 +393,7 @@ export function ChatThreadList({
                 className="size-3 shrink-0 -rotate-45 fill-current text-muted-foreground"
               />
             )}
-            <span className={cn("min-w-0 flex-1 truncate text-body", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
+            <span title={titleText} className={cn("min-w-0 flex-1 truncate text-body", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
               {titleText}
             </span>
             <span className="ml-auto shrink-0 text-micro text-muted-foreground">{timeText}</span>
@@ -450,7 +461,7 @@ export function ChatThreadList({
             below, which a pointer without hover can never reach. It takes real
             layout space (rather than overlaying the preview) and gives way to
             the hover strip on a hover-capable pointer. */}
-        {!isConfirmingAction && (
+        {!isConfirmingAction && rowActions.length > 0 && (
           <RowActionsMenu
             label={t(($) => $.list.row_actions_aria)}
             groups={[rowActions]}
@@ -460,7 +471,7 @@ export function ChatThreadList({
         {/* Hover actions — absolutely positioned so showing/hiding them never
             changes the row height (which was making the list jump). Keyboard
             focus reveals them too, so they are reachable without a mouse. */}
-        {!isConfirmingAction && (
+        {!isConfirmingAction && rowActions.length > 0 && (
           <div className="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-gradient-to-l from-accent from-40% to-transparent pl-10 pr-1 [@media(hover:hover)]:group-hover/row:flex [@media(hover:hover)]:group-focus-within/row:flex">
             {rowActions.map((action) => (
               <RowAction

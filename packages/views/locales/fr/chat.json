@@ -252,5 +252,13 @@
     "archive": "Archiver la discussion",
     "unarchive": "Désarchiver la discussion",
     "delete": "Supprimer la discussion"
+  },
+  "owner_filter": {
+    "label": "Propriétaire du chat",
+    "mine": "Mes chats",
+    "all": "Tous les membres",
+    "former_member": "Ancien membre",
+    "read_only": "Vous consultez le chat d’un autre membre. Seul son propriétaire peut envoyer des messages ou le modifier.",
+    "visibility": "Visible par vous et les administrateurs de l’espace de travail."
   }
 }

@@ -180,3 +180,20 @@ describe("ChatSessionHeader rename keyboard behavior", () => {
     expect(screen.getByText("Original title")).toBeInTheDocument();
   });
 });
+
+it("shows Mattermost identity while keeping an inspected chat read-only", () => {
+  render(
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      <ChatSessionHeader
+        session={{ ...session, channel_source: { channel_type: "mattermost", installation_id: "installation", route_revision: 1, sender_username: "alice.example" } }}
+        agent={null}
+        ownerName="Other admin"
+        readOnly
+      />
+    </I18nProvider>,
+  );
+  expect(screen.getByText("@alice.example · Other admin")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Original title" })).toBeDisabled();
+  expect(screen.queryByTitle(RENAME_LABEL)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /more/i })).not.toBeInTheDocument();
+});

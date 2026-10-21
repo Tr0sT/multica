@@ -1721,7 +1721,8 @@ LEFT JOIN LATERAL (
    ORDER BY m.created_at DESC
    LIMIT 1
 ) lm ON true
-WHERE cs.workspace_id = $1 AND cs.creator_id = $2
+WHERE cs.workspace_id = $1
+  AND ($2::uuid IS NULL OR cs.creator_id = $2)
   AND (
     cs.explicitly_created_at IS NOT NULL
     OR
@@ -2311,7 +2312,9 @@ LEFT JOIN LATERAL (
    ORDER BY m.created_at DESC
    LIMIT 1
 ) lm ON true
-WHERE cs.workspace_id = $1 AND cs.creator_id = $2 AND cs.status = 'active'
+WHERE cs.workspace_id = $1
+  AND ($2::uuid IS NULL OR cs.creator_id = $2)
+  AND cs.status = 'active'
   AND (
     cs.explicitly_created_at IS NOT NULL
     OR

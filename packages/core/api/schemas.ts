@@ -2156,6 +2156,8 @@ const ChatChannelSourceSchema = z.object({
   channel_type: z.string().default(""),
   installation_id: z.string().default(""),
   route_revision: z.number().default(0),
+  sender_username: z.string().optional().catch(undefined),
+  channel_name: z.string().optional().catch(undefined),
 }).loose();
 
 export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({

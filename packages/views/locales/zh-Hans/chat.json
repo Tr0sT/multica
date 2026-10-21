@@ -248,5 +248,13 @@
     "delete": "删除会话",
     "archive": "归档会话",
     "unarchive": "取消归档"
+  },
+  "owner_filter": {
+    "label": "聊天所属成员",
+    "mine": "我的聊天",
+    "all": "所有成员",
+    "former_member": "已退出成员",
+    "read_only": "正在查看其他成员的聊天。只有聊天所属成员可以发送消息或修改聊天。",
+    "visibility": "你和工作区管理员可以查看此聊天。"
   }
 }

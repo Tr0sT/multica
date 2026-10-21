@@ -252,5 +252,13 @@
     "archive": "Archive chat",
     "unarchive": "Unarchive chat",
     "delete": "Delete chat"
+  },
+  "owner_filter": {
+    "label": "Chat owner",
+    "mine": "My chats",
+    "all": "All members",
+    "former_member": "Former member",
+    "read_only": "You are viewing another member’s chat. Only its owner can send messages or change it.",
+    "visibility": "Visible to you and workspace admins."
   }
 }

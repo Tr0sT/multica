@@ -922,6 +922,13 @@ describe("useChatController auto mark-read — foreground gating (MUL-4485)", ()
     expect(h.markReadMutate).toHaveBeenCalledWith("sU");
   });
 
+  it("does not mark another member's chat read during inspection", () => {
+    const { result } = renderController("sU", [{ ...unreadActive, creator_id: "another-member" }]);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current.isReadOnly).toBe(true);
+    expect(h.markReadMutate).not.toHaveBeenCalled();
+  });
+
   it("does NOT mark read while the app is backgrounded, so the reply stays unread", () => {
     h.appForeground.value = false;
     renderController("sU", [unreadActive]);

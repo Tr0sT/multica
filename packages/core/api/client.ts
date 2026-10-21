@@ -3698,10 +3698,13 @@ export class ApiClient {
 
   // Chat Sessions
   async listChatSessions(
-    params?: { status?: string },
+    params?: { status?: string; creator_id?: string },
     workspaceSlug?: string,
   ): Promise<ChatSession[]> {
-    const query = params?.status ? `?status=${params.status}` : "";
+    const search = new URLSearchParams();
+    if (params?.status) search.set("status", params.status);
+    if (params?.creator_id) search.set("creator_id", params.creator_id);
+    const query = search.size ? `?${search}` : "";
     const raw: unknown = await this.fetch(`/api/chat/sessions${query}`, {
       headers: workspaceHeader(workspaceSlug),
     });

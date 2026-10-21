@@ -4,6 +4,7 @@ import type { TaskMessagePayload } from "../types/events";
 import type { ChatSession } from "../types/chat";
 import {
   countUnreadChatSessions,
+  chatSessionsOptions,
   isTaskMessageTaskId,
   mergeTaskMessagesBySeq,
   sortChatSessions,
@@ -17,6 +18,13 @@ const msg = (seq: number): TaskMessagePayload => ({
   seq,
   type: "text",
   content: `m${seq}`,
+});
+
+it("isolates administrator chat lists from the owner's cache and other workspaces", () => {
+  const keys = [chatSessionsOptions("ws-1"), chatSessionsOptions("ws-1", "all"), chatSessionsOptions("ws-1", "member-1"), chatSessionsOptions("ws-2", "all")].map((option) => JSON.stringify(option.queryKey));
+  expect(new Set(keys).size).toBe(4);
+  expect(chatSessionsOptions("ws-1").refetchInterval).toBe(false);
+  expect(chatSessionsOptions("ws-1", "all").refetchInterval).toBe(10_000);
 });
 
 describe("taskMessagesOptions", () => {

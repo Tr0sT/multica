@@ -104,6 +104,7 @@ const storeRef = vi.hoisted(() => ({
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
 const agentsSettledRef = vi.hoisted(() => ({ current: true }));
+const inspection = vi.hoisted(() => ({ admin: false, readOnly: false }));
 const mockStartNewChat = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
 const mockSetActiveSession = vi.hoisted(() =>
@@ -135,6 +136,9 @@ vi.mock("./components/use-chat-controller", async () => {
     useChatController: () => ({
       wsId: "ws-1",
       user: { id: "user-1" },
+      canInspectMembers: inspection.admin,
+      isReadOnly: inspection.readOnly,
+      members: [{ user_id: "other", name: "Other admin", role: "admin" }],
       agents: availableAgentsRef.current,
       availableAgents: availableAgentsRef.current,
       agentsSettled: agentsSettledRef.current,
@@ -144,7 +148,7 @@ vi.mock("./components/use-chat-controller", async () => {
         () => storeRef.current,
       ).activeSessionId,
       selectedAgentId: null,
-      currentSession: null,
+      currentSession: inspection.readOnly ? { id: "foreign", creator_id: "other" } : null,
       isSessionArchived: false,
       isAgentArchived: false,
       isAgentRuntimeBound: true,
@@ -257,6 +261,8 @@ beforeEach(() => {
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
+  inspection.admin = false;
+  inspection.readOnly = false;
   platformWorkspace.slug = "acme";
   layout.width = DESKTOP;
 });
@@ -495,4 +501,28 @@ describe("ChatPage responsive layout", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("chat-input")).toBeInTheDocument();
   });
+});
+
+
+it("offers the member filter only to administrators", () => {
+  const view = renderPage("");
+  expect(screen.queryByRole("combobox", { name: enChat.owner_filter.label })).not.toBeInTheDocument();
+  inspection.admin = true;
+  view.rerender();
+  expect(screen.getByRole("combobox", { name: enChat.owner_filter.label })).toBeInTheDocument();
+});
+
+it("preserves the member filter while changing the selected chat", () => {
+  inspection.admin = true;
+  const { replace } = renderPage("creator=all&session=session-1");
+  act(() => mockSetActiveSession("session-2"));
+  expect(replace).toHaveBeenCalledWith("/acme/chat?creator=all&session=session-2");
+});
+
+it("hides the composer while an administrator inspects another member's chat", () => {
+  inspection.admin = true;
+  inspection.readOnly = true;
+  renderPage("creator=all&session=foreign");
+  expect(screen.getByText(enChat.owner_filter.read_only)).toBeInTheDocument();
+  expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
 });

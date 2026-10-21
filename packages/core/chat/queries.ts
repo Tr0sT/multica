@@ -74,11 +74,15 @@ export function isTaskMessageTaskId(taskId: string | null | undefined): taskId i
   return typeof taskId === "string" && UUID_PATTERN.test(taskId);
 }
 
-export function chatSessionsOptions(wsId: string) {
+export function chatSessionsOptions(wsId: string, creatorId?: string) {
   return queryOptions({
-    queryKey: chatKeys.sessions(wsId),
-    queryFn: () => api.listChatSessions({ status: "all" }),
-    staleTime: Infinity,
+    queryKey: creatorId
+      ? [...chatKeys.sessions(wsId), "creator", creatorId]
+      : chatKeys.sessions(wsId),
+    queryFn: () => api.listChatSessions({ status: "all", ...(creatorId ? { creator_id: creatorId } : {}) }),
+    staleTime: creatorId ? 10_000 : Infinity,
+    // Other members' chat events are private to their owner.
+    refetchInterval: creatorId ? 10_000 : false,
   });
 }
 

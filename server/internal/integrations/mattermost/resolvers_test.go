@@ -88,6 +88,24 @@ func TestMattermostSessionRoutingIsolatesThreads(t *testing.T) {
 	}
 }
 
+func TestMattermostSessionRoutingIdentity(t *testing.T) {
+	for _, kind := range []channel.ChatType{channel.ChatTypeP2P, channel.ChatTypeGroup} {
+		msg := inboundFor(kind, "channel", "post", "")
+		msg.Raw = json.RawMessage(`{"sender_name":"alice.example","channel_name":"Hustle Castle"}`)
+		_, raw, _ := mattermostSessionRouting(msg)
+		var metadata mattermostBindingConfig
+		if err := json.Unmarshal(raw, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if kind == channel.ChatTypeP2P && (metadata.SenderUsername != "alice.example" || metadata.ChannelName != "") {
+			t.Fatalf("direct chat identity = %+v", metadata)
+		}
+		if kind == channel.ChatTypeGroup && (metadata.ChannelName != "Hustle Castle" || metadata.SenderUsername != "") {
+			t.Fatalf("group chat mislabeled as one person's DM: %+v", metadata)
+		}
+	}
+}
+
 func TestDecodeMattermostRaw(t *testing.T) {
 	raw, err := json.Marshal(mattermostRawEvent{AppID: testAppID, EventType: eventPosted, SenderName: "alice"})
 	if err != nil {

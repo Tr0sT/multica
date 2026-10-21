@@ -157,6 +157,15 @@ describe("ChatSessionSchema", () => {
     })).toEqual(EMPTY_CHAT_SESSION);
   });
 
+  it("reads Mattermost identity and ignores malformed optional names", () => {
+    const source = { channel_type: "mattermost", installation_id: "installation-1", route_revision: 1 };
+    expect(ChatSessionSchema.parse({ ...baseSession, channel_source: { ...source, sender_username: "alice.example" } }).channel_source?.sender_username).toBe("alice.example");
+    const parsed = ChatSessionSchema.parse({ ...baseSession, channel_source: { ...source, sender_username: 42, channel_name: null } });
+    expect(parsed.channel_source?.channel_type).toBe("mattermost");
+    expect(parsed.channel_source?.sender_username).toBeUndefined();
+    expect(parsed.channel_source?.channel_name).toBeUndefined();
+  });
+
   it("drops one malformed list item without hiding the other Chats", () => {
     const parsed = ChatSessionListSchema.parse([
       baseSession,

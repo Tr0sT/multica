@@ -5,6 +5,7 @@ import { useDefaultLayout } from "react-resizable-panels";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@multica/ui/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -70,6 +71,7 @@ export function ChatPage() {
 
   const c = useChatController({
     isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
+    creatorId: searchParams.get("creator") || undefined,
   });
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
@@ -123,7 +125,10 @@ export function ChatPage() {
     const current = searchParams.get("session") || null;
     if (live !== current) {
       const base = wsPaths.chat();
-      replace(live ? `${base}?session=${live}` : base);
+      const params = new URLSearchParams(searchParams.toString());
+      if (live) params.set("session", live);
+      else params.delete("session");
+      replace(params.size ? `${base}?${params}` : base);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile store/route changes, not URL updates
   }, [isCurrentChatRoute, workspaceSlug, c.activeSessionId]);
@@ -169,6 +174,7 @@ export function ChatPage() {
   };
 
   const startNewChat = (agent: Agent | null) => {
+    if (searchParams.get("creator")) replace(wsPaths.chat());
     // A manual ⊕ pick outranks a pending deep link; when called FROM the
     // intent effect the ref is already set to this param, so this is a no-op.
     supersedeAgentIntent();
@@ -235,14 +241,41 @@ export function ChatPage() {
     </PageHeader>
   );
 
+  const ownerItems = [
+    { value: "mine", label: t(($) => $.owner_filter.mine) },
+    { value: "all", label: t(($) => $.owner_filter.all) },
+    ...(c.members ?? []).filter((member) => member.user_id !== c.user?.id).map((member) => ({ value: member.user_id, label: member.name })),
+  ];
   const listBody = (
     <div className="px-2 py-1">
+      {c.canInspectMembers && (
+        <Select
+          items={ownerItems}
+          value={searchParams.get("creator") || "mine"}
+          onValueChange={(value) => {
+            if (!value) return;
+            replace(value === "mine" ? wsPaths.chat() : `${wsPaths.chat()}?creator=${encodeURIComponent(value)}`);
+          }}
+        >
+          <SelectTrigger className="mb-2 w-full" aria-label={t(($) => $.owner_filter.label)}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ownerItems.map((item) => (
+              <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <ChatThreadList
         sessions={c.sessions}
         agents={c.agents}
         activeSessionId={c.activeSessionId}
         onSelectSession={handleSelect}
         onArchive={handleArchive}
+        viewerId={c.user?.id}
+        members={c.members}
+        creatorFilter={searchParams.get("creator") || undefined}
       />
     </div>
   );
@@ -261,6 +294,8 @@ export function ChatPage() {
           session={c.currentSession}
           agent={c.activeAgent}
           onArchive={handleArchive}
+          readOnly={c.isReadOnly}
+          ownerName={c.isReadOnly ? c.members.find((member) => member.user_id === c.currentSession?.creator_id)?.name || t(($) => $.owner_filter.former_member) : undefined}
         />
       )}
       {c.showSkeleton ? (
@@ -278,13 +313,14 @@ export function ChatPage() {
           onQuickAction={(action) => c.handleSend(action.prompt)}
           quickActionsDisabled={
             !!c.pendingTaskId ||
+            c.isReadOnly ||
             c.isSessionArchived ||
             c.isAgentArchived ||
             c.isAgentAccessRevoked ||
             !c.isAgentRuntimeBound ||
             c.noAgent
           }
-          onRegenerateQuickActions={(message) =>
+          onRegenerateQuickActions={c.isReadOnly ? undefined : (message) =>
             c.activeSessionId
               ? regenerateQuickActions.mutateAsync({
                   sessionId: c.activeSessionId,
@@ -294,6 +330,8 @@ export function ChatPage() {
           }
           quickActionsPendingMessageId={quickActionsPending?.message_id ?? null}
         />
+      ) : c.isReadOnly ? (
+        <p className="p-4 text-caption text-muted-foreground">{t(($) => $.list.no_messages)}</p>
       ) : (
         <EmptyState
           agent={c.activeAgent}
@@ -303,6 +341,9 @@ export function ChatPage() {
         />
       )}
 
+      {c.isReadOnly ? (
+        <p className="px-4 py-3 text-caption text-muted-foreground">{t(($) => $.owner_filter.read_only)}</p>
+      ) : <>
       {c.isAgentAccessRevoked ? (
         <AgentAccessRevokedBanner agentName={c.activeAgent?.name} />
       ) : c.noAgent ? (
@@ -356,6 +397,8 @@ export function ChatPage() {
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
       />
+      <p className="px-4 pb-2 text-caption text-muted-foreground">{t(($) => $.owner_filter.visibility)}</p>
+      </>}
     </div>
   );
 
