@@ -219,7 +219,7 @@ function InstallationRow({
               </span>
             ) : null}
             {!isActive && (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+              <span className="ml-2 rounded-sm bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.mattermost.revoked_badge)}
               </span>
             )}
