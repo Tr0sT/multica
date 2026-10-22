@@ -277,6 +277,7 @@ export type {
 export type {
   MattermostContextMode,
   MattermostAccessMode,
+  MattermostAttachmentMode,
   MattermostDeniedReply,
   MattermostContextSettings,
   MattermostInstallation,

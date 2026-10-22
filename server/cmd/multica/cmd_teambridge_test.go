@@ -281,6 +281,8 @@ func TestTeamBridgeRejectsInvalidConfigBeforeRequests(t *testing.T) {
 		"empty-allowlist-omitted": `{"access_mode":"allowlist"}`,
 		"members-with-allowlist":  `{"access_mode":"members","allowed_usernames":[]}`,
 		"unsupported-hours":       `{"context":{"mode":"channel","lookback_hours":5}}`,
+		"unsupported-attachments": `{"attachment_mode":"inline"}`,
+		"empty-attachments":       `{"attachment_mode":""}`,
 		"ambiguous-reply":         `{"denied_reply":{"mode":"images","text":"bad","image_attachment_ids":["` + tbImageID + `"]}}`,
 		"short-image-id":          `{"denied_reply":{"mode":"images","image_attachment_ids":["44444444"]}}`,
 		"oversized-file":          strings.Repeat(" ", teamBridgeConfigLimit+1),
@@ -297,6 +299,22 @@ func TestTeamBridgeRejectsInvalidConfigBeforeRequests(t *testing.T) {
 	}
 	if err := validateTeamBridgeWireSize(map[string]string{"escaped": strings.Repeat("<", teamBridgeConfigLimit/5)}); err == nil {
 		t.Fatal("JSON escaping must not evade the server's request limit")
+	}
+}
+
+func TestTeamBridgeUpdatesOnlyAttachmentMode(t *testing.T) {
+	teamBridgeTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if r.Method != http.MethodPatch || json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 1 || body["attachment_mode"] != "links" {
+			t.Error("attachment mode update changed other settings")
+		}
+		response := teamBridgeTestInstallation()
+		response["attachment_mode"] = "links"
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	out, err := executeTeamBridge(t, `{"attachment_mode":"links"}`, "teambridge", "update", tbInstallationID, "--config-stdin")
+	if err != nil || !strings.Contains(out, `"attachment_mode": "links"`) {
+		t.Fatalf("attachment mode was lost: %s, %v", out, err)
 	}
 }
 

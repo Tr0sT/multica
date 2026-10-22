@@ -28,6 +28,9 @@ type mattermostChannel struct {
 	botUsername     string
 	token           string
 	contextSettings ContextSettings
+	attachmentMode  AttachmentMode
+	installConfig   installConfig
+	fileLinks       *FileLinks
 	rest            *restClient
 	dialer          *websocket.Dialer
 	handler         channel.InboundHandler
@@ -74,7 +77,7 @@ func (c *mattermostChannel) Type() channel.Type { return TypeMattermost }
 // would need a cross-replica sender registry (see the design note in
 // docs/superpowers/specs/2026-09-01-mattermost-integration-design.md).
 // Attachments on agent replies use the durable Outbound worker; this Channel
-// interface handles text sends and does not ingest attachments.
+// interface handles text sends; incoming files are represented by text links.
 func (c *mattermostChannel) Capabilities() channel.Capability {
 	return channel.CapText | channel.CapThreadReply
 }
@@ -259,6 +262,11 @@ func (c *mattermostChannel) dispatchPosted(ctx context.Context, frame wsFrame) e
 	if !ok {
 		return nil
 	}
+	if msg.Type == channel.MsgTypeFile && c.attachmentMode == AttachmentsLinks && c.fileLinks != nil {
+		msg.Type = channel.MsgTypeText
+		msg.Text = "The user shared attachments without a text instruction."
+		msg.CommandText = "Shared attachments"
+	}
 	if msg.Type != channel.MsgTypeText {
 		if msg.Source.ChatType == channel.ChatTypeP2P || msg.AddressedToBot {
 			c.notifyUnsupported(ctx, post)
@@ -396,9 +404,10 @@ func (c *rootAuthorCache) put(key string, value bool) {
 // ChannelDeps are the shared dependencies the Mattermost Factory closes over.
 // The engine inbound handler is supplied per-build via channel.Config.Handler.
 type ChannelDeps struct {
-	Decrypt Decrypter
-	Policy  *ServerPolicy
-	Logger  *slog.Logger
+	Decrypt   Decrypter
+	Policy    *ServerPolicy
+	Logger    *slog.Logger
+	FileLinks *FileLinks
 	// HTTPClient overrides the REST client (tests). Nil uses a default that
 	// refuses redirects.
 	HTTPClient *http.Client
@@ -445,6 +454,10 @@ func newMattermostFactory(deps ChannelDeps) channel.Factory {
 		if err != nil {
 			return nil, err
 		}
+		attachmentMode, err := ic.AttachmentMode.normalized()
+		if err != nil {
+			return nil, err
+		}
 		return &mattermostChannel{
 			appID:           ic.AppID,
 			serverURL:       base,
@@ -452,6 +465,9 @@ func newMattermostFactory(deps ChannelDeps) channel.Factory {
 			botUsername:     ic.BotUsername,
 			token:           token,
 			contextSettings: settings,
+			attachmentMode:  attachmentMode,
+			installConfig:   ic,
+			fileLinks:       deps.FileLinks,
 			rest:            newRESTClient(base, token, deps.HTTPClient),
 			dialer:          deps.Dialer,
 			handler:         cfg.Handler,

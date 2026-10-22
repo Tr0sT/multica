@@ -3520,6 +3520,7 @@ export const MattermostInstallationSchema = z.object({
   bot_user_id: z.string().default(""),
   bot_username: z.string().default(""),
   access_mode: z.enum(["members", "anyone", "allowlist", "unknown"]).catch("unknown").default("members"),
+  attachment_mode: z.enum(["none", "links", "unknown"]).catch("unknown").default("none"),
   allowed_users: z.array(z.object({
     id: z.string().min(1),
     username: z.string().min(1),

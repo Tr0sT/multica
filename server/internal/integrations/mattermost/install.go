@@ -130,6 +130,7 @@ type RegisterParams struct {
 	ServerURL        string
 	AccessToken      string
 	Context          ContextSettings
+	AttachmentMode   AttachmentMode
 	AccessMode       AccessMode
 	AllowedUsernames []string
 	DeniedReply      DeniedReply
@@ -141,6 +142,10 @@ type RegisterParams struct {
 // token at rest, and persist the installation keyed by (workspace, agent) with
 // the composed server+bot key in the routing slot.
 func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.ChannelInstallation, error) {
+	attachmentMode, err := p.AttachmentMode.normalized()
+	if err != nil {
+		return db.ChannelInstallation{}, err
+	}
 	settings, err := p.Context.normalized()
 	if err != nil {
 		return db.ChannelInstallation{}, err
@@ -197,6 +202,7 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		BotUsername:          me.Username,
 		AccessTokenEncrypted: base64.StdEncoding.EncodeToString(sealed),
 		Context:              settings,
+		AttachmentMode:       attachmentMode,
 		AccessMode:           accessMode,
 		AllowedUsers:         allowedUsers,
 		DeniedReply:          reply,
@@ -366,6 +372,7 @@ func (s *InstallService) GetInWorkspace(ctx context.Context, id, wsID pgtype.UUI
 
 type SettingsUpdate struct {
 	Context          *ContextSettings `json:"context,omitempty"`
+	AttachmentMode   *AttachmentMode  `json:"attachment_mode,omitempty"`
 	AccessMode       *AccessMode      `json:"access_mode,omitempty"`
 	AllowedUsernames []string         `json:"allowed_usernames"`
 	DeniedReply      *DeniedReply     `json:"denied_reply,omitempty"`
@@ -375,8 +382,15 @@ func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUI
 	if settings.AllowedUsernames != nil && settings.AccessMode == nil {
 		return db.ChannelInstallation{}, ErrInvalidAllowedUsers
 	}
-	if settings.Context == nil && settings.AccessMode == nil && settings.DeniedReply == nil {
+	if settings.Context == nil && settings.AttachmentMode == nil && settings.AccessMode == nil && settings.DeniedReply == nil {
 		return db.ChannelInstallation{}, ErrInvalidContextSettings
+	}
+	if settings.AttachmentMode != nil {
+		mode, err := settings.AttachmentMode.normalized()
+		if err != nil || *settings.AttachmentMode == "" {
+			return db.ChannelInstallation{}, ErrInvalidAttachmentMode
+		}
+		settings.AttachmentMode = &mode
 	}
 	if settings.DeniedReply != nil {
 		reply, err := s.prepareDeniedReply(ctx, wsID, *settings.DeniedReply)
@@ -434,11 +448,12 @@ func (s *InstallService) UpdateSettings(ctx context.Context, id, wsID pgtype.UUI
 		}
 	}
 	encoded, err := json.Marshal(struct {
-		Context      *ContextSettings `json:"context,omitempty"`
-		AccessMode   *AccessMode      `json:"access_mode,omitempty"`
-		AllowedUsers *[]AllowedUser   `json:"allowed_users,omitempty"`
-		DeniedReply  *DeniedReply     `json:"denied_reply,omitempty"`
-	}{settings.Context, settings.AccessMode, allowedUsers, settings.DeniedReply})
+		Context        *ContextSettings `json:"context,omitempty"`
+		AttachmentMode *AttachmentMode  `json:"attachment_mode,omitempty"`
+		AccessMode     *AccessMode      `json:"access_mode,omitempty"`
+		AllowedUsers   *[]AllowedUser   `json:"allowed_users,omitempty"`
+		DeniedReply    *DeniedReply     `json:"denied_reply,omitempty"`
+	}{settings.Context, settings.AttachmentMode, settings.AccessMode, allowedUsers, settings.DeniedReply})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode mattermost settings: %w", err)
 	}

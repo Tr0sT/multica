@@ -1199,7 +1199,7 @@
       "unlimited": "No limit",
       "channel_unlimited_summary": "Chat history, no date limit",
       "help": "Controls history loaded from Mattermost. The existing Multica conversation is kept.",
-      "notice": "Other participants' messages are saved in Multica and sent to the agent's model. Text only, up to 1,000 posts / 128 KiB; incomplete history is marked.",
+      "notice": "Other participants' messages are saved in Multica and sent to the agent's model. Up to 1,000 posts / 128 KiB; incomplete history is marked.",
       "summary": "Context: {{selection}}",
       "channel_summary": "Chat history, last {{hours}} hours"
     },
@@ -1268,6 +1268,13 @@
       "unknown": "Unknown access mode",
       "notice": "No Multica account is required. Requests run on behalf of the bot installer and can use the agent's tools and connected apps.",
       "summary": "Access: {{selection}}"
+    },
+    "attachments": {
+      "label": "Attachments sent to agent",
+      "links": "Send links",
+      "none": "Do not send",
+      "unknown": "Unknown attachment setting",
+      "help": "Current message and selected history: names, types, sizes and links only. Files are downloaded on request. Links allow access for 24 hours; keep them private."
     }
   },
   "repositories": {

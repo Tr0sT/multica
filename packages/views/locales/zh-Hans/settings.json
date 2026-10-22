@@ -1193,7 +1193,7 @@
       "unlimited": "不限",
       "channel_unlimited_summary": "聊天历史，不限日期",
       "help": "选择从 Mattermost 读取的历史记录。现有的 Multica 对话会保留。",
-      "notice": "其他参与者的消息会保存到 Multica 并发送给智能体使用的模型。仅包含文本，最多 1,000 条消息 / 128 KiB；历史不完整时会注明。",
+      "notice": "其他参与者的消息会保存到 Multica 并发送给智能体使用的模型。最多 1,000 条消息 / 128 KiB；历史不完整时会注明。",
       "summary": "上下文：{{selection}}",
       "channel_summary": "最近 {{hours}} 小时的聊天历史"
     },
@@ -1262,6 +1262,13 @@
       "unknown": "未知访问模式",
       "notice": "无需 Multica 账号。请求以机器人安装者的身份运行，可以使用智能体的工具和已连接应用。",
       "summary": "访问权限：{{selection}}"
+    },
+    "attachments": {
+      "label": "发送给智能体的附件",
+      "links": "发送链接",
+      "none": "不发送",
+      "unknown": "未知附件设置",
+      "help": "当前消息和所选历史仅传递文件名、类型、大小和链接。按需下载文件。链接在 24 小时内可访问文件，请勿公开分享。"
     }
   },
   "repositories": {

@@ -1,5 +1,6 @@
 export type MattermostContextMode = "message" | "thread" | "channel";
 export type MattermostAccessMode = "members" | "anyone" | "allowlist";
+export type MattermostAttachmentMode = "none" | "links";
 
 export interface MattermostDeniedReply {
   mode: "text" | "images";
@@ -32,6 +33,7 @@ export interface MattermostInstallation {
   /** The bot's Mattermost username (without the @). */
   bot_username: string;
   access_mode?: MattermostAccessMode | "unknown";
+  attachment_mode?: MattermostAttachmentMode | "unknown";
   allowed_users?: { id: string; username: string }[];
   denied_reply?: Omit<MattermostDeniedReply, "mode"> & { mode: MattermostDeniedReply["mode"] | "unknown" };
   context?: {
@@ -66,6 +68,7 @@ export interface RegisterMattermostRequest {
   access_token: string;
   context?: MattermostContextSettings;
   access_mode?: MattermostAccessMode;
+  attachment_mode?: MattermostAttachmentMode;
   allowed_usernames?: string[];
   denied_reply?: MattermostDeniedReply;
 }
@@ -73,6 +76,7 @@ export interface RegisterMattermostRequest {
 export interface UpdateMattermostInstallationRequest {
   context?: MattermostContextSettings;
   access_mode?: MattermostAccessMode;
+  attachment_mode?: MattermostAttachmentMode;
   allowed_usernames?: string[];
   denied_reply?: MattermostDeniedReply;
 }

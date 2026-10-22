@@ -46,6 +46,7 @@ import { mattermostInstallationsOptions, mattermostKeys } from "@multica/core/ma
 import { api } from "@multica/core/api";
 import type {
   MattermostAccessMode,
+  MattermostAttachmentMode,
   MattermostDeniedReply,
   MattermostContextMode,
   MattermostContextSettings,
@@ -296,6 +297,7 @@ export function MattermostAgentBindButton({
   const [allowedUsers, setAllowedUsers] = useState("");
   const [deniedReply, setDeniedReply] = useState<MattermostReplyDraft>({ mode: "text" });
   const [contextMode, setContextMode] = useState<MattermostContextMode>("message");
+  const [attachmentMode, setAttachmentMode] = useState<MattermostAttachmentMode>("links");
   const [lookbackHours, setLookbackHours] = useState(24);
   const [submitting, setSubmitting] = useState(false);
 
@@ -355,6 +357,7 @@ export function MattermostAgentBindButton({
         server_url,
         access_token,
         access_mode: accessMode,
+        attachment_mode: attachmentMode,
         ...(accessMode === "allowlist" ? { allowed_usernames: allowedUsernames } : {}),
         ...(reply ? { denied_reply: reply } : {}),
         context: {
@@ -364,6 +367,7 @@ export function MattermostAgentBindButton({
       });
       if (
         !installation.id || installation.status !== "active" || (installation.access_mode ?? "members") !== accessMode ||
+        installation.attachment_mode !== attachmentMode ||
         (accessMode === "allowlist" && installation.allowed_users?.map((user) => user.username).join("\n") !== allowedUsernames.join("\n")) ||
         (reply && !deniedReplyMatches(installation.denied_reply, reply))
       ) {
@@ -380,6 +384,7 @@ export function MattermostAgentBindButton({
       setAllowedUsers("");
       setDeniedReply({ mode: "text" });
       setContextMode("message");
+      setAttachmentMode("links");
       setLookbackHours(24);
     } catch (e) {
       toast.error(
@@ -491,6 +496,7 @@ export function MattermostAgentBindButton({
             setLookbackHours={setLookbackHours}
             disabled={submitting}
           />
+          <MattermostAttachmentFields value={attachmentMode} onChange={setAttachmentMode} disabled={submitting} />
 
           <DialogFooter>
             <Button
@@ -672,9 +678,10 @@ function MattermostEditButton({
   const [allowedUsers, setAllowedUsers] = useState("");
   const [deniedReply, setDeniedReply] = useState<MattermostReplyDraft>({ mode: "text" });
   const [contextMode, setContextMode] = useState<MattermostContextMode | "unknown">("message");
+  const [attachmentMode, setAttachmentMode] = useState<MattermostAttachmentMode | "unknown">("links");
   const [lookbackHours, setLookbackHours] = useState(24);
   const update = useMutation({
-    mutationFn: async (settings: { context: MattermostContextSettings; access_mode: MattermostAccessMode; allowed_usernames?: string[] }) => {
+    mutationFn: async (settings: { context: MattermostContextSettings; attachment_mode: MattermostAttachmentMode; access_mode: MattermostAccessMode; allowed_usernames?: string[] }) => {
       const { context } = settings;
       let reply: MattermostDeniedReply | undefined;
       if (settings.access_mode === "allowlist") {
@@ -685,6 +692,7 @@ function MattermostEditButton({
       if (
         saved.id !== installation.id || saved.status !== "active" ||
         saved.context?.mode !== context.mode ||
+        saved.attachment_mode !== settings.attachment_mode ||
         (saved.access_mode ?? "members") !== settings.access_mode ||
         (reply && !deniedReplyMatches(saved.denied_reply, reply)) ||
         (settings.access_mode === "allowlist" &&
@@ -715,6 +723,7 @@ function MattermostEditButton({
           setAllowedUsers(installation.allowed_users?.map((user) => `@${user.username}`).join("\n") ?? "");
           setDeniedReply(installation.denied_reply ?? { mode: "text" });
           setContextMode(installation.context?.mode ?? "message");
+          setAttachmentMode(installation.attachment_mode ?? "none");
           setLookbackHours(installation.context?.mode === "channel" ? installation.context.lookback_hours ?? 24 : 24);
         }
         setOpen(value);
@@ -747,20 +756,22 @@ function MattermostEditButton({
           setLookbackHours={setLookbackHours}
           disabled={update.isPending}
         />
+        <MattermostAttachmentFields value={attachmentMode} onChange={setAttachmentMode} disabled={update.isPending} />
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={update.isPending}>
             {common(($) => $.cancel)}
           </Button>
           <Button
             size="sm"
-            disabled={update.isPending || contextMode === "unknown" || accessMode === "unknown" ||
+            disabled={update.isPending || contextMode === "unknown" || attachmentMode === "unknown" || accessMode === "unknown" ||
               (accessMode === "allowlist" && (deniedReply.mode === "unknown" ||
                 (deniedReply.mode === "images" && !deniedReply.files?.length && !deniedReply.image_attachment_ids?.length)))}
             aria-busy={update.isPending}
             onClick={() => {
-              if (contextMode === "unknown" || accessMode === "unknown") return;
+              if (contextMode === "unknown" || attachmentMode === "unknown" || accessMode === "unknown") return;
               update.mutate({
                 access_mode: accessMode,
+                attachment_mode: attachmentMode,
                 ...(accessMode === "allowlist" ? { allowed_usernames: parseAllowedUsernames(allowedUsers) } : {}),
                 context: {
                   mode: contextMode,
@@ -863,6 +874,34 @@ function MattermostAccessSummary({ accessMode }: { accessMode?: MattermostInstal
         ? t(($) => $.mattermost.access.unknown)
         : t(($) => $.mattermost.access.members);
   return <p className="text-caption text-muted-foreground">{t(($) => $.mattermost.access.summary, { selection: label })}</p>;
+}
+
+function MattermostAttachmentFields({ value, onChange, disabled }: {
+  value: MattermostAttachmentMode | "unknown";
+  onChange: (mode: MattermostAttachmentMode) => void;
+  disabled: boolean;
+}) {
+  const { t } = useT("settings");
+  const id = useId();
+  const options = [
+    { value: "links", label: t(($) => $.mattermost.attachments.links) },
+    { value: "none", label: t(($) => $.mattermost.attachments.none) },
+  ];
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{t(($) => $.mattermost.attachments.label)}</Label>
+      <Select items={options} value={value === "unknown" ? null : value}
+        onValueChange={(mode) => { if (mode === "none" || mode === "links") onChange(mode); }} disabled={disabled}>
+        <SelectTrigger id={id} className="w-full" aria-describedby={`${id}-help`}>
+          <SelectValue placeholder={t(($) => $.mattermost.attachments.unknown)} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <p id={`${id}-help`} className="text-caption text-muted-foreground">{t(($) => $.mattermost.attachments.help)}</p>
+    </div>
+  );
 }
 
 function MattermostContextFields({

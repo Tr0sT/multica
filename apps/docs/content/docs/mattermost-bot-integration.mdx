@@ -74,7 +74,7 @@ For a summary bot, select **Whole thread**, then mention it inside the discussio
 
 Selected history is saved with the request in Multica and sent to the agent's model, including other participants' messages. Existing Multica conversation history is separate: `/new` and `/clear` reset that conversation's context, but the configured Mattermost history can be loaded again on the next request. To change the selection, choose **Edit** next to the connected bot in the agent's Integrations tab or **Settings → Messaging → Mattermost**, then save. No access token is needed. Changes apply automatically, usually within 30 seconds.
 
-History is text-only. It includes authors, timestamps, and post links, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. Files and images are not downloaded. More history increases model context usage.
+History includes text, authors, timestamps, post links and, when enabled, attachment references, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. File contents are not downloaded automatically. More history increases model context usage.
 
 ## First use and account binding
 
@@ -118,7 +118,14 @@ The bot replies in the thread the request came from, renders the agent's Markdow
 
 The bot can send images and files produced by the agent. The agent uses `multica attachment upload <local-path>`; after the reply text, each attachment appears in a separate post in the same thread. Replies containing only attachments are supported. This requires Multica object storage and the bot's `upload_file` permission in Mattermost. Each file is limited to 100 MiB, or the Mattermost server's lower limit. If a file is unavailable or its upload is rejected permanently, the bot posts a notice and continues with the remaining files.
 
-Incoming messages still accept text only. A post that carries text plus an attachment is handled as text. A post with only files, images, or other non-text content receives a clear unsupported-message response in direct messages and when it explicitly addresses the bot; unaddressed channel media stays silent.
+**Attachments sent to agent** applies to the current message and the selected history:
+
+- **Send links** (default): pass filenames, MIME types, sizes and temporary download links. File contents, thumbnails and video frames are not loaded into the conversation. The agent is instructed to download only files needed for the user's request with `multica attachment download '<download_url>' -o ./attachments`.
+- **Do not send**: omit attachment references. Messages containing text still work; file-only messages receive an unsupported-content notice when addressed to the bot.
+
+At most 50 file references are included per request, prioritizing the current message and then recent history. Missing metadata is marked unavailable and truncated lists are marked partial. File-only direct messages also reach the agent in link mode; without an instruction, it asks what to do. Unaddressed channel files stay silent.
+
+Links require `MULTICA_PUBLIC_URL` and a matching Multica CLI version on the agent runtime. They grant access to a single file for 24 hours and must be kept private. Disabling or changing the installation, moving it to another workspace, deleting the source post or losing bot access makes old links unusable. Expired links require the user to share the file again or invoke the bot with history that includes it. Incoming link mode does not require object storage; files remain in Mattermost until explicitly downloaded.
 
 There is no typing indicator: Mattermost exposes typing only over its WebSocket API, with no server-side equivalent Multica can call for a message it is already processing.
 
@@ -181,6 +188,7 @@ The update file contains only the editable settings:
 ```json
 {
   "context": {"mode": "thread", "lookback_hours": 0},
+  "attachment_mode": "links",
   "access_mode": "allowlist",
   "allowed_usernames": ["sergey"],
   "denied_reply": {"mode": "text", "text": "Please contact the bot administrator."}

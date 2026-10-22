@@ -159,10 +159,8 @@ func mattermostChatType(t string) (channel.ChatType, bool) {
 	}
 }
 
-// classifyPost maps the post payload to the normalized MsgType. Only text is
-// actionable in v1 (aligned with Slack and Telegram). A post that carries both
-// text and files is text: the message is what the user wrote, and dropping it
-// because an image rode along would be worse than ignoring the image.
+// classifyPost preserves text and commands; dispatch adds file references
+// separately when the installation enables attachment links.
 func classifyPost(post Post) channel.MsgType {
 	if strings.TrimSpace(post.Message) != "" {
 		return channel.MsgTypeText

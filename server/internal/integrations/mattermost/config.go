@@ -57,6 +57,7 @@ type installConfig struct {
 	BotUsername          string          `json:"bot_username,omitempty"`
 	AccessTokenEncrypted string          `json:"access_token_encrypted"`
 	Context              ContextSettings `json:"context"`
+	AttachmentMode       AttachmentMode  `json:"attachment_mode,omitempty"`
 	AccessMode           AccessMode      `json:"access_mode"`
 	AllowedUsers         []AllowedUser   `json:"allowed_users,omitempty"`
 	DeniedReply          DeniedReply     `json:"denied_reply"`
@@ -206,13 +207,14 @@ func decodeCredentials(raw json.RawMessage, decrypt Decrypter) (credentials, err
 // PublicConfig is the non-secret subset of an installation config, safe to
 // surface on the management API (the encrypted token is never included).
 type PublicConfig struct {
-	ServerURL    string
-	BotUserID    string
-	BotUsername  string
-	Context      ContextSettings
-	AccessMode   AccessMode
-	AllowedUsers []AllowedUser
-	DeniedReply  DeniedReply
+	ServerURL      string
+	BotUserID      string
+	BotUsername    string
+	Context        ContextSettings
+	AttachmentMode AttachmentMode
+	AccessMode     AccessMode
+	AllowedUsers   []AllowedUser
+	DeniedReply    DeniedReply
 }
 
 // DecodePublicConfig extracts the display-safe fields from a stored config
@@ -231,6 +233,10 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	if err != nil {
 		accessMode = "unknown"
 	}
+	attachmentMode, err := cfg.AttachmentMode.normalized()
+	if err != nil {
+		attachmentMode = "unknown"
+	}
 	if cfg.AllowedUsers == nil {
 		cfg.AllowedUsers = []AllowedUser{}
 	}
@@ -239,13 +245,14 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 		reply = DeniedReply{Mode: "unknown"}
 	}
 	return PublicConfig{
-		ServerURL:    cfg.ServerURL,
-		BotUserID:    cfg.BotUserID,
-		BotUsername:  cfg.BotUsername,
-		Context:      settings,
-		AccessMode:   accessMode,
-		AllowedUsers: cfg.AllowedUsers,
-		DeniedReply:  reply,
+		ServerURL:      cfg.ServerURL,
+		BotUserID:      cfg.BotUserID,
+		BotUsername:    cfg.BotUsername,
+		Context:        settings,
+		AttachmentMode: attachmentMode,
+		AccessMode:     accessMode,
+		AllowedUsers:   cfg.AllowedUsers,
+		DeniedReply:    reply,
 	}
 }
 

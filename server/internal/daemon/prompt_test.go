@@ -653,6 +653,8 @@ func TestMattermostPromptConnectsGitHistoryToTasks(t *testing.T) {
 				"diffs",
 				"does not prove completion",
 				"tracker is unavailable",
+				"multica attachment download '<download_url>'",
+				"do not fetch or analyze every file in history",
 			} {
 				if strings.Contains(out, rule) != (channelType == execenv.ChannelTypeMattermost) {
 					t.Fatalf("channel=%q audience=%q: Git task guidance %q missing or leaked to another surface", channelType, chatType, rule)

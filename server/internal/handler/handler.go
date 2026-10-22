@@ -375,10 +375,11 @@ type Handler struct {
 	// pasted server URL + bot access token / list / revoke) and the at-rest
 	// encryption of each token. Nil unless MULTICA_MATTERMOST_SECRET_KEY is set.
 	MattermostInstall *mattermost.InstallService
+	MattermostFiles   *mattermost.FileLinks
 	// MattermostBindingTokens mints/redeems the user-binding tokens behind the
 	// "link your Mattermost account" prompt. Nil unless Mattermost is configured.
 	MattermostBindingTokens *mattermost.BindingTokenService
-	MattermostOutbound *mattermost.Outbound
+	MattermostOutbound      *mattermost.Outbound
 
 	// channelFileDelivery names the channel types that can, IN THIS
 	// DEPLOYMENT, carry a file the agent produced the last hop into the

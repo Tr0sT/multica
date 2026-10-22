@@ -109,15 +109,16 @@ replica from the one handling the message. Not worth the coupling in v1, so
 `CapTypingIndicator` is not declared and the `ResolverSet` carries no
 `TypingNotifier`.
 
-### 6. Text only
+### 6. Incoming file references
 
-Matches Slack v1 and Telegram v1. A post with a non-empty `message` is text even
-when it also carries files. A post with no text and only attachments is
-classified by its files and answered with a courteous "cannot handle this yet"
-notice, but only in a DM or when explicitly addressed, so the bot stays quiet in
-busy channels.
-
-File ingest needs the media resolver plus object storage. Follow-up.
+`attachment_mode` is `links` by default or `none`. Link mode passes metadata
+and temporary per-file download capabilities for the current message and selected
+history, with a 50-file budget. It never downloads contents during ingestion or
+creates Multica attachment rows. File-only addressed messages reach the agent;
+the agent fetches specific files through `multica attachment download <link>`
+only when the request calls for them. Capabilities expire after 24 hours and
+recheck installation identity, workspace, configuration and source-post access.
+Disabled mode retains text processing and unsupported notices for file-only DMs.
 
 ### 7. Full surface in one pass
 
@@ -197,7 +198,7 @@ the redelivery that follows a reconnect.
 ### Capabilities
 
 `CapText | CapThreadReply`. Not `CapRichCard` (no Block Kit equivalent in use),
-not `CapAttachment` (v1 is text), not `CapTypingIndicator` (see decision 5),
+not `CapAttachment` (inbound files are text references; outbound files use the durable worker), not `CapTypingIndicator` (see decision 5),
 not `CapMessageEdit` (the API supports it but nothing in v1 calls it).
 
 ## Database
@@ -298,7 +299,7 @@ compatibility rule.
 
 ## Out of scope
 
-Streaming replies, file ingest and delivery, the typing indicator, full thread
+Streaming replies, automatic file-content ingestion, the typing indicator, full thread
 continuation without a mention, Mattermost slash commands registered on the
 Mattermost side, and interactive message buttons. Each is additive and none
 changes the contracts above.

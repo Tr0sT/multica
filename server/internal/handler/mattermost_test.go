@@ -24,6 +24,10 @@ func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
 		{validID, validID, `{"context":{}}`},
 		{validID, validID, `{"context":{"mode":"unknown"}}`},
 		{validID, validID, `{"context":{"mode":"channel","lookback_hours":4}}`},
+		{validID, validID, `{"attachment_mode":"invalid"}`},
+		{validID, validID, `{"attachment_mode":""}`},
+		{validID, validID, `{"attachment_mode":null}`},
+		{validID, validID, `{"attachment_mode":true}`},
 		{validID, validID, `{"access_mode":"unknown"}`},
 		{validID, validID, `{"access_mode":""}`},
 		{validID, validID, `{"access_mode":true}`},
@@ -57,6 +61,17 @@ func TestMattermostAccessResponse(t *testing.T) {
 		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)})
 		if string(response.AccessMode) != tc.want {
 			t.Fatalf("access for %s = %s, want %s", tc.config, response.AccessMode, tc.want)
+		}
+	}
+}
+
+func TestMattermostAttachmentModeResponse(t *testing.T) {
+	for _, tc := range []struct{ config, want string }{
+		{`{}`, "links"}, {`{"attachment_mode":"links"}`, "links"},
+		{`{"attachment_mode":"none"}`, "none"}, {`{"attachment_mode":"future"}`, "unknown"},
+	} {
+		if got := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)}).AttachmentMode; string(got) != tc.want {
+			t.Fatalf("attachment mode = %q, want %q", got, tc.want)
 		}
 	}
 }

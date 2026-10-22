@@ -90,6 +90,7 @@ type teamBridgeInstallConfig struct {
 	ServerURL        string            `json:"server_url"`
 	AccessToken      string            `json:"access_token"`
 	Context          teamBridgeContext `json:"context"`
+	AttachmentMode   *string           `json:"attachment_mode,omitempty"`
 	AccessMode       string            `json:"access_mode"`
 	AllowedUsernames *[]string         `json:"allowed_usernames,omitempty"`
 	DeniedReply      teamBridgeReply   `json:"denied_reply"`
@@ -97,6 +98,7 @@ type teamBridgeInstallConfig struct {
 
 type teamBridgeUpdateConfig struct {
 	Context          *teamBridgeContext `json:"context,omitempty"`
+	AttachmentMode   *string            `json:"attachment_mode,omitempty"`
 	AccessMode       *string            `json:"access_mode,omitempty"`
 	AllowedUsernames *[]string          `json:"allowed_usernames,omitempty"`
 	DeniedReply      *teamBridgeReply   `json:"denied_reply,omitempty"`
@@ -300,7 +302,7 @@ func runTeamBridgeInstall(cmd *cobra.Command, _ []string) error {
 	if config.DeniedReply.Mode == "" {
 		config.DeniedReply.Mode = "text"
 	}
-	if err := validateTeamBridgeSettings(&config.Context, &config.AccessMode, config.AllowedUsernames, &config.DeniedReply); err != nil {
+	if err := validateTeamBridgeSettings(&config.Context, &config.AccessMode, config.AllowedUsernames, &config.DeniedReply, config.AttachmentMode); err != nil {
 		return err
 	}
 	if err := validateTeamBridgeWireSize(config); err != nil {
@@ -343,10 +345,10 @@ func runTeamBridgeUpdate(cmd *cobra.Command, args []string) error {
 	if err := readTeamBridgeConfig(cmd, &config); err != nil {
 		return err
 	}
-	if config.Context == nil && config.AccessMode == nil && config.DeniedReply == nil {
-		return fmt.Errorf("teambridge update requires context, access_mode or denied_reply")
+	if config.Context == nil && config.AttachmentMode == nil && config.AccessMode == nil && config.DeniedReply == nil {
+		return fmt.Errorf("teambridge update requires context, attachment_mode, access_mode or denied_reply")
 	}
-	if err := validateTeamBridgeSettings(config.Context, config.AccessMode, config.AllowedUsernames, config.DeniedReply); err != nil {
+	if err := validateTeamBridgeSettings(config.Context, config.AccessMode, config.AllowedUsernames, config.DeniedReply, config.AttachmentMode); err != nil {
 		return err
 	}
 	if err := validateTeamBridgeWireSize(config); err != nil {
@@ -403,6 +405,13 @@ func publicTeamBridgeInstallation(raw json.RawMessage, workspaceID string) (map[
 		}
 		public[key] = fields[key]
 	}
+	if value, ok := fields["attachment_mode"]; ok {
+		var mode string
+		if json.Unmarshal(value, &mode) != nil || mode == "" {
+			return nil, fmt.Errorf("invalid teambridge attachment mode")
+		}
+		public["attachment_mode"] = value
+	}
 	var observedWorkspace string
 	if json.Unmarshal(public["workspace_id"], &observedWorkspace) != nil || observedWorkspace != workspaceID {
 		return nil, fmt.Errorf("teambridge installation belongs to a different workspace")
@@ -444,7 +453,10 @@ func validateTeamBridgeCredential(serverURL, token string) error {
 	return nil
 }
 
-func validateTeamBridgeSettings(settings *teamBridgeContext, mode *string, names *[]string, reply *teamBridgeReply) error {
+func validateTeamBridgeSettings(settings *teamBridgeContext, mode *string, names *[]string, reply *teamBridgeReply, attachments *string) error {
+	if attachments != nil && *attachments != "none" && *attachments != "links" {
+		return fmt.Errorf("teambridge attachment_mode must be none or links")
+	}
 	if settings != nil {
 		valid := false
 		switch settings.Mode {

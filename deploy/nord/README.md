@@ -24,3 +24,8 @@ Mattermost requires `MULTICA_MATTERMOST_SECRET_KEY` and exact HTTPS URLs in
 `MULTICA_MATTERMOST_ALLOWED_SERVERS` in the existing server `.env`. The overlay
 forwards these variables even when the original compose file predates Mattermost.
 Do not commit the `.env`, encryption keys, bot tokens, or backups.
+
+Incoming Mattermost attachments default to temporary links. `MULTICA_PUBLIC_URL`
+must name the externally reachable Multica base URL. Keep the native CLI and
+backend on the same revision: agents open these links with
+`multica attachment download <link>`, which streams only the requested file.

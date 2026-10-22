@@ -1468,7 +1468,7 @@
       "unlimited": "Sans limite",
       "channel_unlimited_summary": "Historique de la conversation, sans limite de date",
       "help": "Définit l’historique chargé depuis Mattermost. La conversation Multica existante est conservée.",
-      "notice": "Les messages des autres participants sont enregistrés dans Multica et envoyés au modèle de l’agent. Texte uniquement, jusqu’à 1 000 messages / 128 Kio ; tout historique incomplet est signalé.",
+      "notice": "Les messages des autres participants sont enregistrés dans Multica et envoyés au modèle de l’agent. Jusqu’à 1 000 messages / 128 Kio ; tout historique incomplet est signalé.",
       "summary": "Contexte : {{selection}}",
       "channel_summary": "Historique de la conversation, {{hours}} dernières heures"
     },
@@ -1537,6 +1537,13 @@
     "connect_success_toast": "Bot Mattermost connecté",
     "connect_failed_toast": "Impossible de connecter le bot Mattermost",
     "toast_disconnected": "Bot Mattermost déconnecté",
-    "toast_disconnect_failed": "Échec de la déconnexion"
+    "toast_disconnect_failed": "Échec de la déconnexion",
+    "attachments": {
+      "label": "Pièces jointes envoyées à l’agent",
+      "links": "Envoyer les liens",
+      "none": "Ne pas envoyer",
+      "unknown": "Réglage des pièces jointes inconnu",
+      "help": "Message actuel et historique sélectionné : noms, types, tailles et liens uniquement. Les fichiers sont téléchargés sur demande. Les liens donnent accès pendant 24 heures ; gardez-les privés."
+    }
   }
 }

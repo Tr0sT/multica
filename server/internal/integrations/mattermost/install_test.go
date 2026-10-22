@@ -43,6 +43,23 @@ func TestUpdateContextScopesWrite(t *testing.T) {
 	}
 }
 
+func TestAttachmentModeUpdatesOnlyItsOwnSetting(t *testing.T) {
+	for _, mode := range []AttachmentMode{AttachmentsLinks, AttachmentsNone} {
+		q := &contextUpdateQueries{}
+		if _, err := (&InstallService{q: q}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, SettingsUpdate{AttachmentMode: &mode}); err != nil {
+			t.Fatal(err)
+		}
+		if string(q.params.Settings) != `{"attachment_mode":"`+string(mode)+`"}` {
+			t.Fatalf("attachment update changed other settings: %s", q.params.Settings)
+		}
+	}
+	for _, mode := range []AttachmentMode{"", "inline", "unknown"} {
+		if _, err := (&InstallService{}).UpdateSettings(context.Background(), pgtype.UUID{}, pgtype.UUID{}, SettingsUpdate{AttachmentMode: &mode}); !errors.Is(err, ErrInvalidAttachmentMode) {
+			t.Fatalf("invalid mode accepted: %v", err)
+		}
+	}
+}
+
 func TestUpdateContextRejectsInvalidSettingsBeforeWriting(t *testing.T) {
 	service := &InstallService{}
 	for _, settings := range []ContextSettings{

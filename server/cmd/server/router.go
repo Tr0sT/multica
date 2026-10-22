@@ -1276,7 +1276,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Per-installation inbound: the Supervisor builds + supervises one
 			// WebSocket connection per active Mattermost installation,
 			// authenticated with that installation's OWN bot access token.
-			mattermost.RegisterMattermost(channelRegistry, mattermost.ChannelDeps{Decrypt: box.Open, Policy: policy, Logger: slog.Default()})
+			fileLinks, fileErr := mattermost.NewFileLinks(queries, mattermostKey, box.Open, policy, signupConfig.PublicURL)
+			if fileErr != nil {
+				slog.Error("mattermost: file links disabled", "error", fileErr)
+			} else {
+				h.MattermostFiles = fileLinks
+			}
+			mattermost.RegisterMattermost(channelRegistry, mattermost.ChannelDeps{Decrypt: box.Open, Policy: policy, Logger: slog.Default(), FileLinks: fileLinks})
 
 			installSvc, ierr := mattermost.NewInstallService(queries, pool, box, policy, slog.Default())
 			if ierr != nil {
@@ -1536,6 +1542,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// The authenticated /api/attachments/{id}/download route below is
 	// unchanged — this one is purely additive.
 	r.Get("/api/attachments/{id}/signed-download", h.DownloadAttachmentWithCapability)
+	// A sealed, expiring capability grants access to one Mattermost file.
+	r.Get("/api/mattermost/files/download", h.DownloadMattermostFile)
 
 	// Avatar serving. Public for the same reason as the capability download
 	// above: the auth cookie is SameSite=Strict, so an auth-gated URL cannot

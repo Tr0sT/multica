@@ -7,6 +7,26 @@ import { EMPTY_MATTERMOST_INSTALLATION } from "./schemas";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Mattermost settings update", () => {
+  it.each(["none", "links"] as const)("patches attachment mode %s without changing history", async (attachment_mode) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "installation-1", status: "active", attachment_mode }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await new ApiClient("https://api.test").updateMattermostInstallation("workspace-1", "installation-1", { attachment_mode });
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ body: JSON.stringify({ attachment_mode }) }));
+    expect(result.attachment_mode).toBe(attachment_mode);
+  });
+
+  it.each([
+    { value: undefined, expected: "none" },
+    ...[null, 12, {}, "future"].map((value) => ({ value, expected: "unknown" })),
+  ])("handles missing or unknown attachment mode $value", async ({ value, expected }) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "installation-1", attachment_mode: value }), {
+      headers: { "Content-Type": "application/json" },
+    })));
+    const result = await new ApiClient("https://api.test").updateMattermostInstallation("workspace-1", "installation-1", { attachment_mode: "links" });
+    expect(result.attachment_mode).toBe(expected);
+  });
   it.each([
     { mode: "text" as const, text: "Team accounts only" },
     { mode: "images" as const, image_attachment_ids: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"] },

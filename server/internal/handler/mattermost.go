@@ -27,6 +27,7 @@ type MattermostInstallationResponse struct {
 	BotUserID       string                    `json:"bot_user_id"`
 	BotUsername     string                    `json:"bot_username"`
 	Context         MattermostContextResponse `json:"context"`
+	AttachmentMode  mattermost.AttachmentMode `json:"attachment_mode"`
 	AccessMode      mattermost.AccessMode     `json:"access_mode"`
 	AllowedUsers    []mattermost.AllowedUser  `json:"allowed_users"`
 	DeniedReply     mattermost.DeniedReply    `json:"denied_reply"`
@@ -63,6 +64,7 @@ func mattermostInstallationToResponse(row db.ChannelInstallation) MattermostInst
 		BotUserID:       info.BotUserID,
 		BotUsername:     info.BotUsername,
 		Context:         context,
+		AttachmentMode:  info.AttachmentMode,
 		AccessMode:      info.AccessMode,
 		AllowedUsers:    info.AllowedUsers,
 		DeniedReply:     reply,
@@ -114,6 +116,7 @@ type RegisterMattermostRequest struct {
 	ServerURL        string                     `json:"server_url"`
 	AccessToken      string                     `json:"access_token"`
 	Context          mattermost.ContextSettings `json:"context"`
+	AttachmentMode   mattermost.AttachmentMode  `json:"attachment_mode"`
 	AccessMode       mattermost.AccessMode      `json:"access_mode"`
 	AllowedUsernames []string                   `json:"allowed_usernames"`
 	DeniedReply      mattermost.DeniedReply     `json:"denied_reply"`
@@ -169,13 +172,14 @@ func (h *Handler) RegisterMattermostBot(w http.ResponseWriter, r *http.Request) 
 		ServerURL:        body.ServerURL,
 		AccessToken:      body.AccessToken,
 		Context:          body.Context,
+		AttachmentMode:   body.AttachmentMode,
 		AccessMode:       body.AccessMode,
 		AllowedUsernames: body.AllowedUsernames,
 		DeniedReply:      body.DeniedReply,
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAttachmentMode), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable), errors.Is(err, mattermost.ErrDeniedReplyImageUnavailable):
 			writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -232,14 +236,14 @@ func (h *Handler) UpdateMattermostInstallation(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.Context == nil && body.AccessMode == nil && body.AllowedUsernames == nil && body.DeniedReply == nil {
-		writeError(w, http.StatusBadRequest, "context, access_mode or denied_reply is required")
+	if body.Context == nil && body.AttachmentMode == nil && body.AccessMode == nil && body.AllowedUsernames == nil && body.DeniedReply == nil {
+		writeError(w, http.StatusBadRequest, "context, attachment_mode, access_mode or denied_reply is required")
 		return
 	}
 	row, err := h.MattermostInstall.UpdateSettings(r.Context(), instUUID, wsUUID, body)
 	if err != nil {
 		switch {
-		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
+		case errors.Is(err, mattermost.ErrInvalidContextSettings), errors.Is(err, mattermost.ErrInvalidAttachmentMode), errors.Is(err, mattermost.ErrInvalidAccessMode), errors.Is(err, mattermost.ErrInvalidAllowedUsers), errors.Is(err, mattermost.ErrInvalidDeniedReply):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, mattermost.ErrAllowedUsersUnverifiable), errors.Is(err, mattermost.ErrDeniedReplyImageUnavailable):
 			writeError(w, http.StatusServiceUnavailable, err.Error())
