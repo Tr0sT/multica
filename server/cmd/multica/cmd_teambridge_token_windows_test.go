@@ -9,11 +9,18 @@ import (
 )
 
 func TestTeamBridgeTokenRejectsWindowsJunction(t *testing.T) {
-	for _, mode := range []string{"winsymlink=0", "winsymlink=1"} {
-		t.Run(mode, func(t *testing.T) {
+	// Subtest names enter temporary paths passed to cmd.exe; avoid '=' there.
+	for _, mode := range []struct {
+		name    string
+		godebug string
+	}{
+		{name: "irregular-mode", godebug: "winsymlink=0"},
+		{name: "symlink-mode", godebug: "winsymlink=1"},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
 			var requests atomic.Int64
 			teamBridgeTestServer(t, func(w http.ResponseWriter, r *http.Request) { requests.Add(1) })
-			t.Setenv("GODEBUG", mode)
+			t.Setenv("GODEBUG", mode.godebug)
 			dir := teamBridgeTokenTestDirectory(t)
 			target := filepath.Join(dir, "target")
 			if err := os.Mkdir(target, 0o700); err != nil {
