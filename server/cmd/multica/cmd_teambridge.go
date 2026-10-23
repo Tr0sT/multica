@@ -36,7 +36,7 @@ var (
 func newTeamBridgeCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use: "teambridge", Aliases: []string{"mattermost"}, Short: "Manage TeamBridge / Mattermost bot integrations",
-		Long: "Manage workspace bot installations and portable reply images. Bot tokens are accepted only through a JSON config file or stdin; stored bot tokens are never exported.",
+		Long: "Manage workspace bot installations, portable reply images and administrator-only token backups. Tokens are transferred through private files or stdin, never command arguments or JSON output.",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if err := requireHumanLocalCommand("teambridge"); err != nil {
 				return err
@@ -66,7 +66,7 @@ func newTeamBridgeCommand() *cobra.Command {
 	download.Flags().String("output-file", "", "Destination file (written atomically)")
 	upload := &cobra.Command{Use: "upload <path>", Short: "Upload a standalone workspace image (PNG, JPEG, GIF or WebP; at most 5 MiB)", Args: exactArgs(1), RunE: runTeamBridgeImageUpload}
 	images.AddCommand(download, upload)
-	command.AddCommand(list, install, update, revoke, verify, images)
+	command.AddCommand(list, install, update, revoke, verify, images, newTeamBridgeTokenCommand())
 	return command
 }
 

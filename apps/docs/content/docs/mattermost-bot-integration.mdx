@@ -154,8 +154,8 @@ multica --profile production teambridge list --output json
 The list response contains `installations`, `configured`, and
 `install_supported`. Each installation includes the agent binding, server and bot
 identity, context selection, access mode, allowed accounts, refusal reply,
-active/revoked status, installer, and timestamps. Existing bot tokens are never
-returned. The list includes revoked installations so an export does not silently
+active/revoked status, installer, and timestamps. Bot tokens are never returned by
+`list`, `install` or `update`. The list includes revoked installations so an export does not silently
 lose their public settings.
 
 To connect or reactivate a bot, put the request in a private JSON file outside
@@ -209,6 +209,53 @@ or `channel`; channel lookback accepts 0, 1, 6, 24, 72, 168, 720, 1440, 2160 or
 8760 hours. Zero means no date cutoff for channel context. List responses retain
 the server's compatibility shapes, including `channel_extended` for extended
 history and `image` for a one-image refusal.
+
+#### Back up or restore bot tokens
+
+Human workspace owners and admins can use the dedicated token contract:
+
+```bash
+multica --profile production teambridge token export <installation-uuid> \
+  --output-file ./credentials/bot-token --output json
+multica --profile production teambridge token import <installation-uuid> \
+  --token-file ./credentials/bot-token --output json
+```
+
+Export writes the exact stored token to a **new** file, without a trailing
+newline. On POSIX the file has mode `0600` and newly created directories have mode
+`0700`. Existing files, symlinks and directory junctions are refused, including
+symlinked parent directories. Windows uses the destination directory's ACLs;
+choose a directory restricted to your account. Import accepts a private regular
+file of at most 16 KiB, or `--token-stdin` for a protected pipe. It trims surrounding
+whitespace, as token installation does. There is no inline token flag.
+
+Stdout contains only `installation_id`, `workspace_id` and either `exported: true`
+or `updated: true/false`. Tokens and their hashes or lengths are not printed,
+including with `--debug`. API redirects are refused. Export reads the encrypted
+value saved in Multica and does not contact Mattermost, so a temporary Mattermost
+outage does not prevent a backup.
+
+Import changes only the encrypted credential. A changed token is verified against
+the installation's saved server and bot account before it is stored. The
+installation ID, agent binding, original installer, context, access settings,
+refusal images, account/chat bindings and active/revoked status are preserved.
+Restoring a revoked installation's credential does not reactivate it. Importing
+the same token again returns `updated: false` without a database write or
+connection reload; a changed active credential reloads its existing connection.
+Invalid, revoked-in-Mattermost and other-bot tokens are rejected without replacing
+the existing credential.
+
+Both the server and CLI must support these commands. The server endpoints are
+`GET` and `PUT /api/workspaces/{workspace-id}/mattermost/installations/{installation-id}/token`.
+GET returns `installation_id`, `workspace_id` and `access_token`; PUT accepts
+`access_token` and returns `installation_id`, `workspace_id` and `updated`.
+Responses use `Cache-Control: no-store`. Workspace membership alone is
+insufficient: the server requires a human owner/admin and rejects machine and
+task credentials. An installation from another workspace cannot be selected by
+substituting its UUID.
+
+Store exported credentials privately and remove temporary files after use.
+**Never publish snapshots containing secrets to a public Git repository.**
 
 #### Verify exported account identities
 
@@ -264,8 +311,13 @@ a task. Its task attachments are unsuitable for these standalone refusal images.
 [`multica-declarative`](https://github.com/Tr0sT/multica-declarative) uses these
 commands for optional TeamBridge export and import, including actual image bytes,
 agent-name remapping, account identity checks, and idempotent settings updates.
-Its ordinary declarations continue to work with the official CLI. Export covers
-public integration configuration; bot tokens, account/chat bindings and runtime
+Its ordinary declarations continue to work with the official CLI. Full export
+with `--with-teambridge` includes actual bot token values automatically, and full
+import restores managed tokens for existing installations without reinstalling
+them. `--without-secrets` / `secrets: omit` excludes secrets from export and leaves
+existing secrets unmanaged during import, including avoiding local token-file
+reads. Snapshots contain supported declarative configuration, not every internal
+secret or all deployment data: account/chat bindings, encryption keys and runtime
 conversation state are outside this configuration contract.
 
 ## Self-hosting setup
