@@ -672,6 +672,7 @@
       "toggle_failed_toast": "Échec du changement de statut du skill",
       "runtime_toggle_aria": "Activer ou désactiver {{name}} (hérité)",
       "runtime_toggle_failed_toast": "Échec du changement de statut du skill hérité",
+      "runtime_overridden_badge": "Remplacé par le skill assigné",
       "runtime_missing": "Assignez un runtime local pour détecter les skills hérités.",
       "runtime_offline": "Le runtime local est hors ligne. Reconnectez-le pour actualiser les skills hérités.",
       "runtime_discovering": "Détection des skills depuis le runtime local…",
