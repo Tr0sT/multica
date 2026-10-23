@@ -8,9 +8,9 @@
 //
 // Inbound runs on a per-installation WebSocket connection
 // (mattermost_channel.go) supervised by engine.Supervisor, matching Feishu's
-// long-conn and Slack's Socket Mode. Outbound agent replies are delivered as a
-// single post on EventChatDone (outbound.go); verdict replies (binding prompt,
-// offline notice) live in replier.go.
+// long-conn and Slack's Socket Mode. Outbound answers and terminal failure notices
+// use a durable queue (outbound.go); verdict replies (binding prompt, offline
+// notice) live in replier.go.
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at

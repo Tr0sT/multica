@@ -39,27 +39,31 @@ const listPendingMattermostReplies = `-- name: ListPendingMattermostReplies :man
 SELECT delivery.task_id
 FROM channel_task_delivery delivery
 JOIN agent_task_queue task ON task.id = delivery.task_id
-JOIN chat_message message ON message.task_id = task.id AND message.role = 'assistant'
+LEFT JOIN chat_message message ON message.task_id = task.id AND message.role = 'assistant'
 JOIN channel_installation installation ON installation.id = delivery.installation_id
 LEFT JOIN channel_reply_delivery reply ON reply.task_id = task.id
 WHERE delivery.channel_type = 'mattermost'
   AND installation.channel_type = 'mattermost' AND installation.status = 'active'
-  AND task.status = 'completed'
   AND (task.chat_input_task_id IS NULL OR EXISTS (
       SELECT 1 FROM chat_message input_message
       WHERE input_message.task_id = task.chat_input_task_id AND input_message.role = 'user' AND input_message.channel_ingested
   ))
-  AND (message.content <> '' OR EXISTS (
+  AND ((task.status = 'failed' AND delivery.config->>'failure_notice' = 'true'
+        AND NOT EXISTS (
+            SELECT 1 FROM agent_task_queue
+            WHERE parent_task_id = task.id AND retry_of_task_id = task.id
+        ))
+    OR (task.status = 'completed' AND (message.content <> '' OR EXISTS (
       SELECT 1 FROM attachment
       WHERE attachment.chat_message_id = message.id
         AND attachment.workspace_id = installation.workspace_id
-  ) OR delivery.config ? 'reply_attachment_ids')
+  ) OR delivery.config ? 'reply_attachment_ids')))
   AND (reply.turn_id IS NULL OR (reply.phase <> 'settled' AND reply.updated_at < now() - interval '30 seconds'))
-ORDER BY COALESCE(reply.updated_at, message.created_at), delivery.task_id
+ORDER BY COALESCE(reply.updated_at, message.created_at, task.completed_at, task.created_at), delivery.task_id
 LIMIT 32
 `
 
-// The committed assistant message is the outbox; an event only wakes its worker.
+// Committed answers and failure notices are the outbox; events only wake its worker.
 func (q *Queries) ListPendingMattermostReplies(ctx context.Context) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listPendingMattermostReplies)
 	if err != nil {
@@ -78,6 +82,24 @@ func (q *Queries) ListPendingMattermostReplies(ctx context.Context) ([]pgtype.UU
 		return nil, err
 	}
 	return items, nil
+}
+
+const queueMattermostFailureReply = `-- name: QueueMattermostFailureReply :exec
+UPDATE channel_task_delivery AS delivery
+SET config = delivery.config || '{"failure_notice":true}'::jsonb
+WHERE delivery.task_id = $1 AND delivery.channel_type = 'mattermost'
+  AND EXISTS (SELECT 1 FROM agent_task_queue WHERE id = delivery.task_id AND status = 'failed')
+  -- Retry clones set both links; parent_task_id supplies the existing lookup index.
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_task_queue
+      WHERE parent_task_id = delivery.task_id AND retry_of_task_id = delivery.task_id
+  )
+`
+
+// Only newly finalized failures enter the outbox; historical failures stay silent.
+func (q *Queries) QueueMattermostFailureReply(ctx context.Context, taskID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, queueMattermostFailureReply, taskID)
+	return err
 }
 
 const rotateMattermostInstallationIdentity = `-- name: RotateMattermostInstallationIdentity :execrows

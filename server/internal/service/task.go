@@ -5123,6 +5123,9 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 			}); err != nil {
 				return fmt.Errorf("write chat failure outcome: %w", err)
 			}
+			if err := qtx.QueueMattermostFailureReply(ctx, t.ID); err != nil {
+				return fmt.Errorf("queue Mattermost failure reply: %w", err)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -6126,6 +6129,11 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 			workspaceID = s.ResolveTaskWorkspaceID(ctx, t)
 		}
 
+		if !retryPending && t.ChatSessionID.Valid {
+			if err := s.Queries.QueueMattermostFailureReply(ctx, t.ID); err != nil {
+				slog.Error("queue Mattermost failure reply failed", "task_id", util.UUIDToString(t.ID), "error", err)
+			}
+		}
 		s.publishTaskFailedEvent(workspaceID, t, t.Error.String, failureReason, retryPending)
 
 		affectedAgents[util.UUIDToString(t.AgentID)] = t.AgentID

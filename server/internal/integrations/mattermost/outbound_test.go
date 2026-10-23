@@ -4,7 +4,22 @@ import (
 	"errors"
 	"net"
 	"testing"
+
+	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+func TestTaskFailureWakesReplyWorker(t *testing.T) {
+	worker := NewOutbound(nil, nil, nil, nil, nil, nil)
+	bus := events.New()
+	worker.Register(bus)
+	bus.Publish(events.Event{Type: protocol.EventTaskFailed})
+	select {
+	case <-worker.wake:
+	default:
+		t.Fatal("task failure did not wake the reply worker")
+	}
+}
 
 func TestSendRejectionDoesNotGuessAfterAnAmbiguousFailure(t *testing.T) {
 	for _, tc := range []struct {

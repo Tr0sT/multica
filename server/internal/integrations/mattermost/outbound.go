@@ -25,8 +25,8 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// Committed task replies are the durable queue. Events only wake this worker;
-// a restart or a dropped event cannot discard an unsent reply.
+// Committed answers and failure notices form the durable queue. Events only
+// wake this worker; a restart or a dropped event cannot discard an unsent reply.
 type Outbound struct {
 	q       *db.Queries
 	tx      engine.TxStarter
@@ -45,6 +45,7 @@ const (
 	replyLeaseSeconds  = 60.0
 	replyCallTimeout   = 15 * time.Second
 	replyRecordTimeout = 5 * time.Second
+	taskFailedText     = "❌ The agent run failed. Please try again."
 )
 
 func NewOutbound(q *db.Queries, tx engine.TxStarter, decrypt Decrypter, policy *ServerPolicy, client *http.Client, logger *slog.Logger) *Outbound {
@@ -56,12 +57,14 @@ func NewOutbound(q *db.Queries, tx engine.TxStarter, decrypt Decrypter, policy *
 }
 
 func (o *Outbound) Register(bus *events.Bus) {
-	bus.Subscribe(protocol.EventChatDone, func(events.Event) {
-		select {
-		case o.wake <- struct{}{}:
-		default:
-		}
-	})
+	for _, eventType := range []string{protocol.EventChatDone, protocol.EventTaskFailed} {
+		bus.Subscribe(eventType, func(events.Event) {
+			select {
+			case o.wake <- struct{}{}:
+			default:
+			}
+		})
+	}
 }
 
 func (o *Outbound) Start(ctx context.Context) {
@@ -132,15 +135,25 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 	if err != nil {
 		return err
 	}
-	if task.Status != "completed" {
+	failed := task.Status == "failed"
+	if task.Status != "completed" && !failed {
 		return nil
+	}
+	var config struct {
+		AttachmentIDs []pgtype.UUID `json:"reply_attachment_ids"`
+		FailureNotice bool          `json:"failure_notice"`
+	}
+	if failed {
+		if err := json.Unmarshal(delivery.Config, &config); err != nil {
+			return fmt.Errorf("mattermost: decode failure notice: %w", err)
+		}
+		if !config.FailureNotice {
+			return nil
+		}
+		config.AttachmentIDs = nil
 	}
 	deliver, err := engine.TaskInputIsChannelIngested(ctx, o.q, task)
 	if err != nil || !deliver {
-		return err
-	}
-	message, err := o.q.GetChatMessageByTaskAssistant(ctx, taskID)
-	if err != nil {
 		return err
 	}
 	inst, err := o.q.GetChannelInstallation(ctx, db.GetChannelInstallationParams{
@@ -191,28 +204,35 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 		}
 	}()
 	// Reload progress after acquiring ownership, not before waiting for it.
-	message, err = o.q.GetChatMessageByTaskAssistant(ctx, taskID)
-	if err != nil {
+	message, err := o.q.GetChatMessageByTaskAssistant(ctx, taskID)
+	if err != nil && !(failed && errors.Is(err, pgx.ErrNoRows)) {
 		return err
 	}
-	rawConfig, err := o.q.SnapshotMattermostReplyAttachments(ctx, db.SnapshotMattermostReplyAttachmentsParams{
-		TaskID: taskID, WorkspaceID: inst.WorkspaceID,
-	})
-	if err != nil {
-		return err
+	if !failed {
+		rawConfig, err := o.q.SnapshotMattermostReplyAttachments(ctx, db.SnapshotMattermostReplyAttachmentsParams{
+			TaskID: taskID, WorkspaceID: inst.WorkspaceID,
+		})
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(rawConfig, &config); err != nil {
+			return fmt.Errorf("mattermost: decode reply attachment snapshot: %w", err)
+		}
 	}
-	var config struct {
-		AttachmentIDs []pgtype.UUID `json:"reply_attachment_ids"`
+	content := message.Content
+	if failed {
+		content = taskFailedText
 	}
-	if err := json.Unmarshal(rawConfig, &config); err != nil {
-		return fmt.Errorf("mattermost: decode reply attachment snapshot: %w", err)
-	}
-	chunks := chunkMessage(message.Content, maxPostRunes)
-	if strings.TrimSpace(message.Content) == "" {
+	chunks := chunkMessage(content, maxPostRunes)
+	if strings.TrimSpace(content) == "" {
 		chunks = nil
 	}
 	totalChunks := len(chunks) + len(config.AttachmentIDs)
 	ids := append([]string(nil), message.ChannelOutboundMessageIds...)
+	if failed && lease.MessageID != "" {
+		// Sweeper failures may have no assistant row; their single notice lives in the ledger.
+		ids = []string{lease.MessageID}
+	}
 	if len(ids) != int(lease.ChunksSent) || len(ids) > totalChunks {
 		return errors.New("mattermost: reply progress is inconsistent; refusing to duplicate it")
 	}
@@ -344,7 +364,7 @@ func (o *Outbound) processTask(ctx context.Context, taskID pgtype.UUID) error {
 			}
 		}
 		ids = append(ids, post.ID)
-		if err := o.recordChunk(ctx, lease.TurnID, token, delivery, channelID, taskID, ids); err != nil {
+		if err := o.recordChunk(ctx, lease.TurnID, token, delivery, channelID, task, ids); err != nil {
 			return err
 		}
 		lease.SendState = "known"
@@ -380,7 +400,7 @@ func replyMarker(turnID pgtype.UUID, index int) string {
 
 // Progress, message IDs, and provenance commit together. A failed DB write
 // leaves the send in flight so recovery reads the provider marker first.
-func (o *Outbound) recordChunk(ctx context.Context, turnID, token pgtype.UUID, delivery db.ChannelTaskDelivery, channelID string, taskID pgtype.UUID, ids []string) error {
+func (o *Outbound) recordChunk(ctx context.Context, turnID, token pgtype.UUID, delivery db.ChannelTaskDelivery, channelID string, task db.AgentTaskQueue, ids []string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyRecordTimeout)
 	defer cancel()
 	tx, err := o.tx.Begin(ctx)
@@ -400,18 +420,18 @@ func (o *Outbound) recordChunk(ctx context.Context, turnID, token pgtype.UUID, d
 	}
 	rows, err = q.SetChatMessageChannelOutboundProvenanceByTask(ctx, db.SetChatMessageChannelOutboundProvenanceByTaskParams{
 		ChannelType: pgtype.Text{String: string(TypeMattermost), Valid: true}, InstallationID: delivery.InstallationID,
-		ChannelChatID: pgtype.Text{String: channelID, Valid: true}, MessageIds: ids, TaskID: taskID,
+		ChannelChatID: pgtype.Text{String: channelID, Valid: true}, MessageIds: ids, TaskID: task.ID,
 	})
 	if err != nil {
 		return err
 	}
-	if rows != 1 {
+	if rows != 1 && task.Status != "failed" {
 		return errors.New("mattermost: assistant reply disappeared")
 	}
 	if err := q.RecordChannelOutboundMessage(ctx, db.RecordChannelOutboundMessageParams{
 		OutboundInstallationID: delivery.InstallationID, OutboundChannelType: string(TypeMattermost),
 		OutboundMessageID: ids[len(ids)-1], OutboundBindingID: delivery.BindingID,
-		OutboundRouteRevision: delivery.RouteRevision, OutboundTaskID: taskID, OutboundKind: "task_reply",
+		OutboundRouteRevision: delivery.RouteRevision, OutboundTaskID: task.ID, OutboundKind: "task_reply",
 	}); err != nil {
 		return err
 	}

@@ -131,6 +131,8 @@ There is no typing indicator: Mattermost exposes typing only over its WebSocket 
 
 ### Delivery recovery
 
+When a run fails with no automatic retry pending, the bot posts a short error notice in the original conversation. Internal error details stay in Multica. Notices are queued for new failures, so updating the server does not replay historical failures.
+
 Replies and delivered chunks are recorded in the database. The worker resumes after a restart and retries definite transient rejections. If a POST response is lost, it searches for the bot’s delivery marker instead of blindly sending a duplicate. An unconfirmed outcome stays pending for reconciliation and is logged; inspect the Mattermost thread and the stored Multica reply before any manual resend. Reconciliation scans at most 4000 posts. Messages sent while the inbound WebSocket is disconnected are not replayed by this adapter.
 
 ## Manage connections
