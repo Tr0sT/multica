@@ -403,6 +403,14 @@ jobs:
         # pkg/agent runs on its own runner: backend-agent-tests below.
         run: bash scripts/test-go.sh --race --only regular
 
+      - name: Verify TeamBridge token backup with the built CLI and PostgreSQL
+        working-directory: server
+        run: |
+          go build -o "$RUNNER_TEMP/multica-token-test" ./cmd/multica
+          MULTICA_TOKEN_TEST_CLI="$RUNNER_TEMP/multica-token-test" \
+            go test -race -tags=teambridgetokenintegration ./internal/handler \
+            -run '^TestMattermostTokenCLIEncryptedRoundTrip$' -count=1 -v
+
       # Go's own trim (cmd/go/internal/cache) with this run as the window
       # instead of five days: only `-a`/`-d` entries, and an executable entry
       # is a directory, so it goes whole. See the job comment.
@@ -764,6 +772,10 @@ jobs:
       - name: Build Windows CLI helper entrypoint
         working-directory: server
         run: go build ./cmd/multica
+
+      - name: Test TeamBridge token files and Windows junction protection
+        working-directory: server
+        run: go test ./cmd/multica -run '^TestTeamBridgeToken' -count=1
 
       - name: Test Windows Cursor background ownership
         working-directory: server

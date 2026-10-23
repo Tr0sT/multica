@@ -67,6 +67,7 @@ func executeTeamBridge(t *testing.T, input string, args ...string) (string, erro
 	root.PersistentFlags().String("server-url", "", "")
 	root.PersistentFlags().String("workspace-id", "", "")
 	root.PersistentFlags().String("profile", "", "")
+	root.PersistentFlags().Bool("debug", false, "")
 	root.AddCommand(newTeamBridgeCommand())
 	var output bytes.Buffer
 	root.SetOut(&output)

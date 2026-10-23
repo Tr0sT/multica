@@ -65,6 +65,7 @@ type installQueries interface {
 	ClearChannelInstallationBotScopedRows(ctx context.Context, id pgtype.UUID) (db.ClearChannelInstallationBotScopedRowsRow, error)
 	RotateMattermostInstallationIdentity(ctx context.Context, arg db.RotateMattermostInstallationIdentityParams) (int64, error)
 	UpdateMattermostInstallationSettings(ctx context.Context, arg db.UpdateMattermostInstallationSettingsParams) (db.ChannelInstallation, error)
+	UpdateMattermostInstallationToken(ctx context.Context, arg db.UpdateMattermostInstallationTokenParams) (db.ChannelInstallation, error)
 }
 
 type dbInstallQueries struct{ *db.Queries }

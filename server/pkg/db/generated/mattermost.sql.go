@@ -207,3 +207,39 @@ func (q *Queries) UpdateMattermostInstallationSettings(ctx context.Context, arg 
 	)
 	return i, err
 }
+
+const updateMattermostInstallationToken = `-- name: UpdateMattermostInstallationToken :one
+UPDATE channel_installation
+SET config = jsonb_set(config, '{access_token_encrypted}', to_jsonb($1::text)),
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+  AND channel_type = 'mattermost'
+RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at
+`
+
+type UpdateMattermostInstallationTokenParams struct {
+	Ciphertext  string      `json:"ciphertext"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// A credential restore must preserve concurrent settings edits and revocation.
+func (q *Queries) UpdateMattermostInstallationToken(ctx context.Context, arg UpdateMattermostInstallationTokenParams) (ChannelInstallation, error) {
+	row := q.db.QueryRow(ctx, updateMattermostInstallationToken, arg.Ciphertext, arg.ID, arg.WorkspaceID)
+	var i ChannelInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChannelType,
+		&i.Config,
+		&i.Status,
+		&i.WsLeaseToken,
+		&i.WsLeaseExpiresAt,
+		&i.InstallerUserID,
+		&i.InstalledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

@@ -6,6 +6,15 @@ WHERE id = @id AND workspace_id = @workspace_id
   AND channel_type = 'mattermost' AND status = 'active'
 RETURNING *;
 
+-- name: UpdateMattermostInstallationToken :one
+-- A credential restore must preserve concurrent settings edits and revocation.
+UPDATE channel_installation
+SET config = jsonb_set(config, '{access_token_encrypted}', to_jsonb(@ciphertext::text)),
+    updated_at = now()
+WHERE id = @id AND workspace_id = @workspace_id
+  AND channel_type = 'mattermost'
+RETURNING *;
+
 -- name: GetLiveMattermostBindingToken :one
 SELECT * FROM channel_binding_token
 WHERE token_hash = $1

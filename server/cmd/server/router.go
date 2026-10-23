@@ -1938,6 +1938,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/mattermost/installations/{installationId}", h.RevokeMattermostInstallation)
 					r.Patch("/mattermost/installations/{installationId}", h.UpdateMattermostInstallation)
 					r.Post("/mattermost/install", h.RegisterMattermostBot)
+					r.With(handler.RequireHumanActor).Get("/mattermost/installations/{installationId}/token", h.ExportMattermostToken)
+					r.With(handler.RequireHumanActor).Put("/mattermost/installations/{installationId}/token", h.ImportMattermostToken)
 				})
 			})
 		})
