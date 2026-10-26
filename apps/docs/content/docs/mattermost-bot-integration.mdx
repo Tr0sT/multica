@@ -76,6 +76,14 @@ Selected history is saved with the request in Multica and sent to the agent's mo
 
 History includes text, authors, timestamps, post links and, when enabled, attachment references, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. File contents are not downloaded automatically. More history increases model context usage.
 
+### Read history on demand
+
+An agent can keep **Current message only** and fetch additional history when the request needs it. Assign the shared `mattermost-readonly` skill (source: `deploy/nord/skills/mattermost-readonly`) and set `MATTERMOST_URL` and `MATTERMOST_TOKEN` in that agent's secret environment. Use the matching bot's token; `MULTICA_TOKEN` cannot authenticate to Mattermost. The runtime must reach the Mattermost server and have Python 3.
+
+Mattermost runs receive the source `channel_id`, `thread_id` and `post_id` from the first turn, refreshed on each subsequent run. A top-level group message is its own thread root; a direct message outside a thread has an empty thread ID. These IDs stay in the agent's run context. The skill reads channel and thread pages as needed; the saved Multica transcript is not the whole Mattermost channel.
+
+This configuration is separate from automatic history settings. The helper only reads, but the raw token retains all permissions of its bot account. Token rotation requires updating the agent's environment; disconnecting the integration does not remove this separately configured credential.
+
 ## First use and account binding
 
 This account-linking flow applies only to **Linked Multica workspace members** mode.

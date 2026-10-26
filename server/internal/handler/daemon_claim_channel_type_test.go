@@ -2,10 +2,10 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
+
+	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
 // Claim must report the chat session's real channel type for EVERY registered
@@ -92,30 +92,68 @@ func seedChannelTaskDelivery(t *testing.T, ctx context.Context, taskID, sessionI
 // claimedChatChannel is the channel-awareness slice of a claim response.
 type claimedChatChannel struct {
 	ChannelType   string `json:"chat_channel_type"`
+	ChannelID     string `json:"chat_channel_id"`
+	ThreadID      string `json:"chat_channel_thread_id"`
+	MessageID     string `json:"chat_channel_message_id"`
 	ChatType      string `json:"chat_type"`
 	InThread      bool   `json:"chat_in_thread"`
 	DeliversFiles bool   `json:"chat_channel_delivers_files"`
+}
+
+func TestClaim_MattermostSourceUsesTaskSnapshot(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	for _, tc := range []struct{ name, chatType, threadID string }{
+		{"thread reply", "group", "root-1"},
+		{"top level mention", "group", "post-2"},
+		{"direct message", "p2p", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			agentID, sessionID, runtimeID, _ := setupDirectChatSession(t, ctx, "Mattermost source")
+			seedChannelBindingOfChatType(t, ctx, agentID, sessionID, "mattermost", tc.chatType, "post-2", tc.threadID)
+			dbfx.Exec(t, `UPDATE channel_chat_session_binding SET channel_chat_id = 'allowlist:installer:room-1:root-1', config = '{"channel_id":"room-1"}' WHERE chat_session_id = $1`, sessionID)
+			taskID := insertChannelChatTask(t, ctx, agentID, runtimeID, sessionID)
+			seedChannelTaskDelivery(t, ctx, taskID, sessionID)
+			dbfx.Exec(t, `UPDATE channel_chat_session_binding SET last_message_id = 'later-post', last_thread_id = 'later-thread', config = '{"channel_id":"later-room"}' WHERE chat_session_id = $1`, sessionID)
+			requeueTaskForClaim(t, ctx, sessionID)
+			claimed := claimChatChannelFields(t, runtimeID)
+			if claimed.ChannelType != "mattermost" || claimed.ChannelID != "room-1" || claimed.ThreadID != tc.threadID || claimed.MessageID != "post-2" {
+				t.Fatalf("source differs from the triggering task snapshot: %+v", claimed)
+			}
+		})
+	}
+}
+
+func TestClaim_MattermostSourceRejectsMalformedConfig(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	agentID, sessionID, runtimeID, _ := setupDirectChatSession(t, ctx, "invalid Mattermost source")
+	seedChannelBinding(t, ctx, agentID, sessionID, "mattermost", "post-2", "root-1")
+	dbfx.Exec(t, `UPDATE channel_chat_session_binding SET config = '{"channel_id":42}' WHERE chat_session_id = $1`, sessionID)
+	taskID := insertChannelChatTask(t, ctx, agentID, runtimeID, sessionID)
+	seedChannelTaskDelivery(t, ctx, taskID, sessionID)
+	requeueTaskForClaim(t, ctx, sessionID)
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, "invalid-mattermost-source")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusInternalServerError)
 }
 
 // claimChatChannelFields claims the queued task for runtimeID and returns the
 // channel-awareness fields the daemon reads off the claim response.
 func claimChatChannelFields(t *testing.T, runtimeID string) claimedChatChannel {
 	t.Helper()
-	w := httptest.NewRecorder()
 	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
 		testWorkspaceID, "claim-channel-type")
 	req = withURLParam(req, "runtimeId", runtimeID)
 
-	testHandler.ClaimTaskByRuntime(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("ClaimTaskByRuntime: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
 	var resp struct {
 		Task *claimedChatChannel `json:"task"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode claim response: %v", err)
-	}
+	testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusOK).JSON(&resp)
 	if resp.Task == nil {
 		t.Fatal("expected a claimed task")
 	}
@@ -217,13 +255,13 @@ func TestClaim_ChannelOriginChatWithoutTaskDeliveryIsPrivateMulticaTurn(t *testi
 	}
 	ctx := context.Background()
 	agentID, sessionID, runtimeID, _ := setupDirectChatSession(t, ctx, "old channel chat continued in web")
-	seedChannelBinding(t, ctx, agentID, sessionID, "slack", "msg-1", "thread-9")
+	seedChannelBinding(t, ctx, agentID, sessionID, "mattermost", "msg-1", "thread-9")
 	// Deliberately no channel_task_delivery: this is the shape produced by a
 	// Web/Desktop/Mobile send after /new moves the external route elsewhere.
 	insertChannelChatTask(t, ctx, agentID, runtimeID, sessionID)
 	requeueTaskForClaim(t, ctx, sessionID)
 	claimed := claimChatChannelFields(t, runtimeID)
-	if claimed.ChannelType != "" || claimed.InThread || claimed.DeliversFiles {
+	if claimed.ChannelType != "" || claimed.ChannelID != "" || claimed.ThreadID != "" || claimed.MessageID != "" || claimed.InThread || claimed.DeliversFiles {
 		t.Fatalf("private continuation leaked channel audience: %+v", claimed)
 	}
 }

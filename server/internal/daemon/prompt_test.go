@@ -522,6 +522,29 @@ func TestBuildChatPromptAttachmentIDsCanBeBoundToCreatedIssues(t *testing.T) {
 }
 
 func TestBuildChatPromptChannelAwareness(t *testing.T) {
+	t.Run("older server does not invent Mattermost IDs", func(t *testing.T) {
+		out := buildChatPrompt(Task{ChatChannelType: execenv.ChannelTypeMattermost, ChatMessage: "Read the thread"})
+		if strings.Contains(out, "Mattermost source:") {
+			t.Fatal("invented source IDs absent from the claim")
+		}
+	})
+
+	t.Run("mattermost source survives a fresh session without automatic history", func(t *testing.T) {
+		var task Task
+		if err := json.Unmarshal([]byte(`{"chat_channel_type":"mattermost","chat_channel_id":"room-1","chat_channel_thread_id":"root-1","chat_channel_message_id":"post-2","chat_message":"Read the whole chat"}`), &task); err != nil {
+			t.Fatal(err)
+		}
+		out := buildChatPrompt(task)
+		for _, want := range []string{`channel_id="room-1"`, `thread_id="root-1"`, `post_id="post-2"`, "mattermost-readonly", "not the full Mattermost channel"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Mattermost prompt missing %q", want)
+			}
+		}
+		if strings.Contains(out, "no command can fetch more") {
+			t.Error("Mattermost prompt incorrectly forbids configured history tools")
+		}
+	})
+
 	t.Run("slack-backed prompt teaches both read commands", func(t *testing.T) {
 		out := buildChatPrompt(Task{
 			ChatSessionID:   "sess-1",

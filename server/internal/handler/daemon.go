@@ -23,6 +23,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
+	"github.com/multica-ai/multica/server/internal/integrations/mattermost"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
@@ -3157,6 +3158,19 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			resp.ChatChannelType = delivery.ChannelType
 			resp.ChatType = delivery.ChatType
 			resp.ChatChannelDeliversFiles = h.channelDeliversFiles(delivery.ChannelType)
+			if delivery.ChannelType == string(mattermost.TypeMattermost) {
+				// channel_chat_id is an isolation key; the API channel ID lives in config.
+				var source struct {
+					ChannelID string `json:"channel_id"`
+				}
+				if err := json.Unmarshal(delivery.Config, &source); err != nil {
+					return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount,
+						h.rejectClaimSourceLoad(r.Context(), task, err, "Mattermost source", uuidToString(task.ID))
+				}
+				resp.ChatChannelID = source.ChannelID
+				resp.ChatChannelThreadID = delivery.ChannelThreadID.String
+				resp.ChatChannelMessageID = delivery.ChannelMessageID.String
+			}
 			if delivery.ChannelType == string(slack.TypeSlack) {
 				resp.ChatInThread = delivery.ChannelThreadID.Valid &&
 					delivery.ChannelThreadID.String != "" &&
