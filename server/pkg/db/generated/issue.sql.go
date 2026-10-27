@@ -730,6 +730,8 @@ WHERE i.workspace_id = $1
     WHERE r.issue_id = i.id
       AND r.autopilot_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
+      -- Distinct webhook deliveries are independent even when their titles match.
+      AND ($7::uuid IS NULL OR r.webhook_delivery_id = $7::uuid)
   )
 ORDER BY i.created_at ASC
 LIMIT 1
@@ -742,6 +744,7 @@ type FindRecentAutopilotDuplicateIssueParams struct {
 	ProjectID          pgtype.UUID        `json:"project_id"`
 	NormalizedTitle    string             `json:"normalized_title"`
 	CreatedAfter       pgtype.Timestamptz `json:"created_after"`
+	WebhookDeliveryID  pgtype.UUID        `json:"webhook_delivery_id"`
 }
 
 func (q *Queries) FindRecentAutopilotDuplicateIssue(ctx context.Context, arg FindRecentAutopilotDuplicateIssueParams) (Issue, error) {
@@ -752,6 +755,7 @@ func (q *Queries) FindRecentAutopilotDuplicateIssue(ctx context.Context, arg Fin
 		arg.ProjectID,
 		arg.NormalizedTitle,
 		arg.CreatedAfter,
+		arg.WebhookDeliveryID,
 	)
 	var i Issue
 	err := row.Scan(

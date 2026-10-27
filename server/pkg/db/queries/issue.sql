@@ -454,6 +454,8 @@ WHERE i.workspace_id = $1
     WHERE r.issue_id = i.id
       AND r.autopilot_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
+      -- Distinct webhook deliveries are independent even when their titles match.
+      AND (sqlc.narg('webhook_delivery_id')::uuid IS NULL OR r.webhook_delivery_id = sqlc.narg('webhook_delivery_id')::uuid)
   )
 ORDER BY i.created_at ASC
 LIMIT 1;
