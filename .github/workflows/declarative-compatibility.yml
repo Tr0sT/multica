@@ -1,0 +1,69 @@
+name: Declarative compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: declarative-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli-round-trip:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the exact fork revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check out the pinned declarative consumer
+        uses: actions/checkout@v6
+        with:
+          repository: Tr0sT/multica-declarative
+          ref: a659e2ad70efb82273df75eab6e21401b122ab25
+          path: .declarative-consumer
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.3'
+          check-latest: true
+          cache-dependency-path: |
+            server/go.sum
+            .declarative-consumer/go.sum
+      - name: Record revisions and build the combined fork CLI
+        run: |
+          git rev-parse HEAD
+          git -C .declarative-consumer rev-parse HEAD
+          cd server
+          go build -mod=readonly -trimpath -o "$RUNNER_TEMP/multica-fork" ./cmd/multica
+      - name: Verify the consumer with its pinned official CLI
+        working-directory: .declarative-consumer
+        run: |
+          set -euo pipefail
+          version=$(jq -er .version integration/multica.lock.json)
+          checksum=$(jq -er .linux_amd64_sha256 integration/multica.lock.json)
+          mkdir "$RUNNER_TEMP/official-cli"
+          archive="$RUNNER_TEMP/official-cli/archive.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" "https://github.com/multica-ai/multica/releases/download/v${version}/multica-cli-${version}-linux-amd64.tar.gz"
+          printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP/official-cli" multica
+          MULTICA_BIN="$RUNNER_TEMP/official-cli/multica" make integration
+      - name: Verify all applicable round trips against the combined fork CLI
+        working-directory: .declarative-consumer
+        # These two tests assert the exact official release version and that
+        # TeamBridge does not exist. They ran above with the official binary;
+        # neither assertion applies to a development fork with TeamBridge.
+        # Every core round trip, secret/omission/avatar test and fork extension
+        # test runs here against synthetic loopback services, not live profiles.
+        run: |
+          MULTICA_BIN="$RUNNER_TEMP/multica-fork" go test -race -count=1 \
+            -tags='integration teambridgeintegration' ./... \
+            -skip '^TestOfficialCLI(Contracts|TeamBridgeUnavailableIsExplicitAndReadOnly)$'
