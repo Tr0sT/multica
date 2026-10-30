@@ -1,10 +1,16 @@
 package migrations
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // Fork migrations can share an ordinal with a later upstream migration. Their
 // complete names, not numeric prefixes, are the persisted migration identity.
 func TestForkAndUpstreamMigrationIdentitiesRemainDistinct(t *testing.T) {
+	// Package-local execution otherwise resolves this package directory as
+	// "migrations" instead of the SQL directory next to cmd and internal.
+	t.Chdir(filepath.Dir(realMigrationsDir(t)))
 	versions, err := AllVersions()
 	if err != nil {
 		t.Fatal(err)
