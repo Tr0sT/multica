@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { ChatSession } from "@multica/core/types";
+import { TooltipProvider } from "@multica/ui/components/ui/tooltip";
 import enChat from "../../locales/en/chat.json";
 
 const updateMutate = vi.hoisted(() => vi.fn());
@@ -54,7 +55,9 @@ function startRename(): HTMLInputElement {
   render(
     <>
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <ChatSessionHeader session={session} agent={null} />
+        <TooltipProvider>
+          <ChatSessionHeader session={session} agent={null} />
+        </TooltipProvider>
       </I18nProvider>
       <button type="button">{OUTSIDE_LABEL}</button>
     </>,
@@ -184,12 +187,14 @@ describe("ChatSessionHeader rename keyboard behavior", () => {
 it("shows Mattermost identity while keeping an inspected chat read-only", () => {
   render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      <ChatSessionHeader
-        session={{ ...session, channel_source: { channel_type: "mattermost", installation_id: "installation", route_revision: 1, sender_username: "alice.example" } }}
-        agent={null}
-        ownerName="Other admin"
-        readOnly
-      />
+      <TooltipProvider>
+        <ChatSessionHeader
+          session={{ ...session, channel_source: { channel_type: "mattermost", installation_id: "installation", route_revision: 1, sender_username: "alice.example" } }}
+          agent={null}
+          ownerName="Other admin"
+          readOnly
+        />
+      </TooltipProvider>
     </I18nProvider>,
   );
   expect(screen.getByText("@alice.example · Other admin")).toBeInTheDocument();
