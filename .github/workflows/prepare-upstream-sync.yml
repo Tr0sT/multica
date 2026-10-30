@@ -1,17 +1,13 @@
 name: Prepare upstream sync
-
 on:
   push:
     branches: ['sync/upstream-2026-10-30']
     paths: ['.github/workflows/prepare-upstream-sync.yml']
-
 permissions:
   contents: write
-
 concurrency:
   group: prepare-upstream-sync-20261030
   cancel-in-progress: false
-
 jobs:
   prepare:
     if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/sync/upstream-2026-10-30'
@@ -55,7 +51,6 @@ jobs:
           pattern = re.compile(r'^<<<<<<<[^\n]*\n(.*?)^\|\|\|\|\|\|\|[^\n]*\n(.*?)^=======\n(.*?)^>>>>>>>[^\n]*\n', re.M | re.S)
           for name in conflicts:
               p = Path(name)
-              source = p.read_text()
               def resolve(m):
                   ours, base, theirs = m.groups()
                   if name == '.env.example':
@@ -71,16 +66,14 @@ jobs:
                       if 'import ' in ours:
                           assert not base.strip() and 'chatChannelLabel' in ours and 'TooltipHint' in theirs
                           return ours + theirs
-                      assert 'disabled={readOnly}' in ours and '<TooltipHint' in theirs and 'onClick={startRename}' in theirs
+                      assert 'disabled={readOnly}' in ours and '<TooltipHint' in theirs
                       assert theirs.count('label={t(($) => $.header.rename)}') == 1
                       assert theirs.count('onClick={startRename}') == 1
                       return theirs.replace('label={t(($) => $.header.rename)}', 'label={readOnly ? title : t(($) => $.header.rename)}').replace('onClick={startRename}', 'onClick={startRename}\n              disabled={readOnly}')
                   assert name.endswith('daemon_claim_channel_type_test.go')
                   assert 'newDaemonTokenRequest' in ours and 'newOwnerDaemonRequest' in theirs
-                  # Keep the fork's testutil.Call assertions and the upstream's
-                  # owner-scoped fixture; no unused recorder from the old helper.
                   return theirs.replace('\tw := httptest.NewRecorder()\n', '')
-              merged, count = pattern.subn(resolve, source)
+              merged, count = pattern.subn(resolve, p.read_text())
               assert count == expected[name], (name, count)
               assert not re.search(r'^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)', merged, re.M), name
               if name.endswith('daemon_claim_channel_type_test.go'):
@@ -90,8 +83,6 @@ jobs:
               p.write_text(merged)
               subprocess.run(['git', 'add', name], check=True)
               print('Reviewed resolution:', name)
-          # Upstream removed the external icon package. Adapt only remaining
-          # fork UI imports, retaining their names after checking all exports.
           exports = Path('packages/ui/icons/index.ts').read_text()
           for p in Path('packages/views').rglob('*.tsx'):
               text = p.read_text()
@@ -102,12 +93,17 @@ jobs:
               for names in imports:
                   for value in names.split(','):
                       name = value.strip().split(' as ')[0]
-                      if not name:
-                          continue
-                      assert re.search(r'export const ' + re.escape(name) + r'\b', exports), (str(p), name)
+                      if name:
+                          assert re.search(r'export const ' + re.escape(name) + r'\b', exports), (str(p), name)
               p.write_text(text.replace('from "lucide-react"', 'from "@multica/ui/icons"'))
               subprocess.run(['git', 'add', str(p)], check=True)
               print('Adapted fork icon imports:', p)
+          # Remove only the upstream trailing blank line reported by diff --check.
+          p = Path('packages/views/search/root-view.tsx')
+          text = p.read_text()
+          assert text.endswith('\n\n')
+          p.write_text(text.rstrip('\n') + '\n')
+          subprocess.run(['git', 'add', str(p)], check=True)
           PY
           gofmt -w server/cmd/migrate/main.go server/internal/handler/daemon.go server/internal/handler/daemon_claim_channel_type_test.go
           git add server/cmd/migrate/main.go server/internal/handler/daemon.go server/internal/handler/daemon_claim_channel_type_test.go
@@ -115,8 +111,6 @@ jobs:
           git diff --cached --check
           echo 'Merged migration files:'
           git ls-files 'server/migrations/58*' 'server/migrations/59*'
-          echo 'Remaining external icon imports:'
-          git grep -n 'from "lucide-react"' -- packages/views || true
           git diff --cached --stat
           git rm .github/workflows/prepare-upstream-sync.yml
           git commit -m "Merge upstream main at $TARGET into the fork" -m 'Preserve Mattermost/TeamBridge, token backup/restore, chat inspection, webhook duplicate guards and fork migration cleanup. Adapt owner-scoped test requests and fork icon imports to upstream contracts.'
