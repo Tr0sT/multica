@@ -15,20 +15,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Extract failure context without dumping complete logs
+      - name: Extract bounded failure context
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           for job in 124036389279 124036389351; do
-            gh api "repos/Tr0sT/multica/actions/jobs/$job/logs" > "$RUNNER_TEMP/$job.log"
+            gh api --allow-escape-sequences "repos/Tr0sT/multica/actions/jobs/$job/logs" > "$RUNNER_TEMP/$job.log"
           done
           python3 - <<'PY'
           from pathlib import Path
           import os, re
+          ansi = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))')
           for job in (124036389279, 124036389351):
-              lines = Path(os.environ['RUNNER_TEMP'], str(job)+'.log').read_text().splitlines()
+              text = ansi.sub('', Path(os.environ['RUNNER_TEMP'], str(job)+'.log').read_text())
+              lines = text.splitlines()
               selected = set()
               for i, line in enumerate(lines):
                   if re.search(r'--- FAIL:|FAIL .*test|Error:.*Tooltip|expected .*received|AssertionError|unexpected EOF', line):
