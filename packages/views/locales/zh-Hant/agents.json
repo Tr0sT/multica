@@ -757,7 +757,8 @@
       "add_dialog_confirm_default": "新增",
       "add_dialog_confirm_other": "新增 {{count}} 個 skill",
       "add_dialog_cancel": "取消",
-      "add_failed_toast": "新增 skill 失敗"
+      "add_failed_toast": "新增 skill 失敗",
+      "runtime_overridden_badge": "已由指派的 skill 覆寫"
     },
     "integrations": {
       "members_note": "只有工作區的所有者和管理員可以管理此連線。你可以在\"設定 → 整合\"中檢視已連線的 Bot。"

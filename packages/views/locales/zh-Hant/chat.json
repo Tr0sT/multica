@@ -248,5 +248,13 @@
     "delete": "刪除會話",
     "archive": "歸檔會話",
     "unarchive": "取消歸檔"
+  },
+  "owner_filter": {
+    "label": "對話擁有者",
+    "mine": "我的對話",
+    "all": "所有成員",
+    "former_member": "前成員",
+    "read_only": "你正在檢視另一位成員的對話。只有對話擁有者可以傳送訊息或修改對話。",
+    "visibility": "你和工作區管理員可以檢視此對話。"
   }
 }
