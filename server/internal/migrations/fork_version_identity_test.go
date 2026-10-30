@@ -1,16 +1,17 @@
 package migrations
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
-// Fork migrations can share an ordinal with a later upstream migration. Their
-// complete names, not numeric prefixes, are the persisted migration identity.
+// Complete names, not numeric prefixes, are the persisted migration identity.
 func TestForkAndUpstreamMigrationIdentitiesRemainDistinct(t *testing.T) {
+	dir := realMigrationsDir(t)
 	// Package-local execution otherwise resolves this package directory as
 	// "migrations" instead of the SQL directory next to cmd and internal.
-	t.Chdir(filepath.Dir(realMigrationsDir(t)))
+	t.Chdir(filepath.Dir(dir))
 	versions, err := AllVersions()
 	if err != nil {
 		t.Fatal(err)
@@ -19,17 +20,17 @@ func TestForkAndUpstreamMigrationIdentitiesRemainDistinct(t *testing.T) {
 	for _, version := range versions {
 		counts[version]++
 	}
-	for _, pair := range [][2]string{
-		{"585_issue_origin_mattermost_chat", "585_issue_workflow_owner"},
-		{"586_issue_origin_mattermost_chat_validate", "586_cloud_agent_connection"},
-		{"587_channel_reply_delivery_task_idx", "587_cloud_agent_connection_provider_index"},
-	} {
-		for _, version := range pair {
+	for _, allowance := range loadForkPrefixAllowlist(t) {
+		for _, version := range allowance.Versions {
 			if counts[version] != 1 {
 				t.Fatalf("migration %q occurs %d times; preserve full fork and upstream identities", version, counts[version])
 			}
 			for _, direction := range []string{"up", "down"} {
-				if got := ExtractVersion(version + "." + direction + ".sql"); got != version {
+				filename := filepath.Join(dir, version+"."+direction+".sql")
+				if info, err := os.Stat(filename); err != nil || !info.Mode().IsRegular() {
+					t.Fatalf("allowlisted migration direction missing or not regular: %s (%v)", filename, err)
+				}
+				if got := ExtractVersion(filename); got != version {
 					t.Fatalf("migration identity collapsed: got %q, want %q", got, version)
 				}
 			}
