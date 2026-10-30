@@ -137,7 +137,7 @@ func TestClaim_MattermostSourceRejectsMalformedConfig(t *testing.T) {
 	taskID := insertChannelChatTask(t, ctx, agentID, runtimeID, sessionID)
 	seedChannelTaskDelivery(t, ctx, taskID, sessionID)
 	requeueTaskForClaim(t, ctx, sessionID)
-	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, "invalid-mattermost-source")
+	req := newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil)
 	req = withURLParam(req, "runtimeId", runtimeID)
 	testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusInternalServerError)
 }
@@ -146,8 +146,7 @@ func TestClaim_MattermostSourceRejectsMalformedConfig(t *testing.T) {
 // channel-awareness fields the daemon reads off the claim response.
 func claimChatChannelFields(t *testing.T, runtimeID string) claimedChatChannel {
 	t.Helper()
-	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
-		testWorkspaceID, "claim-channel-type")
+	req := newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil)
 	req = withURLParam(req, "runtimeId", runtimeID)
 
 	var resp struct {

@@ -1,0 +1,26 @@
+[
+  {
+    "prefix": 585,
+    "versions": [
+      "585_issue_origin_mattermost_chat",
+      "585_issue_workflow_owner"
+    ],
+    "reason": "Independently published fork Mattermost origin and upstream workflow ownership migrations. Preserve both full schema_migrations identities; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 586,
+    "versions": [
+      "586_cloud_agent_connection",
+      "586_issue_origin_mattermost_chat_validate"
+    ],
+    "reason": "Independently published upstream cloud connection and fork Mattermost constraint validation migrations. Preserve both identities; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 587,
+    "versions": [
+      "587_channel_reply_delivery_task_idx",
+      "587_cloud_agent_connection_provider_index"
+    ],
+    "reason": "Independently published fork delivery and upstream cloud connection indexes. Preserve both identities and concurrent-index cleanup hooks; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  }
+]

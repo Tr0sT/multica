@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2, UserRound } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2, UserRound } from "@multica/ui/icons";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -33,6 +33,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import { chatChannelLabel } from "../lib/channel-label";
+import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 
 /**
  * Per-session header for the conversation pane: agent avatar + editable chat
@@ -57,6 +58,7 @@ export function ChatSessionHeader({
   onArchive?: (session: ChatSession) => void;
 }) {
   const { t } = useT("chat");
+  const { t: tCommon } = useT("common");
   const wsPaths = useWorkspacePaths();
   const updateSession = useUpdateChatSession();
   const deleteSession = useDeleteChatSession();
@@ -197,15 +199,16 @@ export function ChatSessionHeader({
             className="w-full rounded-sm bg-background px-1 py-0.5 text-body font-semibold outline-none ring-1 ring-border focus-visible:ring-brand"
           />
         ) : (
-          <button
-            type="button"
-            onClick={startRename}
-            disabled={readOnly}
-            title={readOnly ? title : t(($) => $.header.rename)}
-            className="block max-w-full truncate text-left text-body font-semibold text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
-          >
-            {title}
-          </button>
+          <TooltipHint label={readOnly ? title : t(($) => $.header.rename)}>
+            <button
+              type="button"
+              onClick={startRename}
+              disabled={readOnly}
+              className="block max-w-full truncate text-left text-body font-semibold text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
+            >
+              {title}
+            </button>
+          </TooltipHint>
         )}
         {subtitle && (
           <div className="truncate text-caption text-muted-foreground" title={subtitle}>
@@ -216,7 +219,13 @@ export function ChatSessionHeader({
 
       {!readOnly && <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
+          render={
+            <IconButton
+              label={tCommon(($) => $.more_actions)}
+              tooltipSide="bottom"
+              className="text-muted-foreground"
+            />
+          }
         >
           <MoreHorizontal className="h-4 w-4" />
         </DropdownMenuTrigger>
