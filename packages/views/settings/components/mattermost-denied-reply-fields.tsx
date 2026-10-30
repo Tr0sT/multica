@@ -13,7 +13,7 @@ import { Label } from "@multica/ui/components/ui/label";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X } from "@multica/ui/icons";
 import { useT } from "../../i18n";
 
 export type MattermostReplyDraft = NonNullable<MattermostInstallation["denied_reply"]> & { files?: File[] };

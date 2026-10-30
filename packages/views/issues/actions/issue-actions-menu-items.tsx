@@ -8,6 +8,7 @@ import {
   ArrowUp,
   Calendar,
   CalendarClock,
+  Check,
   CircleEqual,
   ExternalLink,
   FolderOpen,
@@ -20,7 +21,7 @@ import {
   Trash2,
   Unlink,
   UserMinus,
-} from "lucide-react";
+} from "@multica/ui/icons";
 import type { Issue } from "@multica/core/types";
 import { resolveWorkdirCopyTarget } from "@multica/core/issues";
 import { todayDateOnly, addDaysDateOnly } from "@multica/core/issues/date";
@@ -113,7 +114,7 @@ export function IssueActionsMenuItems({
   const wsId = useWorkspaceId();
   // Only the statuses the issue's workflow allows; entering a step that hands
   // the issue off confirms first, as in the status picker. (MUL-7420)
-  const { options: statusOptions, workflow } = useIssueStatusOptions(wsId, issue.project_id);
+  const { options: statusOptions, workflow } = useIssueStatusOptions(wsId, issue.project_id, issue.status);
   const openModal = useModalStore((s) => s.open);
   const setStatus = (status: string) => {
     if (workflow && status !== issue.status && stepHandsOff(workflowStep(workflow, status))) {
@@ -194,6 +195,13 @@ export function IssueActionsMenuItems({
         <Pencil className="h-3.5 w-3.5" />
         {t(($) => $.actions.rename_issue)}
       </P.Item>
+      {/* Top level rather than under Relations: on a long issue the
+          sub-issues section's own "+" is scrolled far out of reach, and this
+          menu is pinned in the header. */}
+      <P.Item onClick={openCreateSubIssue}>
+        <Plus className="h-3.5 w-3.5" />
+        {t(($) => $.actions.create_sub_issue)}
+      </P.Item>
 
       <P.Separator />
 
@@ -227,7 +235,7 @@ export function IssueActionsMenuItems({
               />
               {option.label}
               {issue.status === option.key && (
-                <span className="ml-auto text-caption text-muted-foreground">{"✓"}</span>
+                <Check className="ml-auto size-3.5 text-muted-foreground" />
               )}
             </P.Item>
           ))}
@@ -250,7 +258,7 @@ export function IssueActionsMenuItems({
                 {t(($) => $.priority[p])}
               </span>
               {issue.priority === p && (
-                <span className="ml-auto text-caption text-muted-foreground">{"✓"}</span>
+                <Check className="ml-auto size-3.5 text-muted-foreground" />
               )}
             </P.Item>
           ))}
@@ -361,10 +369,6 @@ export function IssueActionsMenuItems({
           {t(($) => $.actions.relations)}
         </P.SubTrigger>
         <P.SubContent>
-          <P.Item onClick={openCreateSubIssue}>
-            <Plus className="h-3.5 w-3.5" />
-            {t(($) => $.actions.create_sub_issue)}
-          </P.Item>
           <P.Item onClick={openSetParent}>
             <ArrowUp className="h-3.5 w-3.5" />
             {t(($) => $.actions.set_parent_issue)}

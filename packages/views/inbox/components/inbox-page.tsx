@@ -52,6 +52,8 @@ import {
 } from "@multica/core/inbox/filter-store";
 
 import { IssueDetail, issueHighlightMementoKey } from "../../issues/components/issue-detail";
+import { ActionShortcutKeycaps } from "../../common/shortcut-keycaps";
+import { useRegisterCommandBarContext } from "../../search/register-context";
 import { IssuePeekHost } from "../../issues/components/issue-peek";
 import { useIssueSurfaceActivity } from "../../issues/surface/activity";
 import { useViewStateWriter } from "../../platform";
@@ -68,9 +70,15 @@ import {
   ChevronLeft,
   ListChecks,
   ArrowLeft,
-} from "lucide-react";
+} from "@multica/ui/icons";
 import type { InboxItem } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
+import { IconButton } from "@multica/ui/components/common/icon-button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@multica/ui/components/ui/tooltip";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -111,6 +119,7 @@ const INBOX_LIST_MAX_SIZE = 400;
 export function InboxPage() {
   const queryClient = useQueryClient();
   const { t } = useT("inbox");
+  const { t: tCommon } = useT("common");
   const showIssueLimitUpgradePrompt = useIssueLimitUpgradePrompt();
   const showAutopilotQuotaRecoveryPrompt = useIssueLimitUpgradePrompt(
     "autopilot_quota",
@@ -563,6 +572,37 @@ export function InboxPage() {
     });
   };
 
+  // The command bar calls the page's own handlers, so archiving from it moves
+  // the selection and toasts exactly like the row actions do.
+  const commandBarHandlersRef = useRef({
+    handleArchive,
+    handleMarkUnread,
+    handleMarkAllRead,
+    handleArchiveAllRead,
+  });
+  useEffect(() => {
+    commandBarHandlersRef.current = {
+      handleArchive,
+      handleMarkUnread,
+      handleMarkAllRead,
+      handleArchiveAllRead,
+    };
+  });
+  const commandBarItem = isArchivedView ? null : selected;
+  useRegisterCommandBarContext(
+    useMemo(
+      () => ({
+        kind: "inbox",
+        item: commandBarItem,
+        archive: (id: string) => commandBarHandlersRef.current.handleArchive(id),
+        markUnread: (id: string) => commandBarHandlersRef.current.handleMarkUnread(id),
+        markAllRead: () => commandBarHandlersRef.current.handleMarkAllRead(),
+        archiveAllRead: () => commandBarHandlersRef.current.handleArchiveAllRead(),
+      }),
+      [commandBarItem],
+    ),
+  );
+
   const handleArchiveCompleted = () => {
     setSelectedKey("");
     archiveCompletedMutation.mutate(undefined, {
@@ -605,9 +645,9 @@ export function InboxPage() {
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
+            <IconButton
+              label={tCommon(($) => $.more_actions)}
+              tooltipSide="bottom"
               className="text-muted-foreground"
             />
           }
@@ -721,6 +761,30 @@ export function InboxPage() {
         </div>
       )}
       {list}
+    </>
+  );
+
+  // Same header and row boxes as `InboxListItem` (32px avatar, body + caption
+  // lines), so the list doesn't shift when the items land.
+  const loadingListPanel = (
+    <>
+      {listHeader}
+      {isArchivedView && archivedBackRow}
+      <div className="flex-1 min-h-0 overflow-hidden px-2 py-1">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-2 py-2.5">
+            <Skeleton className="size-8 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <div className="flex h-5 items-center">
+                <Skeleton className="h-3.5 w-3/4" />
+              </div>
+              <div className="mt-0.5 flex h-4 items-center">
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 
@@ -879,25 +943,35 @@ export function InboxPage() {
         )}
         {/* Mirrors the row action: the button always reverses the view the
             item is being read in. */}
-        {isArchivedView ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleUnarchive(detailItem.id)}
-          >
-            <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
-            {t(($) => $.detail.unarchive)}
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleArchive(detailItem.id)}
-          >
-            <Archive className="mr-1.5 h-3.5 w-3.5" />
-            {t(($) => $.detail.archive)}
-          </Button>
-        )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              isArchivedView ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUnarchive(detailItem.id)}
+                >
+                  <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
+                  {t(($) => $.detail.unarchive)}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleArchive(detailItem.id)}
+                >
+                  <Archive className="mr-1.5 h-3.5 w-3.5" />
+                  {t(($) => $.detail.archive)}
+                </Button>
+              )
+            }
+          />
+          <TooltipContent side="bottom">
+            {isArchivedView ? t(($) => $.detail.unarchive) : t(($) => $.detail.archive)}
+            <ActionShortcutKeycaps action="archiveInboxItem" />
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   ) : null;
@@ -906,24 +980,7 @@ export function InboxPage() {
 
   if (isCompact) {
     if (viewLoading) {
-      return (
-        <div className="flex flex-1 flex-col min-h-0">
-          <div className={cn("flex h-12 shrink-0 items-center border-b", PAGE_GUTTER)}>
-            <Skeleton className="h-5 w-16" />
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-2 py-2.5">
-                <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <div className="flex flex-1 flex-col min-h-0">{loadingListPanel}</div>;
     }
 
     // Compact: show detail full-screen when an item is selected. The two kinds
@@ -969,30 +1026,13 @@ export function InboxPage() {
           maxSize={INBOX_LIST_MAX_SIZE}
           groupResizeBehavior="preserve-pixel-size"
         >
-          <div className="flex flex-col border-r h-full">
-            <div className={cn("flex h-12 shrink-0 items-center border-b", PAGE_GUTTER)}>
-              <Skeleton className="h-5 w-16" />
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-2 py-2.5">
-                  <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="flex flex-col border-r h-full">{loadingListPanel}</div>
         </ResizablePanel>
         <ResizableHandle />
-        <ResizablePanel id="detail" minSize="40%">
-          <div className="p-6">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="mt-4 h-4 w-32" />
-          </div>
-        </ResizablePanel>
+        {/* Left blank: once loaded this pane is either a centred prompt or an
+            issue detail with its own skeleton, so any placeholder here would
+            be a third shape. */}
+        <ResizablePanel id="detail" minSize="40%" />
       </ResizablePanelGroup>
     );
   }

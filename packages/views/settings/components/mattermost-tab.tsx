@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, ExternalLink, LoaderCircle, Pencil, Trash2 } from "lucide-react";
+import { ChevronRight, ExternalLink, LoaderCircle, Pencil, Trash2 } from "@multica/ui/icons";
 import { MattermostMark } from "./mattermost-mark";
 import { MattermostDeniedReplyFields, prepareMattermostDeniedReply, deniedReplyMatches, type MattermostReplyDraft } from "./mattermost-denied-reply-fields";
 import { cn } from "@multica/ui/lib/utils";
