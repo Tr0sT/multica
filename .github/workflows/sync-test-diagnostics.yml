@@ -1,0 +1,51 @@
+name: Sync test diagnostics
+on:
+  push:
+    branches: ['sync/upstream-2026-10-30']
+    paths: ['.github/workflows/sync-test-diagnostics.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Extract failure context without dumping complete logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for job in 124036389279 124036389351; do
+            gh api "repos/Tr0sT/multica/actions/jobs/$job/logs" > "$RUNNER_TEMP/$job.log"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          for job in (124036389279, 124036389351):
+              lines = Path(os.environ['RUNNER_TEMP'], str(job)+'.log').read_text().splitlines()
+              selected = set()
+              for i, line in enumerate(lines):
+                  if re.search(r'--- FAIL:|FAIL .*test|Error:.*Tooltip|expected .*received|AssertionError|unexpected EOF', line):
+                      selected.update(range(max(0,i-3), min(len(lines),i+14)))
+              print('JOB', job, 'failure context:')
+              for i in sorted(selected)[:180]:
+                  print(lines[i])
+          root = Path('server/internal/handler')
+          names = ('TestFormatClaimedTaskCarriesChannelTypeForJSONAndRPC', 'createDaemonTestRuntime', 'newOwnerDaemonRequest', 'queueDaemonTestTask', 'formatClaimedTask')
+          for name in names:
+              for p in root.glob('*.go'):
+                  text = p.read_text()
+                  match = re.search(r'^func (?:\([^\n]*\) )?'+re.escape(name)+r'\b',text,re.M)
+                  if match:
+                      rest = text[match.start():]
+                      end = re.search(r'^}\s*$', rest, re.M)
+                      body = rest[:end.end()] if end else rest
+                      print('\nFUNCTION', str(p), name)
+                      print('\n'.join(body.splitlines()[:150]))
+          PY
