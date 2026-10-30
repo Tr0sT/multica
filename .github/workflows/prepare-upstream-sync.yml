@@ -22,7 +22,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Merge the pinned upstream without overwriting fork history
+      - name: Merge pinned upstream and apply reviewed resolutions
         env:
           TARGET: 908456c60192907f3c7e65709e18846f08eea2f8
           FORK_BASE: f77b5bbebadc0c270130c2de4f6bfdb0e28a9084
@@ -39,16 +39,87 @@ jobs:
           git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "$TARGET"
           result=$?
           set -e
-          if [ "$result" -ne 0 ]; then
-            echo 'Merge requires reviewed conflict resolutions; no branch was pushed.'
-            git diff --name-only --diff-filter=U
-            git diff --cc
-            exit "$result"
-          fi
+          test "$result" -le 1
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          expected = {
+              '.env.example': 1,
+              'packages/views/chat/components/chat-session-header.tsx': 2,
+              'server/cmd/migrate/main.go': 1,
+              'server/internal/handler/daemon.go': 1,
+              'server/internal/handler/daemon_claim_channel_type_test.go': 1,
+          }
+          conflicts = subprocess.check_output(['git', 'diff', '--name-only', '--diff-filter=U'], text=True).splitlines()
+          assert set(conflicts) == set(expected), conflicts
+          pattern = re.compile(r'^<<<<<<<[^\n]*\n(.*?)^\|\|\|\|\|\|\|[^\n]*\n(.*?)^=======\n(.*?)^>>>>>>>[^\n]*\n', re.M | re.S)
+          for name in conflicts:
+              p = Path(name)
+              source = p.read_text()
+              def resolve(m):
+                  ours, base, theirs = m.groups()
+                  if name == '.env.example':
+                      assert not base.strip() and 'MULTICA_MATTERMOST_SECRET_KEY=' in ours and 'Qoder' in theirs
+                      return ours + theirs
+                  if name == 'server/cmd/migrate/main.go':
+                      assert not base.strip() and '587_channel_reply_delivery_task_idx' in ours and '594_agent_task_process_cleanup_index' in theirs
+                      return ours + theirs
+                  if name == 'server/internal/handler/daemon.go':
+                      assert not base.strip() and '/integrations/mattermost' in ours and '/events' in theirs
+                      return theirs + ours
+                  if name.endswith('chat-session-header.tsx'):
+                      if 'import ' in ours:
+                          assert not base.strip() and 'chatChannelLabel' in ours and 'TooltipHint' in theirs
+                          return ours + theirs
+                      assert 'disabled={readOnly}' in ours and '<TooltipHint' in theirs and 'onClick={startRename}' in theirs
+                      assert theirs.count('label={t(($) => $.header.rename)}') == 1
+                      assert theirs.count('onClick={startRename}') == 1
+                      return theirs.replace('label={t(($) => $.header.rename)}', 'label={readOnly ? title : t(($) => $.header.rename)}').replace('onClick={startRename}', 'onClick={startRename}\n              disabled={readOnly}')
+                  assert name.endswith('daemon_claim_channel_type_test.go')
+                  assert 'newDaemonTokenRequest' in ours and 'newOwnerDaemonRequest' in theirs
+                  # Keep the fork's testutil.Call assertions and the upstream's
+                  # owner-scoped fixture; no unused recorder from the old helper.
+                  return theirs.replace('\tw := httptest.NewRecorder()\n', '')
+              merged, count = pattern.subn(resolve, source)
+              assert count == expected[name], (name, count)
+              assert not re.search(r'^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)', merged, re.M), name
+              if name.endswith('daemon_claim_channel_type_test.go'):
+                  old = 'newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, "invalid-mattermost-source")'
+                  assert merged.count(old) == 1
+                  merged = merged.replace(old, 'newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil)')
+              p.write_text(merged)
+              subprocess.run(['git', 'add', name], check=True)
+              print('Reviewed resolution:', name)
+          # Upstream removed the external icon package. Adapt only remaining
+          # fork UI imports, retaining their names after checking all exports.
+          exports = Path('packages/ui/icons/index.ts').read_text()
+          for p in Path('packages/views').rglob('*.tsx'):
+              text = p.read_text()
+              if 'from "lucide-react"' not in text:
+                  continue
+              imports = re.findall(r'import\s*\{([^}]+)\}\s*from "lucide-react"', text, re.S)
+              assert imports, str(p)
+              for names in imports:
+                  for value in names.split(','):
+                      name = value.strip().split(' as ')[0]
+                      if not name:
+                          continue
+                      assert re.search(r'export const ' + re.escape(name) + r'\b', exports), (str(p), name)
+              p.write_text(text.replace('from "lucide-react"', 'from "@multica/ui/icons"'))
+              subprocess.run(['git', 'add', str(p)], check=True)
+              print('Adapted fork icon imports:', p)
+          PY
+          gofmt -w server/cmd/migrate/main.go server/internal/handler/daemon.go server/internal/handler/daemon_claim_channel_type_test.go
+          git add server/cmd/migrate/main.go server/internal/handler/daemon.go server/internal/handler/daemon_claim_channel_type_test.go
+          test -z "$(git diff --name-only --diff-filter=U)"
           git diff --cached --check
+          echo 'Merged migration files:'
+          git ls-files 'server/migrations/58*' 'server/migrations/59*'
+          echo 'Remaining external icon imports:'
+          git grep -n 'from "lucide-react"' -- packages/views || true
           git diff --cached --stat
           git rm .github/workflows/prepare-upstream-sync.yml
-          git commit -m "Merge upstream main at $TARGET into the fork"
+          git commit -m "Merge upstream main at $TARGET into the fork" -m 'Preserve Mattermost/TeamBridge, token backup/restore, chat inspection, webhook duplicate guards and fork migration cleanup. Adapt owner-scoped test requests and fork icon imports to upstream contracts.'
           git merge-base --is-ancestor "$TARGET" HEAD
           git merge-base --is-ancestor "$FORK_BASE" HEAD
           current=$(git ls-remote origin refs/heads/sync/upstream-2026-10-30 | cut -f1)
