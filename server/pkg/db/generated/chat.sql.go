@@ -715,7 +715,13 @@ func (q *Queries) DeleteChatDraftRestoresBySystemRuntimeAgents(ctx context.Conte
 }
 
 const deleteChatSession = `-- name: DeleteChatSession :exec
-DELETE FROM chat_session WHERE id = $1 AND workspace_id = $2
+WITH target AS (
+    SELECT chat_session.id FROM chat_session WHERE chat_session.id = $1 AND chat_session.workspace_id = $2
+), cleared_agent_plugin_snapshots AS (
+    DELETE FROM agent_plugin_snapshot AS snapshots
+    WHERE snapshots.workspace_id = $2 AND snapshots.context_key IN (SELECT 'chat:' || target.id::text FROM target)
+)
+DELETE FROM chat_session WHERE chat_session.id IN (SELECT target.id FROM target)
 `
 
 type DeleteChatSessionParams struct {

@@ -1659,6 +1659,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/models/{requestId}/result", h.ReportModelListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/{requestId}/result", h.ReportLocalSkillListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/import/{requestId}/result", h.ReportLocalSkillImportResult)
+		r.Post("/runtimes/{runtimeId}/agent-marketplaces/{marketplaceId}/sync/{requestId}", h.ReportAgentMarketplaceSync)
 
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
@@ -2377,6 +2378,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/dingtalk/groups", h.ListDingTalkGroupsForAgent)
 					r.Get("/skills", h.ListAgentSkills)
 					r.Put("/skills", h.SetAgentSkills)
+					r.Get("/marketplace-plugins", h.GetAgentPluginSelection)
+					r.Put("/marketplace-plugins", h.SetAgentPluginSelection)
 					r.Post("/skills/add", h.AddAgentSkills)
 					r.Get("/labels", h.ListLabelsForAgent)
 					r.Post("/labels", h.AttachLabelToAgent)
@@ -2415,6 +2418,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Skills
+			r.Route("/api/agent-marketplaces", func(r chi.Router) {
+				r.Get("/", h.ListAgentMarketplaces)
+				r.Post("/", h.CreateAgentMarketplace)
+				r.Post("/{id}/refresh", h.RefreshAgentMarketplace)
+				r.Delete("/{id}", h.DeleteAgentMarketplace)
+			})
+
 			r.Route("/api/skills", func(r chi.Router) {
 				r.Get("/", h.ListSkills)
 				r.Post("/", h.CreateSkill)

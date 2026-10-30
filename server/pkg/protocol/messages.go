@@ -3,8 +3,9 @@ package protocol
 import "encoding/json"
 
 const (
-	DaemonCapabilitySkillBundlesV1      = "skill-bundles-v1"
-	DaemonCapabilityCoalescedCommentsV1 = "coalesced-comments-v1"
+	DaemonCapabilitySkillBundlesV1       = "skill-bundles-v1"
+	DaemonCapabilityAgentPluginBundlesV1 = "agent-plugin-bundles-v1"
+	DaemonCapabilityCoalescedCommentsV1  = "coalesced-comments-v1"
 	// DaemonCapabilityLocalWorktreeV1 advertises that the daemon implements
 	// worktree mode for local_directory resources (execution_mode=worktree).
 	//
@@ -431,6 +432,7 @@ type DaemonHeartbeatRequestPayload struct {
 // and re-registers; without it the dead UUID would keep heartbeating until the
 // daemon process restarts.
 type DaemonHeartbeatAckPayload struct {
+	PendingMarketplace      *DaemonHeartbeatPendingMarketplace      `json:"pending_marketplace,omitempty"`
 	RuntimeID               string                                  `json:"runtime_id"`
 	Status                  string                                  `json:"status"`
 	ServerCapabilities      []string                                `json:"server_capabilities,omitempty"`
@@ -444,6 +446,13 @@ type DaemonHeartbeatAckPayload struct {
 	// that don't know this field silently ignore it (standard JSON behavior)
 	// and fall back to the singular PendingLocalSkillImport above.
 	PendingLocalSkillImports []DaemonHeartbeatPendingLocalSkillImport `json:"pending_local_skill_imports,omitempty"`
+}
+
+type DaemonHeartbeatPendingMarketplace struct {
+	ID            string `json:"id"`
+	MarketplaceID string `json:"marketplace_id"`
+	URL           string `json:"url"`
+	Ref           string `json:"ref"`
 }
 
 // HeartbeatStatusRuntimeGone is the ack Status used when the runtime row no

@@ -15,6 +15,7 @@ import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
+import { agentMarketplaceKeys } from "../agent-marketplaces/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
@@ -809,6 +810,10 @@ export function useRealtimeSync(
           // list summary.
           invalidateSquadMemberStatusQueries(qc, wsId);
         }
+      },
+      agent_plugins: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: agentMarketplaceKeys.all(wsId) });
       },
       member: () => {
         const wsId = getCurrentWsId();

@@ -54,6 +54,7 @@ type Agent struct {
 	DisabledRuntimeSkills []byte      `json:"disabled_runtime_skills"`
 	ServiceTier           pgtype.Text `json:"service_tier"`
 	ConversationStarters  []byte      `json:"conversation_starters"`
+	PluginSelection       []byte      `json:"plugin_selection"`
 }
 
 type AgentBuilderDraft struct {
@@ -73,11 +74,52 @@ type AgentInvocationTarget struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type AgentMarketplace struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SourceUrl       string             `json:"source_url"`
+	SourceRef       string             `json:"source_ref"`
+	FetchRuntimeID  pgtype.UUID        `json:"fetch_runtime_id"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	Name            string             `json:"name"`
+	DisplayName     string             `json:"display_name"`
+	Revision        string             `json:"revision"`
+	SyncStatus      string             `json:"sync_status"`
+	SyncRequestID   pgtype.UUID        `json:"sync_request_id"`
+	SyncRequestedAt pgtype.Timestamptz `json:"sync_requested_at"`
+	SyncStartedAt   pgtype.Timestamptz `json:"sync_started_at"`
+	SyncError       string             `json:"sync_error"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type AgentMcpServer struct {
 	AgentID   pgtype.UUID        `json:"agent_id"`
 	ServerID  pgtype.UUID        `json:"server_id"`
 	Enabled   bool               `json:"enabled"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AgentPluginSnapshot struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ContextKey  string             `json:"context_key"`
+	Configured  bool               `json:"configured"`
+	VersionIds  []pgtype.UUID      `json:"version_ids"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type AgentPluginVersion struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	MarketplaceID pgtype.UUID        `json:"marketplace_id"`
+	PluginName    string             `json:"plugin_name"`
+	Revision      string             `json:"revision"`
+	Digest        string             `json:"digest"`
+	Metadata      []byte             `json:"metadata"`
+	Files         []byte             `json:"files"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type AgentRuntime struct {

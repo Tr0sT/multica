@@ -74,6 +74,14 @@ Installed desktop clients may talk to newer backends. Preserve response compatib
 - Every migration-created index, including indexes on new tables, uses `CREATE [UNIQUE] INDEX CONCURRENTLY`. Each concurrent index build gets its own single-statement migration file; the runner executes files outside an explicit transaction.
 - Conditionally skipped migrations are still recorded in `schema_migrations`. Later DDL touching conditional objects must be idempotent (`IF EXISTS` / `IF NOT EXISTS`); document recovery if the missing object would break runtime behavior.
 
+## Agent Marketplace Plugins
+
+- Agent marketplace packages are native Codex plugins, separate from the Multica Plugin V1 platform. See [docs/agent-marketplaces.md](docs/agent-marketplaces.md).
+- Read Git sources through an online runtime owned by the requesting member. Preserve workspace boundaries and keep its Git credentials on that machine.
+- Pin package versions per issue/chat and agent when work starts. Refreshing a catalog or changing agent selections applies to new conversations.
+- Prepare selected packages only inside the task's Codex home. Never run package installation through the shared user plugin-cache link or mutate the user's plugin configuration.
+- Gate managed plugin dispatch on the daemon capability; an older daemon must not silently run without the selected packages.
+
 ## Backend UUID Rules
 
 In `server/internal/handler/`, distinguish UUID sources before using them in writes:

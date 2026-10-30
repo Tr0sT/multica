@@ -24,6 +24,14 @@ An agent doesn't keep running in the background. It stores a reusable identity a
 
 Switching models or editing instructions does not create a new agent, and past issues, comments, and run history are not lost.
 
+## Marketplace plugins (Codex)
+
+Open **Capabilities → Plugins** to select plugins for an agent. **Marketplaces** connects an HTTPS or SSH Git catalog through an online runtime you own; that machine only reads the repository using its Git access.
+
+Save the checkbox selection to attach those packages when a new issue or chat starts. Each conversation keeps its original package versions when continued. Catalog refreshes and selection changes do not replace packages in existing conversations.
+
+Packages are prepared in the task's isolated Codex home. The user's plugin configuration and cache are not changed. Saving an empty selection is supported. The backend and daemon must support agent marketplace plugins, and Codex CLI 0.165.0 or newer is required.
+
 ## Agents, runtimes, and runs
 
 | Concept | Responsibility |

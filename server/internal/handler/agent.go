@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/agentplugins"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/attribution"
 	"github.com/multica-ai/multica/server/internal/logger"
@@ -385,9 +386,10 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
-	StartClaimSupported      bool                   `json:"start_claim_supported,omitempty"`
-	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
-	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
+	AgentPlugins             *agentplugins.TaskContext `json:"agent_plugins,omitempty"`
+	StartClaimSupported      bool                      `json:"start_claim_supported,omitempty"`
+	CancelledByCommentChange bool                      `json:"cancelled_by_comment_change,omitempty"`
+	CancelledBy              *TaskCancellationActor    `json:"cancelled_by,omitempty"`
 
 	ID                   string                 `json:"id"`
 	AgentID              string                 `json:"agent_id"`

@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 
+	"github.com/multica-ai/multica/server/internal/agentplugins"
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
 	"github.com/multica-ai/multica/server/pkg/remotemcp"
 )
@@ -75,6 +76,7 @@ type ProjectWorkflowData struct {
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
+	AgentPlugins *agentplugins.TaskContext `json:"agent_plugins,omitempty"`
 	// StartClaimSupported gates retries when talking to older servers.
 	StartClaimSupported  bool                   `json:"start_claim_supported,omitempty"`
 	DispatchedAt         string                 `json:"dispatched_at,omitempty"`

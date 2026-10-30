@@ -381,6 +381,10 @@ type codexBackend struct {
 func buildCodexArgs(opts ExecOptions, logger *slog.Logger) []string {
 	args := []string{"app-server", "--listen", "stdio://"}
 	launchArgs := NormalizeCodexLaunchArgs(opts.ExtraArgs, opts.CustomArgs, opts.McpConfig, logger)
+	if len(opts.CodexPluginArgs) > 0 {
+		launchArgs = FilterCodexPluginConfigOverrides(launchArgs, logger)
+		launchArgs = append(launchArgs, opts.CodexPluginArgs...)
+	}
 	if opts.ServiceTier == codexFastServiceTier {
 		launchArgs = enforceCodexFastMode(launchArgs, logger)
 	}
@@ -1129,6 +1133,11 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	// argv position, so the prefix needs the same two removals ExtraArgs and
 	// CustomArgs get below.
 	runtimeCmd := b.cfg.commandAt(execPath)
+	if len(opts.CodexPluginArgs) > 0 {
+		runtimeCmd = runtimeCmd.withFilteredPrefix(func(prefix []string) []string {
+			return FilterCodexPluginConfigOverrides(prefix, b.cfg.Logger)
+		})
+	}
 	if codexHome != "" {
 		// The daemon owns shell_environment_policy in the task-local config.
 		// Codex -c/--config overrides are last-wins, so remove user-provided

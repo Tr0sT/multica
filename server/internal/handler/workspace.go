@@ -1363,6 +1363,18 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspacePluginData(ctx, requester.WorkspaceID) },
 		},
 		{
+			name: "delete agent plugin snapshots",
+			run:  func() error { return qtx.DeleteWorkspaceAgentPluginSnapshots(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete agent plugin versions",
+			run:  func() error { return qtx.DeleteWorkspaceAgentPluginVersions(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete agent marketplaces",
+			run:  func() error { return qtx.DeleteWorkspaceAgentMarketplaces(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete agents",
 			run:  func() error { return qtx.DeleteWorkspaceAgents(ctx, requester.WorkspaceID) },
 		},

@@ -144,7 +144,7 @@ export function createEnDict(
       {
         title: "Create your first agent",
         description:
-          "Give it a name, write instructions, and attach skills. Agents automatically activate on assignment, on comment, or on mention.",
+          "Give it a name, write instructions, and attach skills. Agents automatically activate on assignment, on comment, or on mention. Codex agents can also attach marketplace plugins for each issue.",
       },
       {
         title: "Assign an issue and watch it work",

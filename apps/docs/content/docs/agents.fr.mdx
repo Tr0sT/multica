@@ -24,6 +24,14 @@ Un agent ne tourne pas en permanence en arrière-plan. Il conserve une identité
 
 Changer de modèle ou modifier les instructions ne crée pas de nouvel agent, et l'historique des tâches, des commentaires et des exécutions n'est pas perdu.
 
+## Plugins des marketplaces (Codex)
+
+Ouvrez **Capacités → Plugins** pour sélectionner les plugins d’un agent. **Marketplaces** permet de connecter un catalogue Git HTTPS ou SSH via un runtime en ligne dont vous êtes propriétaire. Cette machine sert uniquement à lire le dépôt avec ses accès Git.
+
+Enregistrez la sélection pour charger les paquets au démarrage d’une nouvelle tâche ou discussion. Chaque conversation conserve ses versions d’origine lors des reprises. L’actualisation du catalogue et les changements de sélection ne remplacent pas les paquets des conversations existantes.
+
+Les paquets sont préparés dans l’environnement Codex isolé de la tâche. La configuration et le cache de plugins de l’utilisateur ne sont pas modifiés. Une sélection vide est autorisée. Le backend et le daemon doivent prendre en charge cette fonction, avec Codex CLI 0.165.0 ou une version ultérieure.
+
 ## Agents, runtimes et exécutions
 
 | Concept | Responsabilité |

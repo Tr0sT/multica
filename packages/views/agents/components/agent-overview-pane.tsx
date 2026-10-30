@@ -28,6 +28,7 @@ import { PAGE_GUTTER, PAGE_RAIL } from "../../layout/page-header";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
+import { PluginsTab } from "./tabs/plugins-tab";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
 import { McpConfigTab } from "./tabs/mcp-config-tab";
@@ -49,6 +50,7 @@ export type DetailTab =
   | "work"
   | "instructions"
   | "skills"
+  | "plugins"
   | "mcp_config"
   | "composio_mcp"
   | "integrations"
@@ -63,6 +65,7 @@ type SecondaryTab = {
   labelKey:
     | "instructions"
     | "skills"
+    | "plugins"
     | "mcp_config"
     | "composio_mcp"
     | "integrations"
@@ -77,6 +80,7 @@ type SecondaryTab = {
 const CAPABILITY_TABS: SecondaryTab[] = [
   { id: "instructions", labelKey: "instructions" },
   { id: "skills", labelKey: "skills" },
+  { id: "plugins", labelKey: "plugins" },
   { id: "mcp_config", labelKey: "mcp_config" },
   { id: "composio_mcp", labelKey: "composio_mcp" },
   { id: "integrations", labelKey: "integrations" },
@@ -486,6 +490,11 @@ export function AgentOverviewPane({
                       currentUserId={currentUserId}
                       canEdit={canEdit}
                     />
+                  )}
+                  {effectiveView === "plugins" && (
+                    <PluginsTab agent={agent} runtime={runtime} runtimes={runtimes}
+                      members={members} currentUserId={currentUserId} canEdit={canEdit}
+                      onDirtyChange={setActiveDirty} />
                   )}
                   {effectiveView === "mcp_config" && (
                     <McpConfigTab

@@ -1546,6 +1546,10 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	updateMs = time.Since(updateStart).Milliseconds()
 
 	ack, m, err := h.processHeartbeat(r.Context(), runtimeID, req.SupportsBatchImport)
+	if err == nil && requestHasClientCapability(r, protocol.DaemonCapabilityAgentPluginBundlesV1) {
+		ack.PendingMarketplace = h.claimAgentMarketplaceSync(r.Context(), runtimeID,
+			middleware.DaemonIDFromContext(r.Context()), requestUserID(r))
+	}
 	probeModelMs = m.ProbeModelMs
 	popModelMs = m.PopModelMs
 	probeSkillsMs = m.ProbeSkillsMs
@@ -1566,6 +1570,9 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// in the WS path and would be redundant noise on the HTTP path where the
 	// caller already knows which runtime it asked about.
 	resp := map[string]any{"status": ack.Status}
+	if ack.PendingMarketplace != nil {
+		resp["pending_marketplace"] = ack.PendingMarketplace
+	}
 	if ack.PendingUpdate != nil {
 		resp["pending_update"] = ack.PendingUpdate
 	}
@@ -1610,6 +1617,11 @@ func (h *Handler) HandleDaemonWSHeartbeat(ctx context.Context, identity daemonws
 		return nil, err
 	}
 	ack, _, err := h.processHeartbeat(ctx, runtimeID, supportsBatchImport)
+	if err == nil && slices.ContainsFunc(strings.Split(identity.Capabilities, ","), func(value string) bool {
+		return strings.TrimSpace(value) == protocol.DaemonCapabilityAgentPluginBundlesV1
+	}) {
+		ack.PendingMarketplace = h.claimAgentMarketplaceSync(ctx, runtimeID, identity.DaemonID, identity.UserID)
+	}
 	return ack, err
 }
 
@@ -3028,6 +3040,23 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// place a claimed task's agent payload is assembled.
 	if agent.SystemKey.String == service.MikaSystemKey {
 		resp.Agent.Instructions = service.ComposeMikaInstructions(agent.Name, agent.Instructions)
+	}
+	pluginContext, pluginErr := h.TaskService.LoadAgentPluginContext(r.Context(), agent, *task)
+	if pluginErr != nil {
+		if errors.Is(pluginErr, service.ErrAgentPluginUnavailable) {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task, pluginErr.Error(), taskfailure.ReasonEnvironmentPrepareFailed,
+				"error_plugin_snapshot", http.StatusConflict, "selected agent plugins are unavailable")
+		}
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSkillLoad(task, pluginErr)
+	}
+	if pluginContext != nil && (runtime.Provider == "codex" || len(pluginContext.Plugins) > 0) {
+		if runtime.Provider != "codex" || !requestHasClientCapability(r, protocol.DaemonCapabilityAgentPluginBundlesV1) {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task, "Selected plugins require a Codex runtime with an updated Multica daemon.",
+				taskfailure.ReasonEnvironmentPrepareFailed, "error_plugin_runtime", http.StatusConflict, "agent plugins are not supported by this runtime")
+		}
+		resp.AgentPlugins = pluginContext
 	}
 	if useSkillRefs {
 		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), task.AgentID, agent.SystemKey.String, legacySkillRedirects)

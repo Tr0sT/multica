@@ -4522,6 +4522,11 @@ func (d *Daemon) handleHeartbeatActions(ctx context.Context, runtimeID string, r
 	if resp == nil {
 		return
 	}
+	if resp.PendingMarketplace != nil {
+		if rt := d.findRuntime(runtimeID); rt != nil {
+			go d.handleMarketplaceSync(ctx, *rt, *resp.PendingMarketplace)
+		}
+	}
 	if resp.PendingUpdate != nil || resp.PendingModelList != nil || resp.PendingLocalSkills != nil || resp.PendingLocalSkillImport != nil {
 		d.logger.Debug("heartbeat: pending actions",
 			"runtime_id", runtimeID,
@@ -7815,6 +7820,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `multica repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
+		ManagedPlugins:      task.AgentPlugins != nil,
 		IssueID:             task.IssueID,
 		TriggerCommentID:    task.TriggerCommentID,
 		TriggerThreadID:     task.TriggerThreadID,
@@ -8663,6 +8669,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
 		return TaskResult{}, err
 	}
+	pluginArgs, err := d.prepareManagedAgentPlugins(ctx, provider, codexVersion, entry.Path, profileFixedArgs, agentEnv, env.CodexHome, task.AgentPlugins)
+	if err != nil {
+		return TaskResult{}, asEnvironmentSetupFailure(err)
+	}
 	// The overlay is authoritative once built, so nothing on the command line
 	// may re-point HERMES_HOME out of it. Both argv regions are stripped
 	// together, against the same assembled argv the resolver read: a selection
@@ -8797,6 +8807,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
 	execOpts := agent.ExecOptions{
+		CodexPluginArgs:            pluginArgs,
 		EnableTaskSupplement:       taskSupplementNegotiated,
 		CursorHookCommand:          cursorHookCommand,
 		Cwd:                        env.WorkDir,

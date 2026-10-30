@@ -1,5 +1,17 @@
 import type { ZodType } from "zod";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
+import type {
+  AgentMarketplace,
+  AgentMarketplaceCatalog,
+  AgentPluginSelection,
+  AgentPluginSettings,
+  ConnectAgentMarketplaceRequest,
+} from "../types/agent-marketplace";
+import {
+  AgentMarketplaceSchema,
+  AgentMarketplaceCatalogSchema,
+  AgentPluginSettingsSchema,
+} from "./agent-marketplace-schemas";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
@@ -2706,6 +2718,51 @@ export class ApiClient {
       [],
       { endpoint: "GET /api/dashboard/failures/by-agent" },
     );
+  }
+
+  async getAgentMarketplaceCatalog(wsId: string): Promise<AgentMarketplaceCatalog> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces", { headers: { "X-Workspace-ID": wsId } });
+    return parseWithFallback<AgentMarketplaceCatalog>(raw, AgentMarketplaceCatalogSchema,
+      { marketplaces: [], plugins: [], valid: false }, { endpoint: "GET /api/agent-marketplaces" });
+  }
+
+  async connectAgentMarketplace(wsId: string, request: ConnectAgentMarketplaceRequest): Promise<AgentMarketplace | null> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces", {
+      method: "POST", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ url: request.url, ref: request.ref, runtime_id: request.runtimeId }),
+    });
+    return parseWithFallback<AgentMarketplace | null>(raw, AgentMarketplaceSchema, null,
+      { endpoint: "POST /api/agent-marketplaces" });
+  }
+
+  async refreshAgentMarketplace(wsId: string, id: string, runtimeId: string): Promise<AgentMarketplace | null> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces/" + id + "/refresh", {
+      method: "POST", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ runtime_id: runtimeId }),
+    });
+    return parseWithFallback<AgentMarketplace | null>(raw, AgentMarketplaceSchema, null,
+      { endpoint: "POST /api/agent-marketplaces/:id/refresh" });
+  }
+
+  async disconnectAgentMarketplace(wsId: string, id: string): Promise<void> {
+    await this.fetch("/api/agent-marketplaces/" + id, { method: "DELETE", headers: { "X-Workspace-ID": wsId } });
+  }
+
+  async getAgentPluginSelection(wsId: string, agentId: string): Promise<AgentPluginSettings> {
+    const raw = await this.fetch<unknown>("/api/agents/" + agentId + "/marketplace-plugins", { headers: { "X-Workspace-ID": wsId } });
+    return parseWithFallback<AgentPluginSettings>(raw, AgentPluginSettingsSchema,
+      { configured: false, plugins: [], valid: false }, { endpoint: "GET /api/agents/:id/marketplace-plugins" });
+  }
+
+  async setAgentPluginSelection(wsId: string, agentId: string, plugins: AgentPluginSelection[]): Promise<AgentPluginSettings> {
+    const raw = await this.fetch<unknown>("/api/agents/" + agentId + "/marketplace-plugins", {
+      method: "PUT", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ plugins: plugins.map((plugin) => ({
+        marketplace_id: plugin.marketplaceId, plugin_name: plugin.pluginName,
+      })) }),
+    });
+    return parseWithFallback<AgentPluginSettings>(raw, AgentPluginSettingsSchema,
+      { configured: false, plugins: [], valid: false }, { endpoint: "PUT /api/agents/:id/marketplace-plugins" });
   }
 
   async initiateUpdate(
