@@ -1,0 +1,57 @@
+name: Prepare upstream sync
+
+on:
+  push:
+    branches: ['sync/upstream-2026-10-30']
+    paths: ['.github/workflows/prepare-upstream-sync.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-upstream-sync-20261030
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/sync/upstream-2026-10-30'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Merge the pinned upstream without overwriting fork history
+        env:
+          TARGET: 908456c60192907f3c7e65709e18846f08eea2f8
+          FORK_BASE: f77b5bbebadc0c270130c2de4f6bfdb0e28a9084
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$TARGET"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          set +e
+          git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "$TARGET"
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then
+            echo 'Merge requires reviewed conflict resolutions; no branch was pushed.'
+            git diff --name-only --diff-filter=U
+            git diff --cc
+            exit "$result"
+          fi
+          git diff --cached --check
+          git diff --cached --stat
+          git rm .github/workflows/prepare-upstream-sync.yml
+          git commit -m "Merge upstream main at $TARGET into the fork"
+          git merge-base --is-ancestor "$TARGET" HEAD
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          current=$(git ls-remote origin refs/heads/sync/upstream-2026-10-30 | cut -f1)
+          test "$current" = "$EXPECTED_HEAD"
+          git push origin HEAD:refs/heads/sync/upstream-2026-10-30
+          printf 'Prepared merge commit: %s\n' "$(git rev-parse HEAD)"
