@@ -1,0 +1,43 @@
+name: Prepare 2026-10-31 fork sync (temporary)
+on:
+  push:
+    branches: [sync/upstream-2026-10-31]
+permissions:
+  contents: write
+jobs:
+  merge:
+    if: startsWith(github.event.head_commit.message, 'chore(sync): prepare upstream')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge captured upstream with history and fork customizations
+        shell: bash
+        env:
+          UPSTREAM_SHA: e8ae72c9dfc1b4474b61a9087f51b33cbee6a048
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          git remote add upstream https://github.com/multica-ai/multica.git
+          git fetch --no-tags upstream main
+          git cat-file -e "$UPSTREAM_SHA^{commit}"
+          if ! git merge-base --is-ancestor "$UPSTREAM_SHA" FETCH_HEAD; then
+            echo "::error::Captured upstream commit is no longer an ancestor of fetched main"
+            exit 1
+          fi
+          git config user.name "Multica Sync Automation"
+          git config user.email "sync-automation@users.noreply.github.com"
+          if git merge --no-ff --no-commit "$UPSTREAM_SHA"; then
+            git diff --cached --check
+            git commit -m "chore(sync): merge upstream e8ae72c (2026-10-30)"
+            git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
+            git push origin HEAD:refs/heads/sync/upstream-2026-10-31
+          else
+            echo "::error::Semantic conflicts require manual resolution; no merge was pushed"
+            git diff --name-only --diff-filter=U
+            git status --short
+            exit 1
+          fi
