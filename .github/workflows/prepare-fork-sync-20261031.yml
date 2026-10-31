@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   merge:
-    if: startsWith(github.event.head_commit.message, 'chore(sync): prepare upstream')
+    if: startsWith(github.event.head_commit.message, 'chore(sync)')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
