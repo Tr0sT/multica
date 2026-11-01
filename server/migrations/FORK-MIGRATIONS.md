@@ -46,16 +46,22 @@ upstream policy; other unlisted prefixes remain unique.
 4. Run the migration lint/identity tests and relevant runner tests, then the full
    applicable CI. The allowlist is not a waiver for a failing SQL migration.
 
-Current collision upgrade coverage lives in
-`server/cmd/migrate/fork_prefix_upgrade_test.go`. It exercises the six colliding
-SQL files with the actual migration runner in isolated schemas; full clean
-installation remains covered by CI's normal migration step. It is not a full
-production backup/restore test. Rollback of Mattermost origins must continue to
-fail while rows using that origin remain; this policy does not remove that guard.
+Collision coverage:
+- `server/cmd/migrate/fork_prefix_upgrade_test.go`: prefixes 585-587, six SQL
+  files, real runner, isolated PostgreSQL schemas.
+- `server/cmd/migrate/fork_prefix_marketplace_upgrade_test.go`: prefixes
+  595-599, ten SQL files, real runner, isolated PostgreSQL schemas. Marketplace
+  indexes and sidebar/unread objects remain independent; note that upstream's
+  599 primary-key attachment renames its 598 index to `issue_unread_pkey`.
+
+Full clean installation remains covered by CI's normal migration step.
+These are targeted upgrade tests, not full production backup/restore tests.
+Rollback of Mattermost origins must continue to fail while rows using that
+origin remain; this policy does not remove that guard.
 
 From the repository root, with the checkout's managed test environment active:
 
 ```sh
 (cd server && go test -race ./internal/migrations -count=1)
-(cd server && go test -race ./cmd/migrate -run '^TestForkPrefixCollisions' -count=1 -v)
+(cd server && go test -race ./cmd/migrate -run '^TestFork.*PrefixCollisionsUpgrade$' -count=1 -v)
 ```
