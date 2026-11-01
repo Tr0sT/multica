@@ -22,5 +22,45 @@
       "587_cloud_agent_connection_provider_index"
     ],
     "reason": "Independently published fork delivery and upstream cloud connection indexes. Preserve both identities and concurrent-index cleanup hooks; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 595,
+    "versions": [
+      "595_agent_marketplaces",
+      "595_issue_view_preference_sidebar"
+    ],
+    "reason": "Independently published fork marketplace tables and upstream sidebar preference constraint. Their DDL touches separate tables; preserve full applied identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 596,
+    "versions": [
+      "596_agent_marketplace_id_index",
+      "596_issue_view_preference_sidebar_projects"
+    ],
+    "reason": "Independently published fork marketplace ID index and upstream sidebar-projects constraint. Distinct objects and independent dependencies; preserve full identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 597,
+    "versions": [
+      "597_agent_marketplace_source_index",
+      "597_issue_unread"
+    ],
+    "reason": "Independently published fork marketplace source index and upstream issue_unread table. Distinct tables, with per-branch dependencies intact. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 598,
+    "versions": [
+      "598_agent_marketplace_name_index",
+      "598_issue_unread_unique_index"
+    ],
+    "reason": "Independently published fork marketplace name index and upstream unread unique index on distinct tables; preserve both full identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 599,
+    "versions": [
+      "599_agent_plugin_version_id_index",
+      "599_issue_unread_primary_key"
+    ],
+    "reason": "Independently published fork plugin-version index and upstream unread primary-key attachment. Upstream 599 depends on its 598 index; separate fork object, no SQL collision. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
   }
 ]
