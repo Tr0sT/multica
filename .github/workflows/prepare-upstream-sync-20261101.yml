@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
 jobs:
-  merge-probe:
+  merge-upstream:
     if: github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -17,13 +17,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: true
-      - name: Merge exact upstream target while preserving history
+      - name: Merge exact upstream target with semantic conflict resolution
         env:
           TARGET_SHA: 5a2cc891ac338eed1919aa11a1eef5957cd82cec
           SOURCE_SHA: 98490111b365028681cff885eeb10c261ba27e05
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" != "$SOURCE_SHA" || { echo "Expected the temporary-workflow commit"; exit 1; }
           git merge-base --is-ancestor "$SOURCE_SHA" HEAD
           git config user.name "Multica Fork Sync"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -32,21 +31,16 @@ jobs:
           git cat-file -t "$TARGET_SHA"
           echo "MERGE_BASE=$(git merge-base HEAD "$TARGET_SHA")"
           if ! git merge --no-ff --no-commit "$TARGET_SHA"; then
-            echo "::error::Upstream merge has conflicts; no merge or push performed."
-            git diff --name-only --diff-filter=U | tee /tmp/sync-conflicts.txt
-            git status --short
-            for path in $(cat /tmp/sync-conflicts.txt); do
-              echo "::group::Conflict in $path"
-              git diff -- "$path" | head -c 14000 || true
-              echo "::endgroup::"
-            done
-            exit 1
+            python3 scripts/resolve-upstream-sync-20261101.py
           fi
+          test -z "$(git ls-files -u)"
+          git add -A
+          git diff --cached --check
           for path in server/internal/integrations/mattermost/access.go server/cmd/multica/cmd_teambridge.go server/migrations/fork-prefix-allowlist.json docs/agent-marketplaces.md; do
             test -f "$path" || { echo "::error::Fork feature lost: $path"; exit 1; }
           done
-          echo "MERGED_TARGET=$(git rev-parse "$TARGET_SHA")"
           git commit -m "chore: merge upstream main at ${TARGET_SHA:0:12}"
-          git rm .github/workflows/prepare-upstream-sync-20261101.yml
-          git commit -m "chore: remove temporary upstream sync preparation workflow"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git rm .github/workflows/prepare-upstream-sync-20261101.yml scripts/resolve-upstream-sync-20261101.py
+          git commit -m "chore: remove temporary sync preparation files"
           git push origin HEAD:refs/heads/sync/upstream-2026-11-01
