@@ -70,6 +70,7 @@ export function ChatPage() {
 
   const c = useChatController({
     isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
+    creatorId: searchParams.get("creator") || undefined,
   });
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
@@ -123,7 +124,10 @@ export function ChatPage() {
     const current = searchParams.get("session") || null;
     if (live !== current) {
       const base = wsPaths.chat();
-      replace(live ? `${base}?session=${live}` : base);
+      const params = new URLSearchParams(searchParams.toString());
+      if (live) params.set("session", live);
+      else params.delete("session");
+      replace(params.size ? `${base}?${params}` : base);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile store/route changes, not URL updates
   }, [isCurrentChatRoute, workspaceSlug, c.activeSessionId]);
@@ -167,6 +171,7 @@ export function ChatPage() {
   };
 
   const startNewChat = (agent: Agent | null) => {
+    if (searchParams.get("creator")) replace(wsPaths.chat());
     // A manual ⊕ pick outranks a pending deep link; when called FROM the
     // intent effect the ref is already set to this param, so this is a no-op.
     supersedeAgentIntent();
@@ -288,6 +293,9 @@ export function ChatPage() {
         activeSessionId={c.activeSessionId}
         onSelectSession={handleSelect}
         onArchive={handleArchive}
+        viewerId={c.user?.id}
+        members={c.members}
+        creatorFilter={searchParams.get("creator") || undefined}
       />
     </div>
   );
