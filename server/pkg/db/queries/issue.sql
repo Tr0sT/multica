@@ -454,8 +454,6 @@ WHERE i.workspace_id = $1
     WHERE r.issue_id = i.id
       AND r.autopilot_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
-      -- Distinct webhook deliveries are independent even when their titles match.
-      AND (sqlc.narg('webhook_delivery_id')::uuid IS NULL OR r.webhook_delivery_id = sqlc.narg('webhook_delivery_id')::uuid)
   )
 ORDER BY i.created_at ASC
 LIMIT 1;
@@ -507,6 +505,9 @@ cleared_pr_exclusions AS (
 cleared_agent_plugin_snapshots AS (
     DELETE FROM agent_plugin_snapshot
     WHERE workspace_id = $2 AND context_key IN (SELECT 'issue:' || target.id::text FROM target)
+),
+cleared_unread AS (
+    DELETE FROM issue_unread WHERE issue_id IN (SELECT target.id FROM target)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
 
