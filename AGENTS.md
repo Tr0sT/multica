@@ -74,6 +74,13 @@ Installed desktop clients may talk to newer backends. Preserve response compatib
 - Every migration-created index, including indexes on new tables, uses `CREATE [UNIQUE] INDEX CONCURRENTLY`. Each concurrent index build gets its own single-statement migration file; the runner executes files outside an explicit transaction.
 - Conditionally skipped migrations are still recorded in `schema_migrations`. Later DDL touching conditional objects must be idempotent (`IF EXISTS` / `IF NOT EXISTS`); document recovery if the missing object would break runtime behavior.
 
+## Fork-specific integration invariants
+
+- Preserve Mattermost/TeamBridge channel handling and CLI contract (including encrypted token backup, stable allowlisted account IDs, history/attachments, and denied replies) when accepting upstream UI or database refactors.
+- Admin chat inspection must remain read-only for other members and preserve the `creator` URL/list filter through chat navigation. Keep the channel and owner attribution in conversation headers.
+- Preserve the per-`webhook_delivery_id` duplicate filter in `FindRecentAutopilotDuplicateIssue`, and both plugin-snapshot and issue-unread cleanup when updating issue deletion SQL; regenerate sqlc outputs after changing the queries.
+- Independently published migration prefix collisions belong in `server/migrations/fork-prefix-allowlist.json` with exact full identities, not broad numeric exceptions.
+
 ## Agent Marketplace Plugins
 
 - Agent marketplace packages are native Codex plugins, separate from the Multica Plugin V1 platform. See [docs/agent-marketplaces.md](docs/agent-marketplaces.md).
