@@ -20,6 +20,7 @@ Multica is a task management platform where people and agents collaborate on iss
 | `apps/desktop/` | Electron and desktop-only UI/state. Application navigation goes through `apps/desktop/src/renderer/src/platform/`. |
 | `apps/mobile/` | Independent Expo/React Native client: owns UI, state, hooks, providers, i18n, build, and release. Shares core types and pure utilities, including platform-independent schemas. |
 | `apps/docs/` | Fumadocs documentation site |
+| `nix/` and `flake.nix` | Native packages built from this checkout, NixOS services, and VM checks. See `nix/README.md`; keep package/module names compatible with existing multica-nix consumers. |
 
 - Dependency direction is `views -> core + ui`; core and ui remain independent. Shared packages export raw TypeScript compiled by consuming apps.
 - Extract logic used by both web and desktop into the appropriate shared package. Keep framework/Electron APIs in the app layer; inject platform-specific UI through props/slots.
@@ -43,6 +44,7 @@ Run these from the repository root:
 | Go backend | `make test` |
 | End-to-end | `pnpm exec playwright test` |
 | Combined web/backend verification | `make check` |
+| Nix packaging and NixOS services | `nix flake check --print-build-logs` |
 | Mobile | Commands in [apps/mobile/AGENTS.md](apps/mobile/AGENTS.md#verification) |
 
 Docs-only changes can use link/reference checks and `git diff --check`; state that code tests were not run.
