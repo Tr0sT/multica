@@ -4,16 +4,17 @@ The `multica` CLI connects your local machine to Multica. It handles authenticat
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Fork release
 
-```bash
-brew install multica-ai/tap/multica
-```
+Download the CLI archive for your OS and architecture from
+[Tr0sT/multica releases](https://github.com/Tr0sT/multica/releases), verify it
+against the release's `checksums.txt`, and install the extracted `multica` binary
+on your `PATH`. The upstream Homebrew tap and install scripts ship the upstream CLI.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/Tr0sT/multica.git
 cd multica
 make build
 cp server/bin/multica /usr/local/bin/multica
@@ -22,16 +23,21 @@ cp server/bin/multica /usr/local/bin/multica
 ### Update
 
 ```bash
-brew upgrade multica-ai/tap/multica
-```
-
-For install script or manual installs, use:
-
-```bash
 multica update
 ```
 
-`multica update` uses GitHub Releases by default. Self-hosted installations can
+`multica update` and the runtime's web Update action download CLI releases from
+`Tr0sT/multica`, verify their SHA-256 checksum, and replace the installed binary.
+They do not run `brew upgrade`, even for a binary installed under Homebrew.
+The backend's source repository does not select the update source.
+
+Install this fork's CLI once before using either update path: an older CLI still
+contains its old download source, even when connected to the fork's backend.
+Keep fork binaries outside the upstream Homebrew formula's directory so a later
+`brew upgrade` does not overwrite them. Nix-managed binaries must instead be
+updated through their flake input; see [the Nix guide](nix/README.md#cli-and-agent-machines).
+
+Self-hosted installations can
 point the CLI at a GitHub Releases-compatible metadata mirror and an artifact
 mirror without changing the command. To let a daemon poll that source, also
 enable self-update explicitly because self-hosted auto-update is disabled by
@@ -44,10 +50,10 @@ export MULTICA_DAEMON_AUTO_UPDATE=true
 multica update
 ```
 
-The metadata mirror must serve `/repos/multica-ai/multica/releases/latest` and
-`/repos/multica-ai/multica/releases/tags/<tag>`. The artifact mirror must serve
+The metadata mirror must serve `/repos/Tr0sT/multica/releases/latest` and
+`/repos/Tr0sT/multica/releases/tags/<tag>`. The artifact mirror must serve
 `/<tag>/<asset-name>` and preserve the published `checksums.txt` contents.
-When these variables are unset, the GitHub defaults remain unchanged.
+When these variables are unset, the fork's GitHub releases are used.
 
 ## Quick Start
 

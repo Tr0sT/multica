@@ -78,6 +78,7 @@ Installed desktop clients may talk to newer backends. Preserve response compatib
 
 ## Fork-specific integration invariants
 
+- CLI/runtime update discovery and downloads use `Tr0sT/multica` releases. Do not route fork updates or fork release publishing through the upstream Homebrew tap.
 - Preserve Mattermost/TeamBridge channel handling and CLI contract (including encrypted token backup, stable allowlisted account IDs, history/attachments, and denied replies) when accepting upstream UI or database refactors.
 - Admin chat inspection must remain read-only for other members and preserve the `creator` URL/list filter through chat navigation. Keep the channel and owner attribution in conversation headers.
 - Preserve the per-`webhook_delivery_id` duplicate filter in `FindRecentAutopilotDuplicateIssue`, and both plugin-snapshot and issue-unread cleanup when updating issue deletion SQL; regenerate sqlc outputs after changing the queries.

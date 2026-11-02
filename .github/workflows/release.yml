@@ -82,12 +82,8 @@ jobs:
 
   release:
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `multica-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'multica-ai'
+    # The fork publishes its own CLI assets without writing to the upstream tap.
+    if: github.repository_owner == 'multica-ai' || github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -111,7 +107,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ github.repository == 'Tr0sT/multica' && '--skip=homebrew' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
@@ -402,6 +398,7 @@ jobs:
   # not (yet) wired into CI.
   desktop:
     needs: release
+    if: github.repository_owner == 'multica-ai'
     strategy:
       fail-fast: false
       matrix:
