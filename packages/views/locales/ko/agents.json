@@ -2,6 +2,7 @@
   "page": {
     "title": "에이전트",
     "new_agent": "새 에이전트",
+    "search": "에이전트 검색",
     "show_archived": "보관된 에이전트 보기 ({{count}}) →",
     "of_total": "{{total}}개 중 {{visible}}개",
     "list_load_failed": "에이전트 목록을 불러오지 못했습니다",
@@ -49,7 +50,10 @@
   },
   "no_matches": {
     "title": "일치하는 결과 없음",
+    "search_active": "\"{{query}}\"와 일치하는 에이전트가 없습니다.",
+    "search_active_filtered": "이 필터에서 \"{{query}}\"와 일치하는 에이전트가 없습니다.",
     "no_archived": "아직 보관된 에이전트가 없습니다.",
+    "search_archived": "\"{{query}}\"와 일치하는 보관된 에이전트가 없습니다.",
     "no_filter_match": "이 필터와 일치하는 에이전트가 없습니다.",
     "search_runtime_filtered": "\"{{machine}}\"에서 \"{{query}}\"와 일치하는 에이전트가 없습니다.",
     "runtime_filtered": "\"{{machine}}\"에 에이전트가 없습니다."
@@ -970,6 +974,7 @@
       "switch_runtime_failed": "런타임을 전환하지 못했습니다. 대화는 이전 런타임에서 계속 실행됩니다.",
       "switch_runtime_pending": "현재 답변을 중지하면 런타임을 전환할 수 있습니다.",
       "switch_runtime_success": "런타임을 전환했습니다. 설정 초안은 유지되며, 이후 대화는 새 런타임에서 새로운 모델 세션으로 이어집니다.",
+      "conversation_tab": "대화",
       "chat_title": "Agent Builder",
       "runtime_online": "런타임 온라인",
       "runtime_offline": "런타임 오프라인",
