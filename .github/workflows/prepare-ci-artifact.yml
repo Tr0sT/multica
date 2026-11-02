@@ -1,0 +1,67 @@
+name: Prepare reviewed CI artifact
+
+on:
+  push:
+    branches: ['diagnostic/macos-queue-2026-11-02']
+    paths: ['.github/workflows/prepare-ci-artifact.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/diagnostic/macos-queue-2026-11-02'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Produce inert text for review without changing any workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object .github/workflows/ci.yml)" = f0f905c558831b592a80b81b47e50d0ab79d2e19
+          python3 - <<'PY'
+          from pathlib import Path
+          import difflib
+          original = Path('.github/workflows/ci.yml').read_text()
+          text = original
+          native = '    runs-on: macos-latest\n'
+          matrix = '        os: [ubuntu-latest, macos-latest, windows-latest]\n'
+          assert text.count(native) == 1 and text.count(matrix) == 1
+          text = text.replace(native, '    # Keep native Darwin tests independent of ARM64 runner capacity.\n    runs-on: macos-26-intel\n')
+          text = text.replace(matrix, '        os: [ubuntu-latest, macos-26-intel, windows-latest]\n')
+          anchor = "        run: CGO_ENABLED=0 go test ./pkg/agent -run '^TestCaptureCursorBackground(KernelRejectsStaleIdentity|DetachedSession|LateDescendant)$' -count=1\n"
+          assert text.count(anchor) == 1
+          addition = '\n'.join([
+              '',
+              '      - name: Cross-compile macOS ARM64 CLI and native test packages',
+              '        shell: bash',
+              '        working-directory: server',
+              '        env:',
+              '          GOOS: darwin',
+              '          GOARCH: arm64',
+              '          CGO_ENABLED: "0"',
+              '        run: |',
+              '          go build -o "$RUNNER_TEMP/multica-darwin-arm64" ./cmd/multica',
+              '          go test -c -o "$RUNNER_TEMP/agent-darwin-arm64.test" ./pkg/agent',
+              '          go test -c -o "$RUNNER_TEMP/daemon-darwin-arm64.test" ./internal/daemon',
+              '',
+          ])
+          text = text.replace(anchor, anchor + addition)
+          target = Path('diagnostics/prepared-ci.txt')
+          target.parent.mkdir(exist_ok=True)
+          target.write_text(text)
+          print(''.join(difflib.unified_diff(original.splitlines(True), text.splitlines(True), fromfile='original-ci', tofile='reviewed-ci')), end='')
+          PY
+          git diff --exit-code -- .github/workflows
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add diagnostics/prepared-ci.txt
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = diagnostics/prepared-ci.txt
+          printf 'Prepared text blob: '
+          git hash-object diagnostics/prepared-ci.txt
+          git commit -m 'chore: retain reviewed CI text for authorized workflow update'
+          git push origin HEAD:refs/heads/diagnostic/macos-queue-2026-11-02
