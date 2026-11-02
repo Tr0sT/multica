@@ -1,6 +1,6 @@
 # Agent marketplace plugins
 
-The agent's **Capabilities → Plugins** tab selects native Codex packages for its
+The agent's **Advanced settings → Plugins** section selects native Codex packages for its
 issues and chats. This is separate from **Settings → Plugins**, which manages
 Multica Plugin V1 integrations.
 
@@ -8,7 +8,7 @@ Multica Plugin V1 integrations.
 
 1. Update the backend and the Multica daemon used to read the repository and run
    the agent. The daemon advertises `agent-plugin-bundles-v1`.
-2. Open **Capabilities → Plugins → Marketplaces**. Choose an online runtime you
+2. Open the agent's **Agent actions → Advanced settings → Plugins → Marketplaces**. Choose an online runtime you
    own, enter an HTTPS or `ssh://` Git URL, and optionally a branch/tag.
 3. The daemon reads committed Git objects using its existing Git access. It does
    not check out the repository, run its hooks, or install anything into Codex.

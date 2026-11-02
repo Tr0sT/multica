@@ -87,8 +87,7 @@ export function PluginsTab({
     (plugin.name + " " + plugin.displayName + " " + plugin.description + " " + plugin.marketplace)
       .toLocaleLowerCase().includes(search.toLocaleLowerCase()));
 
-  return <Dialog onOpenChange={(open) => { if (!open) setDetail(null); }}>
-    <div className="space-y-5">
+  return <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-lg text-caption text-muted-foreground">{t(($) => $.tab_body.plugins.scope_hint)}</p>
         <AgentMarketplacesDialog
@@ -99,6 +98,8 @@ export function PluginsTab({
           preferredRuntimeId={runtime?.id}
         />
       </div>
+    {/* Marketplace and detail dialogs must be siblings for nested Escape handling. */}
+    <Dialog onOpenChange={(open) => { if (!open) setDetail(null); }}>
       {canEdit && !runtime?.provider && <p className="text-caption text-muted-foreground">{t(($) => $.tab_body.plugins.runtime_required)}</p>}
       {canEdit && runtime && runtime.provider !== "codex" && <p className="text-caption text-muted-foreground">{t(($) => $.tab_body.plugins.runtime_required)}</p>}
       {!canEdit && <p className="text-caption text-muted-foreground">{t(($) => $.tab_body.plugins.readonly)}</p>}
@@ -153,7 +154,6 @@ export function PluginsTab({
           </Button>
         </div>
       </div>}
-    </div>
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>{detail?.displayName ?? t(($) => $.tabs.plugins)}</DialogTitle></DialogHeader>
       {detail && <div className="space-y-4">
@@ -169,5 +169,6 @@ export function PluginsTab({
         <p className="text-caption text-muted-foreground">{t(($) => $.tab_body.plugins.details_hint)}</p>
       </div>}
     </DialogContent>
-  </Dialog>;
+    </Dialog>
+  </div>;
 }

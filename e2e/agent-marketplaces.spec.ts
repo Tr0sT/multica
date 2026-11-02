@@ -34,8 +34,10 @@ test("connect a marketplace and save plugins for an agent without installing on 
       localStorage.setItem("multica:chat:isOpen", "false");
     }, token);
     await page.goto("/" + workspace.slug + "/agents/" + agent.id);
-    await page.getByRole("tab", { name: "Capabilities", exact: true }).click();
+    await page.getByRole("button", { name: "Agent actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Advanced settings", exact: true }).click();
     await page.getByRole("tab", { name: "Plugins", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp("/agents/" + agent.id + "\\?view=plugins$"));
     await page.getByRole("button", { name: "Marketplaces", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Marketplaces", exact: true });
     await dialog.getByRole("button", { name: "Connect marketplace", exact: true }).click();
@@ -71,6 +73,11 @@ test("connect a marketplace and save plugins for an agent without installing on 
     expect(report.ok, await report.clone().text()).toBe(true);
     await expect(dialog.getByText("Connected", { exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Advanced settings", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Example plugin", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Example plugin", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Advanced settings", exact: true })).toBeVisible();
     const checkbox = page.getByRole("checkbox", { name: "Example plugin", exact: true });
     await checkbox.check();
     const saved = page.waitForResponse((response) =>
@@ -82,8 +89,7 @@ test("connect a marketplace and save plugins for an agent without installing on 
       configured: true, plugins: [{ marketplace_id: source.id, plugin_name: "example" }],
     });
     await page.reload();
-    await page.getByRole("tab", { name: "Capabilities", exact: true }).click();
-    await page.getByRole("tab", { name: "Plugins", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Plugins", exact: true })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("checkbox", { name: "Example plugin", exact: true })).toBeChecked();
     await expect(page.getByRole("button", { name: /install/i })).toHaveCount(0);
     const screenshot = testInfo.outputPath("agent-plugins.png");

@@ -87,6 +87,7 @@ Installed desktop clients may talk to newer backends. Preserve response compatib
 ## Agent Marketplace Plugins
 
 - Agent marketplace packages are native Codex plugins, separate from the Multica Plugin V1 platform. See [docs/agent-marketplaces.md](docs/agent-marketplaces.md).
+- Keep marketplace catalog management and per-agent plugin selection reachable from the agent's Advanced settings, including its unsaved-selection guard.
 - Read Git sources through an online runtime owned by the requesting member. Preserve workspace boundaries and keep its Git credentials on that machine.
 - Pin package versions per issue/chat and agent when work starts. Refreshing a catalog or changing agent selections applies to new conversations.
 - Prepare selected packages only inside the task's Codex home. Never run package installation through the shared user plugin-cache link or mutate the user's plugin configuration.

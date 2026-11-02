@@ -26,6 +26,13 @@ vi.mock("./agent-access-settings", () => ({
 vi.mock("./tabs/skills-tab", () => ({
   SkillsTab: () => <div>skills-tab</div>,
 }));
+vi.mock("./tabs/plugins-tab", () => ({
+  PluginsTab: vi.fn(({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button type="button" onClick={() => onDirtyChange?.(true)}>
+      change plugin selection
+    </button>
+  )),
+}));
 vi.mock("./tabs/env-tab", () => ({
   EnvTab: () => <div>env-tab</div>,
 }));
@@ -95,6 +102,7 @@ vi.mock("@multica/core/telegram", () => ({
 }));
 
 import { AgentAdvancedSettings, type AdvancedSection } from "./agent-advanced-settings";
+import { PluginsTab } from "./tabs/plugins-tab";
 
 const baseAgent: Agent = {
   id: "agent-1",
@@ -190,6 +198,7 @@ const sectionNames = () =>
   screen.getAllByRole("tab").map((tab) => tab.textContent);
 
 beforeEach(() => {
+  vi.mocked(PluginsTab).mockClear();
   larkListingRef.current = { installations: [], configured: false };
   slackListingRef.current = { installations: [], configured: false };
   telegramListingRef.current = { installations: [], configured: false };
@@ -287,6 +296,7 @@ describe("AgentAdvancedSettings section lists", () => {
       "Environment",
       "Custom Args",
       "Skills",
+      "Plugins",
       "MCP",
     ]);
   });
@@ -309,6 +319,29 @@ describe("AgentAdvancedSettings section lists", () => {
 });
 
 describe("AgentAdvancedSettings unsaved edits", () => {
+  it("opens the plugin selector with agent context and protects its unsaved selection", () => {
+    const runtime = makeRuntime("codex");
+    const onSectionChange = vi.fn();
+    renderDialog([runtime], { section: "plugins", onSectionChange });
+
+    expect(screen.getByRole("tab", { name: "Plugins" })).toHaveAttribute("aria-selected", "true");
+    expect(vi.mocked(PluginsTab).mock.lastCall?.[0]).toMatchObject({
+      agent: baseAgent,
+      runtime,
+      runtimes: [runtime],
+      members: [],
+      currentUserId: "user-1",
+      canEdit: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "change plugin selection" }));
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    expect(onSectionChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(onSectionChange).toHaveBeenCalledWith("general");
+  });
+
   it("asks before leaving a section with unsaved edits", () => {
     const onSectionChange = vi.fn();
     renderDialog([makeRuntime("claude")], {
