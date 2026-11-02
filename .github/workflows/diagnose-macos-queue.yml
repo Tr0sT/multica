@@ -7,23 +7,106 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  actions: read
 
 jobs:
-  annotations:
+  macos-native:
     if: github.repository == 'Tr0sT/multica'
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: c4840f2fddd36f5120676ada2cb71b2e291fdd65
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.3'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - name: Record the exact source and native platform
+        run: |
+          git rev-parse HEAD
+          sw_vers
+          uname -m
+      - name: Test shell installers on native macOS
+        run: bash scripts/install.test.sh
+      - name: Verify Cursor background lifecycle and watchdog races
+        shell: bash
+        working-directory: server
+        run: |
+          go test -race ./pkg/agent -v -run 'TestCursorBackground|TestCaptureCursorBackground' -count=1
+          go test -race ./internal/daemon -v -run 'Test.*Background.*Watchdog|Test.*IdleWatchdog' -count=1
+      - name: Stress macOS finalization
+        shell: bash
+        working-directory: server
+        run: |
+          go test ./pkg/agent -run '^TestCursorBackgroundLifecycle/finish$' -count=5
+          go test -race ./pkg/agent -run '^TestCursorBackgroundLifecycle/finish$' -count=5
+      - name: Verify cgo-free macOS ownership
+        shell: bash
+        working-directory: server
+        run: CGO_ENABLED=0 go test ./pkg/agent -run '^TestCaptureCursorBackground(KernelRejectsStaleIdentity|DetachedSession|LateDescendant)$' -count=1
+      - name: Cross-compile macOS ARM64 CLI and native test packages
+        shell: bash
+        working-directory: server
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: |
+          go build -o "$RUNNER_TEMP/multica-darwin-arm64" ./cmd/multica
+          go test -c -o "$RUNNER_TEMP/agent-darwin-arm64.test" ./pkg/agent
+          go test -c -o "$RUNNER_TEMP/daemon-darwin-arm64.test" ./internal/daemon
+
+  prepare-reviewed-workflow:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/diagnostic/macos-queue-2026-11-02'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
-      - name: Read only the three cancelled macOS check annotations
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Prepare only the reviewed CI runner change
         shell: bash
         run: |
           set -euo pipefail
-          for check in 125322788463 125331964117 125340886270; do
-            printf 'Check run %s\n' "$check"
-            gh api "repos/Tr0sT/multica/check-runs/$check/annotations?per_page=30" \
-              --jq '.[] | {level: .annotation_level, title: .title, message: .message}'
-          done
+          test "$(git hash-object .github/workflows/ci.yml)" = f0f905c558831b592a80b81b47e50d0ab79d2e19
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/ci.yml')
+          text = p.read_text()
+          native = '    runs-on: macos-latest\n'
+          matrix = '        os: [ubuntu-latest, macos-latest, windows-latest]\n'
+          assert text.count(native) == 1
+          assert text.count(matrix) == 1
+          text = text.replace(native, '    # Keep native Darwin tests independent of ARM64 runner capacity.\n    runs-on: macos-26-intel\n')
+          text = text.replace(matrix, '        os: [ubuntu-latest, macos-26-intel, windows-latest]\n')
+          anchor = "        run: CGO_ENABLED=0 go test ./pkg/agent -run '^TestCaptureCursorBackground(KernelRejectsStaleIdentity|DetachedSession|LateDescendant)$' -count=1\n"
+          assert text.count(anchor) == 1
+          addition = '''
+                - name: Cross-compile macOS ARM64 CLI and native test packages
+                  shell: bash
+                  working-directory: server
+                  env:
+                    GOOS: darwin
+                    GOARCH: arm64
+                    CGO_ENABLED: "0"
+                  run: |
+                    go build -o "$RUNNER_TEMP/multica-darwin-arm64" ./cmd/multica
+                    go test -c -o "$RUNNER_TEMP/agent-darwin-arm64.test" ./pkg/agent
+                    go test -c -o "$RUNNER_TEMP/daemon-darwin-arm64.test" ./internal/daemon
+          '''
+          # Remove the Python literal's extra indentation, retaining workflow indentation.
+          import textwrap
+          addition = '\n' + textwrap.indent(textwrap.dedent(addition).strip(), '      ') + '\n'
+          p.write_text(text.replace(anchor, anchor + addition))
+          PY
+          git diff --check
+          git diff -- .github/workflows/ci.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ci.yml
+          git commit -m 'ci: preserve native macOS tests on Intel and cross-compile ARM64'
+          git push origin HEAD:refs/heads/diagnostic/macos-queue-2026-11-02
