@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAuthStore } from "../auth";
-import { setCurrentWorkspace } from "../platform/workspace-storage";
 import { configStore } from "../config";
 import { setCurrentWorkspace } from "../platform";
 import type { StorageAdapter, User } from "../types";
