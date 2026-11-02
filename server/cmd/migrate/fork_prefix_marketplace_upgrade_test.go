@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Keep fork marketplace migrations 595-599 and upstream sidebar/unread
-// migrations 595-599 independent even when one side was installed first.
+// Keep fork marketplace migrations 595-602 and upstream sidebar/unread/WeCom
+// migrations 595-602 independent even when one side was installed first.
 // The real SQL is run in isolated PostgreSQL schemas using the production
 // migration runner, with full persisted identities and index rollback.
 func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
@@ -22,6 +22,9 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 		"597_agent_marketplace_source_index",
 		"598_agent_marketplace_name_index",
 		"599_agent_plugin_version_id_index",
+		"600_agent_plugin_version_source_index",
+		"601_agent_plugin_snapshot_context_index",
+		"602_agent_marketplace_pending_index",
 	}
 	upstream := []string{
 		"595_issue_view_preference_sidebar",
@@ -29,6 +32,9 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 		"597_issue_unread",
 		"598_issue_unread_unique_index",
 		"599_issue_unread_primary_key",
+		"600_wecom_install_session",
+		"601_wecom_install_session_due_idx",
+		"602_wecom_install_session_request_idx",
 	}
 	combined := append(append([]string(nil), fork...), upstream...)
 	sort.Strings(combined)
@@ -68,10 +74,10 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 				t.Fatalf("create pre-collision fixture: %v", err)
 			}
 			options := runOptions{
-				Direction: "up",
+				Direction:             "up",
 				SchemaMigrationsTable: schema + ".schema_migrations",
-				AdvisoryLockKey: int64(rand.Uint64()&0x7fffffffffffffff) | 1,
-				Hooks: hooksForDirection("up"),
+				AdvisoryLockKey:       int64(rand.Uint64()&0x7fffffffffffffff) | 1,
+				Hooks:                 hooksForDirection("up"),
 			}
 			apply := func(versions []string, direction string) {
 				t.Helper()
@@ -118,13 +124,14 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 			indexes := []string{
 				"agent_marketplace_id_idx", "agent_marketplace_source_idx",
 				"agent_marketplace_name_idx", "agent_plugin_version_id_idx",
-				"issue_unread_pkey",
+				"agent_plugin_version_source_idx", "agent_plugin_snapshot_context_idx", "agent_marketplace_pending_idx",
+				"issue_unread_pkey", "idx_wecom_install_session_due", "idx_wecom_install_session_request",
 			}
 			previousIndexOIDs := make(map[string]uint32)
 			switch source {
 			case "fork":
 				apply(fork, "up")
-				for _, index := range indexes[:4] {
+				for _, index := range indexes[:7] {
 					previousIndexOIDs[index] = oid(index)
 				}
 				if _, err := pool.Exec(ctx, `
@@ -151,7 +158,9 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 				}
 			case "upstream":
 				apply(upstream, "up")
-				previousIndexOIDs["issue_unread_pkey"] = oid("issue_unread_pkey")
+				for _, index := range indexes[7:] {
+					previousIndexOIDs[index] = oid(index)
+				}
 				if _, err := pool.Exec(ctx, `
 					INSERT INTO issue_view_preference VALUES ('sidebar_projects');
 					INSERT INTO issue_unread (workspace_id, user_id, issue_id, outcome)
@@ -161,6 +170,23 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 						'00000000-0000-4000-8000-000000000018', 'manual'
 					);
 				`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if source == "fork" {
+				if _, err := pool.Exec(ctx, `INSERT INTO agent_plugin_snapshot
+                (workspace_id, agent_id, context_key, configured)
+                VALUES ('00000000-0000-4000-8000-000000000013',
+                '00000000-0000-4000-8000-000000000011', 'synthetic-chat', true)`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if source == "upstream" {
+				if _, err := pool.Exec(ctx, `INSERT INTO wecom_install_session
+                (request_key_hash, workspace_id, agent_id, initiator_user_id, status, scode_encrypted)
+                VALUES ('synthetic-request', '00000000-0000-4000-8000-000000000013',
+                '00000000-0000-4000-8000-000000000011',
+                '00000000-0000-4000-8000-000000000017', 'pending', 'synthetic-ciphertext')`); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -212,6 +238,18 @@ func TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade(t *testing.T) {
 				}
 				if err := pool.QueryRow(ctx, "SELECT outcome FROM issue_unread").Scan(&outcome); err != nil || outcome != "manual" {
 					t.Fatalf("lost upstream unread record: %q, %v", outcome, err)
+				}
+			}
+			if source == "fork" {
+				var configured bool
+				if err := pool.QueryRow(ctx, "SELECT configured FROM agent_plugin_snapshot WHERE context_key = 'synthetic-chat'").Scan(&configured); err != nil || !configured {
+					t.Fatalf("lost existing plugin snapshot: configured=%t, error=%v", configured, err)
+				}
+			}
+			if source == "upstream" {
+				var status, ciphertext string
+				if err := pool.QueryRow(ctx, "SELECT status, scode_encrypted FROM wecom_install_session WHERE request_key_hash = 'synthetic-request'").Scan(&status, &ciphertext); err != nil || status != "pending" || ciphertext != "synthetic-ciphertext" {
+					t.Fatalf("WeCom install-session data was not preserved: %v", err)
 				}
 			}
 			if source == "fresh" {

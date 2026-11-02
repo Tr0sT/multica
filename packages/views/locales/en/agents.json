@@ -2,6 +2,7 @@
   "page": {
     "title": "Agents",
     "new_agent": "New agent",
+    "search": "Search agents",
     "show_archived": "Show archived ({{count}}) →",
     "of_total": "{{visible}} of {{total}}",
     "list_load_failed": "Couldn't load agents",
@@ -50,7 +51,10 @@
   },
   "no_matches": {
     "title": "No matches",
+    "search_active": "No agents match \"{{query}}\".",
+    "search_active_filtered": "No agents match \"{{query}}\" in this filter.",
     "no_archived": "No archived agents yet.",
+    "search_archived": "No archived agents match \"{{query}}\".",
     "no_filter_match": "No agents match this filter.",
     "search_runtime_filtered": "No agents on \"{{machine}}\" match \"{{query}}\".",
     "runtime_filtered": "No agents on \"{{machine}}\"."
@@ -350,6 +354,7 @@
       "switch_runtime_failed": "Could not switch runtime. The conversation is still running on the previous one.",
       "switch_runtime_pending": "Stop the current reply to switch runtime.",
       "switch_runtime_success": "Runtime switched. Your draft is kept and the conversation continues on the new runtime with a fresh model session.",
+      "conversation_tab": "Conversation",
       "chat_title": "Agent Builder",
       "runtime_online": "Runtime online",
       "runtime_offline": "Runtime offline",

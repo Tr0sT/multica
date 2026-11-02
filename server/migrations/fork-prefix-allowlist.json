@@ -62,5 +62,29 @@
       "599_issue_unread_primary_key"
     ],
     "reason": "Independently published fork plugin-version index and upstream unread primary-key attachment. Upstream 599 depends on its 598 index; separate fork object, no SQL collision. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 600,
+    "versions": [
+      "600_agent_plugin_version_source_index",
+      "600_wecom_install_session"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  },
+  {
+    "prefix": 601,
+    "versions": [
+      "601_agent_plugin_snapshot_context_index",
+      "601_wecom_install_session_due_idx"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  },
+  {
+    "prefix": 602,
+    "versions": [
+      "602_agent_marketplace_pending_index",
+      "602_wecom_install_session_request_idx"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
   }
 ]

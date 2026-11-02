@@ -50,8 +50,8 @@ Collision coverage:
 - `server/cmd/migrate/fork_prefix_upgrade_test.go`: prefixes 585-587, six SQL
   files, real runner, isolated PostgreSQL schemas.
 - `server/cmd/migrate/fork_prefix_marketplace_upgrade_test.go`: prefixes
-  595-599, ten SQL files, real runner, isolated PostgreSQL schemas. Marketplace
-  indexes and sidebar/unread objects remain independent; note that upstream's
+  595-602, sixteen SQL files, real runner, isolated PostgreSQL schemas. Marketplace
+  indexes and sidebar/unread/WeCom install-session objects remain independent; note that upstream's
   599 primary-key attachment renames its 598 index to `issue_unread_pkey`.
 
 Full clean installation remains covered by CI's normal migration step.
