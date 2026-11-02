@@ -1,0 +1,29 @@
+name: Diagnose macOS runner queue
+
+on:
+  push:
+    branches: ['diagnostic/macos-queue-2026-11-02']
+    paths: ['.github/workflows/diagnose-macos-queue.yml']
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+jobs:
+  annotations:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read only the three cancelled macOS check annotations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for check in 125322788463 125331964117 125340886270; do
+            printf 'Check run %s\n' "$check"
+            gh api "repos/Tr0sT/multica/check-runs/$check/annotations?per_page=30" \
+              --jq '.[] | {level: .annotation_level, title: .title, message: .message}'
+          done
