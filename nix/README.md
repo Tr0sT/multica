@@ -95,7 +95,13 @@ agent accounts. Go unit tests remain in the existing application CI.
 `vendorHash` in both Go derivations. When pnpm dependencies change, refresh
 `pnpmDeps.hash` in the web derivation. Set the relevant hash to `lib.fakeHash`,
 build that package, then use the actual hash reported by Nix and rebuild.
-Nix CI checks source/dependency changes; there is no separate release updater.
+Nix CI checks source/dependency changes and reads the public
+`https://nuclearband.cachix.org` binary cache. After successful checks on a push
+to `main` or a manual workflow run on `main`, it publishes the CLI, backend, and
+frontend packages to that cache. Set the repository Actions secret
+`CACHIX_AUTH_TOKEN` to a token with write access to `nuclearband`. Pull requests
+read the cache without receiving the write token or publishing packages.
+There is no separate release updater.
 
 ## Packaging limitations
 
