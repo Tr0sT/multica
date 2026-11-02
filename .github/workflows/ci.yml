@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # PRs and main pushes use the same paths. Scheduled/manual runs validate all
-  # scopes, including platform stress tests, without charging every merge for them.
+  # Ordinary PRs and main pushes use path filtering. Sync PRs and scheduled/manual
+  # runs validate all scopes on the combined tree before a history-preserving merge.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -59,6 +59,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           FILTER_RESULTS: ${{ toJSON(steps.filter.outputs) }}
+          FORK_SYNC_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'sync/upstream-') }}
         run: node scripts/ci-scope.mjs decide
 
   sqlc-check:
