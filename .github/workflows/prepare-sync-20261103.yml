@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   prepare:
-    if: github.repository == 'Tr0sT/multica' && github.event.head_commit.message == 'chore(sync): prepare pinned upstream merge'
+    if: github.repository == 'Tr0sT/multica' && contains(github.event.head_commit.message, 'prepare pinned upstream merge')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
