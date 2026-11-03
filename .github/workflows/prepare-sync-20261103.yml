@@ -1,0 +1,44 @@
+name: Prepare reviewed upstream 58402f5 sync
+on:
+  push:
+    branches:
+      - sync/upstream-2026-11-03-58402f5
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica' && github.event.head_commit.message == 'chore(sync): prepare pinned upstream merge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Merge the pinned upstream commit on an isolated branch
+        shell: bash
+        env:
+          BASE: 0960585c7dba738df78d150ce0a0e084f42b2f5f
+          TARGET: 58402f5d11d2f8f3a22c1bb9fe0d6c52992d3dbe
+          BRANCH: sync/upstream-2026-11-03-58402f5
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge-base --is-ancestor "$BASE" HEAD
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$TARGET"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
+          if ! git merge --no-ff --no-commit "$TARGET"; then
+            echo 'Unresolved merge conflicts. No changes pushed:'
+            git diff --name-only --diff-filter=U
+            git diff --cc | head -n 320 || true
+            exit 1
+          fi
+          git rm -- .github/workflows/prepare-sync-20261103.yml
+          git diff --cached --check
+          git commit -m 'chore(sync): merge upstream main 58402f5 and preserve fork features'
+          git merge-base --is-ancestor "$BASE" HEAD
+          git merge-base --is-ancestor "$TARGET" HEAD
+          echo "Merged head: $(git rev-parse HEAD)"
+          echo "Merged tree: $(git rev-parse HEAD^{tree})"
+          git push origin "HEAD:refs/heads/$BRANCH"
