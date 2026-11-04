@@ -9,6 +9,7 @@ import (
 // Complete names, not numeric prefixes, are the persisted migration identity.
 func TestForkAndUpstreamMigrationIdentitiesRemainDistinct(t *testing.T) {
 	dir := realMigrationsDir(t)
+	allowances := loadForkPrefixAllowlist(t)
 	// Package-local execution otherwise resolves this package directory as
 	// "migrations" instead of the SQL directory next to cmd and internal.
 	t.Chdir(filepath.Dir(dir))
@@ -20,7 +21,7 @@ func TestForkAndUpstreamMigrationIdentitiesRemainDistinct(t *testing.T) {
 	for _, version := range versions {
 		counts[version]++
 	}
-	for _, allowance := range loadForkPrefixAllowlist(t) {
+	for _, allowance := range allowances {
 		for _, version := range allowance.Versions {
 			if counts[version] != 1 {
 				t.Fatalf("migration %q occurs %d times; preserve full fork and upstream identities", version, counts[version])
