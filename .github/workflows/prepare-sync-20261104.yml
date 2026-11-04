@@ -36,7 +36,16 @@ jobs:
               git diff --cc | head -n 550 || true
               exit 1
             fi
-            git diff --cached --check
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/docs/content/docs/providers.mdx')
+          text = p.read_text()
+          if not text.endswith('\\n\\n'):
+              raise RuntimeError('Upstream docs whitespace expectation changed; review before merging')
+          p.write_text(text.rstrip('\\n') + '\\n')
+          PY
+          git add apps/docs/content/docs/providers.mdx
+          git diff --cached --check
             git commit -m "chore(sync): merge upstream main 7a12304 (2026-11-04)"
           fi
           git rm .github/workflows/prepare-sync-20261104.yml
