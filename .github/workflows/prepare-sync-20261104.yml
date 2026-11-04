@@ -1,0 +1,47 @@
+name: Prepare pinned upstream sync 2026-11-04
+on:
+  push:
+    branches: [sync/upstream-2026-11-04-7a12304]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: sync/upstream-2026-11-04-7a12304
+          fetch-depth: 0
+      - name: Merge pinned upstream without changing main
+        shell: bash
+        env:
+          TARGET: 7a12304f1473c71e0cee970c773246eaf96abc49
+          FORK_BASE: 6033498c228add04bc44641d9af4bc7fe2c9a54f
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$TARGET"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          if git merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "Upstream already in sync branch"
+          else
+            if ! git merge --no-ff --no-commit "$TARGET"; then
+              echo "::error::Merge conflicts; preserve both sides. No changes pushed."
+              git diff --name-only --diff-filter=U
+              git diff --cc | head -n 550 || true
+              exit 1
+            fi
+            git diff --cached --check
+            git commit -m "chore(sync): merge upstream main 7a12304 (2026-11-04)"
+          fi
+          git rm .github/workflows/prepare-sync-20261104.yml
+          git commit -m 'chore: remove temporary sync preparer'
+          git merge-base --is-ancestor "$TARGET" HEAD
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          echo "Head: $(git rev-parse HEAD)"
+          git push origin HEAD:refs/heads/sync/upstream-2026-11-04-7a12304
