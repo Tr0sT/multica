@@ -40,9 +40,9 @@ jobs:
           from pathlib import Path
           p = Path('apps/docs/content/docs/providers.mdx')
           text = p.read_text()
-          if not text.endswith('\\n\\n'):
+          if not text.endswith('\n\n'):
               raise RuntimeError('Upstream docs whitespace expectation changed; review before merging')
-          p.write_text(text.rstrip('\\n') + '\\n')
+          p.write_text(text.rstrip('\n') + '\n')
           PY
           git add apps/docs/content/docs/providers.mdx
           git diff --cached --check
