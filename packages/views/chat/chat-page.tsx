@@ -268,7 +268,7 @@ export function ChatPage() {
   ];
 
   const listBody = (
-    <div className="px-2 py-1">
+    <div className="min-h-0 flex-1 px-2 py-1">
       {c.canInspectMembers && (
         <Select
           items={ownerItems}
