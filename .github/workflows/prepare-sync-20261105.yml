@@ -87,13 +87,13 @@ jobs:
           Path(paths[2]).write_text(thread)
 
           migrate = stage(2, paths[3])
-          assert migrate.count('  var concurrentIndexCleanups = map[string]string{') == 1
+          assert migrate.count('var concurrentIndexCleanups = map[string]string{') == 1
           upstream_migrate = stage(3, paths[3])
           assert '"613_skill_version_index"' in upstream_migrate
           assert '"613_skill_version_index"' not in migrate
           migrate = migrate.replace(
-              '  var concurrentIndexCleanups = map[string]string{',
-              '  var concurrentIndexCleanups = map[string]string{\n\t"613_skill_version_index": "idx_skill_version_skill_version",', 1,
+              'var concurrentIndexCleanups = map[string]string{',
+              'var concurrentIndexCleanups = map[string]string{\n\t"613_skill_version_index": "idx_skill_version_skill_version",', 1,
           )
           Path(paths[3]).write_text(migrate)
           PY
