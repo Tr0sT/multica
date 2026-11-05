@@ -1,0 +1,42 @@
+name: Prepare pinned upstream integration 2026-11-05
+on:
+  push:
+    branches: [sync/upstream-2026-11-05-3a0fed5]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Merge immutable upstream SHA into fork (do not modify main)
+        shell: bash
+        env:
+          TARGET: 3a0fed59f52b600ebbce1117b65c87f7d13ca492
+          BASE: f528bea4421c542e54b7fbd0663857f6eabfbfd2
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$TARGET"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
+          git merge-base --is-ancestor "$BASE" HEAD
+          if ! git merge --no-ff --no-commit "$TARGET"; then
+            echo 'Review required; no files pushed. Conflicting files:'
+            git diff --name-only --diff-filter=U
+            echo 'Conflict excerpts:'
+            git diff --cc | head -n 1200 || true
+            exit 1
+          fi
+          git diff --cached --check
+          git commit -m "chore(sync): merge upstream main 3a0fed5 (2026-11-05)"
+          git merge-base --is-ancestor "$TARGET" HEAD
+          git rm .github/workflows/prepare-sync-20261105.yml
+          git commit -m "chore: remove temporary sync preparation workflow"
+          git diff "$BASE" HEAD --check
+          echo "Combined head $(git rev-parse HEAD)"
+          echo "Upstream ancestor: $(git merge-base --is-ancestor "$TARGET" HEAD && echo yes)"
+          git push origin HEAD:refs/heads/sync/upstream-2026-11-05-3a0fed5
