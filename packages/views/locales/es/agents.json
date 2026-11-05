@@ -289,7 +289,8 @@
     "discard_dialog_description": "Hay cambios sin guardar en esta pestaña. Si sales ahora, se descartarán.",
     "discard_keep": "Seguir editando",
     "discard_confirm": "Descartar cambios",
-    "qoder_agent": "Qoder Cloud Agents"
+    "qoder_agent": "Qoder Cloud Agents",
+    "plugins": "Plugins"
   },
   "creation_studio": {
     "title": "Crear un agente",
@@ -783,7 +784,8 @@
       "add_dialog_confirm_one": "Añadir {{count}} skill",
       "add_dialog_confirm_other": "Añadir {{count}} skills",
       "add_dialog_cancel": "Cancelar",
-      "add_failed_toast": "No se ha podido añadir la skill"
+      "add_failed_toast": "No se ha podido añadir la skill",
+      "runtime_overridden_badge": "Sustituido por una habilidad asignada"
     },
     "integrations": {
       "members_note": "Solo los propietarios y administradores del espacio de trabajo pueden gestionar esta conexión. Puedes ver los bots conectados en Ajustes → Integraciones."
@@ -834,6 +836,46 @@
       "started_prefix": "Iniciada {{when}}",
       "dispatched_prefix": "Enviada {{when}}",
       "queued_prefix": "En cola {{when}}"
+    },
+    "plugins": {
+      "scope_hint": "Los plugins seleccionados se adjuntan cuando se inicia una tarea nueva. Las tareas existentes conservan sus versiones.",
+      "inheritance_hint": "Al guardar, esta selección sustituye los plugins heredados del entorno de ejecución para las tareas nuevas.",
+      "marketplaces": "Catálogos",
+      "connect": "Conectar catálogo",
+      "source_url": "URL del repositorio Git",
+      "source_ref": "Rama o etiqueta",
+      "default_branch": "Rama predeterminada",
+      "fetch_hint": "El entorno de ejecución seleccionado lee el repositorio usando su acceso Git. Los paquetes se guardan en el espacio de trabajo.",
+      "no_fetch_runtime": "Para leer el repositorio necesitas un entorno de ejecución en línea que te pertenezca.",
+      "search": "Buscar plugins",
+      "save": "Guardar selección",
+      "saving": "Guardando…",
+      "saved": "Selección guardada para las tareas nuevas.",
+      "load_failed": "No se pudieron cargar los plugins del catálogo.",
+      "response_failed": "No se pudo confirmar el cambio. Actualiza la página e inténtalo de nuevo.",
+      "retry": "Reintentar",
+      "empty": "No se encontraron plugins.",
+      "selected_count": "Seleccionados: {{count}}",
+      "skill_count": "Habilidades: {{count}}",
+      "included_skills": "Habilidades incluidas",
+      "mcp_component": "Servidores MCP",
+      "hooks_component": "Hooks de ciclo de vida",
+      "version": "Versión",
+      "source": "Catálogo",
+      "syncing": "Sincronizando",
+      "ready": "Conectado",
+      "failed": "Error de sincronización",
+      "unknown": "Estado desconocido",
+      "refresh": "Actualizar catálogo",
+      "disconnect": "Desconectar",
+      "disconnect_title": "¿Desconectar el catálogo?",
+      "disconnect_description": "Primero elimina sus plugins de los agentes. Las instantáneas de las tareas existentes seguirán disponibles.",
+      "cancel": "Cancelar",
+      "source_empty": "No hay catálogos conectados.",
+      "readonly": "No tienes permiso para editar este agente.",
+      "unavailable": "Este plugin ya no aparece en el catálogo actual. Actualiza la fuente o elimina esta selección.",
+      "runtime_required": "Elige un entorno de ejecución Codex para configurar los plugins del catálogo.",
+      "details_hint": "Requiere Codex CLI 0.165.0 o posterior. El paquete solo se adjunta mientras se ejecuta la tarea. Al continuar una tarea, se conserva su versión original."
     }
   },
   "char_counter": {
