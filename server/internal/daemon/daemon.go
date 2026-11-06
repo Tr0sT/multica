@@ -9055,7 +9055,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	stopUsageFlush := d.startUsageFlush(ctx, task.ID, &liveUsage, taskLog)
 	defer stopUsageFlush()
-	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
+	result, tools, err := d.executeWithModelCapacityRetry(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
 		return TaskResult{}, err
 	}
@@ -9107,7 +9107,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		freshPrompt := BuildPrompt(task, provider, promptOptions...)
 
-		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, freshPrompt, withPriorTaskUsage(execOpts, firstUsage), taskLog, task.ID, env.CodexHome, &msgSeq)
+		retryResult, retryTools, retryErr := d.executeWithModelCapacityRetry(ctx, backend, freshPrompt, withPriorTaskUsage(execOpts, firstUsage), taskLog, task.ID, env.CodexHome, &msgSeq)
 		if retryErr != nil {
 			taskLog.Error("fresh session also failed to start; keeping the original poisoned result", "error", retryErr)
 		} else if retryResult.Status != "completed" && retryResult.SessionID == "" {
@@ -9561,7 +9561,7 @@ func (d *Daemon) repairWorktreeDelivery(ctx context.Context, backend agent.Backe
 	if opts.Timeout <= 0 || opts.Timeout > worktreeRepairTimeout {
 		opts.Timeout = worktreeRepairTimeout
 	}
-	repair, repairTools, repairErr := d.executeAndDrain(ctx, backend, BuildWorktreeDeliveryRepairPrompt(problem), opts, taskLog, taskID, env.CodexHome, msgSeq)
+	repair, repairTools, repairErr := d.executeWithModelCapacityRetry(ctx, backend, BuildWorktreeDeliveryRepairPrompt(problem), opts, taskLog, taskID, env.CodexHome, msgSeq)
 	if repairErr != nil {
 		taskLog.Error("local_directory: worktree delivery repair turn failed to start", "error", repairErr)
 	} else if remaining := env.LocalWorktree.CheckDelivery(); remaining != nil {
