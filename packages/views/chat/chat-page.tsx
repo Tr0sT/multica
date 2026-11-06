@@ -268,7 +268,7 @@ export function ChatPage() {
   ];
 
   const listBody = (
-    <div className="min-h-0 flex-1 px-2 py-1">
+    <div className="flex h-full min-h-0 flex-col px-2 py-1">
       {c.canInspectMembers && (
         <Select
           items={ownerItems}
@@ -278,7 +278,7 @@ export function ChatPage() {
             replace(value === "mine" ? wsPaths.chat() : wsPaths.chat() + "?creator=" + encodeURIComponent(value));
           }}
         >
-          <SelectTrigger className="mb-2 w-full" aria-label={t(($) => $.owner_filter.label)}>
+          <SelectTrigger className="mb-2 w-full shrink-0" aria-label={t(($) => $.owner_filter.label)}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -288,16 +288,18 @@ export function ChatPage() {
           </SelectContent>
         </Select>
       )}
-      <ChatThreadList
-        sessions={c.sessions}
-        agents={c.agents}
-        activeSessionId={c.activeSessionId}
-        onSelectSession={handleSelect}
-        onArchive={handleArchive}
-        viewerId={c.user?.id}
-        members={c.members}
-        creatorFilter={searchParams.get("creator") || undefined}
-      />
+      <div className="min-h-0 flex-1">
+        <ChatThreadList
+          sessions={c.sessions}
+          agents={c.agents}
+          activeSessionId={c.activeSessionId}
+          onSelectSession={handleSelect}
+          onArchive={handleArchive}
+          viewerId={c.user?.id}
+          members={c.members}
+          creatorFilter={searchParams.get("creator") || undefined}
+        />
+      </div>
     </div>
   );
 
@@ -489,7 +491,7 @@ export function ChatPage() {
         {noAgentPage ? (
           noAgentState
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto">{listBody}</div>
+          <div className="flex-1 min-h-0 overflow-hidden">{listBody}</div>
         )}
       </div>
     );
@@ -504,7 +506,7 @@ export function ChatPage() {
     <div className="flex min-h-0 flex-1">
       <ListColumn collapsed={listCollapsed} width="list">
         {listHeader}
-        <div className="flex-1 min-h-0 overflow-y-auto">{listBody}</div>
+        <div className="flex-1 min-h-0 overflow-hidden">{listBody}</div>
       </ListColumn>
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         {listCollapsed && !c.currentSession && <PageHeader>{newChatButton}</PageHeader>}
