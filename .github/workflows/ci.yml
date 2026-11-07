@@ -934,6 +934,12 @@ jobs:
       - name: Test UI performance comparison runner
         run: bash scripts/perf-compare.test.sh
 
+      - name: Verify brand copies match multica-brand.ts
+        # Keep CLI, mobile, and logo SVG copies in sync with the shared source.
+        run: |
+          node scripts/brand/sync.mjs --check
+          node --test scripts/brand/sync.test.mjs
+
       - name: Verify reserved-slugs.ts is up to date
         # Re-runs the generator and fails on any drift from the
         # checked-in TypeScript output. The Go side embeds the JSON
