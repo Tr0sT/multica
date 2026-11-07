@@ -2,23 +2,22 @@ name: Prepare pinned sync 2026-11-07
 on:
   push:
     paths: [.github/workflows/prepare-sync-20261107.yml]
-  workflow_dispatch:
 permissions:
   contents: write
 jobs:
   prepare:
     if: github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       TARGET: 282f48eed2531f467ed4e6febc2a59b590d3e711
       FORK_BASE: 0ba951fbd1b940aca39bdbb60ab2623103b2c235
       DEST: sync/upstream-2026-11-07-282f48e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Stage pinned history-preserving merge
+      - name: Merge reviewed changes on isolated branch
         shell: bash
         run: |
           set -euo pipefail
@@ -28,19 +27,46 @@ jobs:
           test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
           git merge-base --is-ancestor "$FORK_BASE" HEAD
           if git merge-base --is-ancestor "$TARGET" HEAD; then
-            echo "Target is already ancestor"; exit 0
+            echo "Target already integrated"; exit 0
           fi
           if ! git merge --no-ff --no-commit "$TARGET"; then
-            echo 'MERGE_CONFLICT_PATHS_BEGIN'
-            git diff --name-only --diff-filter=U
-            echo 'MERGE_CONFLICT_PATHS_END'
-            echo 'MERGE_CONFLICT_DETAIL_BEGIN'
-            git diff --cc | head -n 450 || true
-            echo 'MERGE_CONFLICT_DETAIL_END'
-            exit 1
+            actual="$(git diff --name-only --diff-filter=U)"
+            expected="$(printf '%s\n' packages/core/api/client.ts packages/core/chat/queries.ts)"
+            if [ "$actual" != "$expected" ]; then
+              echo "Unexpected conflicts:"; printf '%s\n' "$actual"; exit 1
+            fi
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("packages/core/api/client.ts")
+          s = a.read_text()
+          pat = r'<<<<<<< HEAD\n    params\?: \{ status\?: string; creator_id\?: string \},\n    workspaceSlug\?: string,\n=======\n    params\?: \{ status\?: string \},\n    workspace\?: WorkspaceScope,\n>>>>>>> [^\n]+\n'
+          s, n = re.subn(pat, '    params?: { status?: string; creator_id?: string },\n    workspace?: WorkspaceScope,\n', s)
+          assert n == 1, 'Unexpected chat API conflict: manual review required'
+          assert 'if (params?.creator_id) search.set("creator_id", params.creator_id)' in s
+          assert 'headers: workspaceHeader(workspace),' in s
+          a.write_text(s)
+          b = Path("packages/core/chat/queries.ts")
+          s = b.read_text()
+          pat = r'<<<<<<< HEAD\n(.*?)\n=======\n(.*?)\n>>>>>>> [^\n]+\n'
+          m = re.search(pat, s, flags=re.S)
+          assert m and m.group(1).startswith('    queryKey: creatorId'), 'Unexpected chat options conflict'
+          assert 'creator_id: creatorId' in m.group(1) and 'refetchInterval: creatorId' in m.group(1)
+          assert 'workspaceId: wsId' in m.group(2), 'Upstream workspace-scope fix missing'
+          fixed = m.group(1).replace(
+              'api.listChatSessions({ status: "all", ...(creatorId ? { creator_id: creatorId } : {}) })',
+              'api.listChatSessions({ status: "all", ...(creatorId ? { creator_id: creatorId } : {}) }, { workspaceId: wsId })',
+          )
+          assert fixed != m.group(1), 'Failed to add explicit workspace ID'
+          s = s[:m.start()] + fixed + '\n' + s[m.end():]
+          b.write_text(s)
+          for path in (a,b):
+              assert '<<<<<<<' not in path.read_text() and '>>>>>>>' not in path.read_text()
+          PY
+            git add packages/core/api/client.ts packages/core/chat/queries.ts
+            test -z "$(git diff --name-only --diff-filter=U)"
           fi
           git diff --cached --check
-          git diff --cached --stat | tail -n 25
           git commit -m 'chore: merge upstream main at 282f48e preserving fork integrations'
           git merge-base --is-ancestor "$TARGET" HEAD
           git merge-base --is-ancestor "$FORK_BASE" HEAD
