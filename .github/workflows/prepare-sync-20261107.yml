@@ -1,0 +1,48 @@
+name: Prepare pinned sync 2026-11-07
+on:
+  push:
+    paths: [.github/workflows/prepare-sync-20261107.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET: 282f48eed2531f467ed4e6febc2a59b590d3e711
+      FORK_BASE: 0ba951fbd1b940aca39bdbb60ab2623103b2c235
+      DEST: sync/upstream-2026-11-07-282f48e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Stage pinned history-preserving merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$TARGET"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET"
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          if git merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "Target is already ancestor"; exit 0
+          fi
+          if ! git merge --no-ff --no-commit "$TARGET"; then
+            echo 'MERGE_CONFLICT_PATHS_BEGIN'
+            git diff --name-only --diff-filter=U
+            echo 'MERGE_CONFLICT_PATHS_END'
+            echo 'MERGE_CONFLICT_DETAIL_BEGIN'
+            git diff --cc | head -n 450 || true
+            echo 'MERGE_CONFLICT_DETAIL_END'
+            exit 1
+          fi
+          git diff --cached --check
+          git diff --cached --stat | tail -n 25
+          git commit -m 'chore: merge upstream main at 282f48e preserving fork integrations'
+          git merge-base --is-ancestor "$TARGET" HEAD
+          git merge-base --is-ancestor "$FORK_BASE" HEAD
+          echo "Prepared head: $(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$DEST"
