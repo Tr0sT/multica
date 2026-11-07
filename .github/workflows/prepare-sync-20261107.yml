@@ -66,6 +66,12 @@ jobs:
             git add packages/core/api/client.ts packages/core/chat/queries.ts
             test -z "$(git diff --name-only --diff-filter=U)"
           fi
+          # Actions' GITHUB_TOKEN cannot push changes to workflow files.
+          # Preserve the fork's CI and perf workflows for this merge; review
+          # upstream workflow changes separately through the GitHub connector.
+          for workflow in .github/workflows/ci.yml .github/workflows/ui-performance.yml; do
+            git restore --source="$FORK_BASE" --staged --worktree "$workflow"
+          done
           git diff --cached --check
           git commit -m 'chore: merge upstream main at 282f48e preserving fork integrations'
           git merge-base --is-ancestor "$TARGET" HEAD
