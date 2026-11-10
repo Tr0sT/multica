@@ -33,6 +33,17 @@ jobs:
           if ! git merge --no-ff --no-commit "$TARGET_SHA"; then
             echo 'Merge conflicts:'
             git diff --name-only --diff-filter=U
+            echo 'Conflict hunk previews:'
+            python3 - <<'PY'
+          import pathlib,subprocess,re
+          paths=subprocess.check_output(["git","diff","--name-only","--diff-filter=U"],text=True).splitlines()
+          for p in paths:
+              txt=pathlib.Path(p).read_text()
+              blocks=re.findall(r"^<<<<<<< .*?^>>>>>>> .*?$",txt,re.M|re.S)
+              print("==== "+p+" ==== "+str(len(blocks))+" blocks")
+              for b in blocks:
+                  print(b[:9000])
+          PY
             echo 'Changes (summary):'
             git status --short
             exit 1
