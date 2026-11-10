@@ -86,6 +86,8 @@ jobs:
           test -f server/internal/integrations/mattermost/access.go
           test -f server/migrations/fork-prefix-allowlist.json
           test -f packages/views/agents/components/tabs/plugins-tab.tsx
+          git show HEAD:.github/workflows/ci.yml > .github/workflows/ci.yml
+          git add .github/workflows/ci.yml
           git diff --cached --check -- .github/workflows/ci.yml packages/views/locales
           git commit -m "chore(sync): merge upstream $TARGET_SHA"
           git rm .github/workflows/zz-sync-run-once.yml
