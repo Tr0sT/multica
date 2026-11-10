@@ -1,0 +1,45 @@
+name: One-time upstream sync preparation
+
+on:
+  push:
+    branches:
+      - sync/upstream-2026-11-10-b5ac1569
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge pinned upstream into isolated sync branch
+        env:
+          TARGET_SHA: b5ac15690dcd0728280699b2c5ddfee5bdb61f2a
+          SYNC_BRANCH: sync/upstream-2026-11-10-b5ac1569
+        run: |
+          set -euo pipefail
+          git config user.name 'multica-sync-bot'
+          git config user.email 'multica-sync-bot@users.noreply.github.com'
+          git remote add original-upstream https://github.com/multica-ai/multica.git
+          git fetch --no-tags original-upstream "$TARGET_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          echo "Base: $(git rev-parse HEAD)"
+          echo "Pinned upstream: $TARGET_SHA"
+          if ! git merge --no-ff --no-commit "$TARGET_SHA"; then
+            echo 'Merge conflicts:'
+            git diff --name-only --diff-filter=U
+            echo 'Changes (summary):'
+            git status --short
+            exit 1
+          fi
+          git commit -m "chore(sync): merge upstream $TARGET_SHA"
+          git rm .github/workflows/zz-sync-run-once.yml
+          git commit -m 'chore(sync): remove one-time merge workflow'
+          echo "Prepared commit: $(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git push origin "HEAD:refs/heads/$SYNC_BRANCH"
