@@ -31,23 +31,62 @@ jobs:
           echo "Base: $(git rev-parse HEAD)"
           echo "Pinned upstream: $TARGET_SHA"
           if ! git merge --no-ff --no-commit "$TARGET_SHA"; then
-            echo 'Merge conflicts:'
-            git diff --name-only --diff-filter=U
-            echo 'Conflict hunk previews:'
+            echo "Resolving inspected, nonoverlapping conflict blocks"
             python3 - <<'PY'
-          import pathlib,subprocess,re
-          paths=subprocess.check_output(["git","diff","--name-only","--diff-filter=U"],text=True).splitlines()
-          for p in paths:
-              txt=pathlib.Path(p).read_text()
-              blocks=re.findall(r"^<<<<<<< .*?^>>>>>>> .*?$",txt,re.M|re.S)
-              print("==== "+p+" ==== "+str(len(blocks))+" blocks")
-              for b in blocks:
-                  print(b[:9000])
+          import json, pathlib, re, subprocess, sys
+          files = subprocess.check_output(['git', 'diff', '--name-only', '--diff-filter=U'], text=True).splitlines()
+          print('Conflicted:', files)
+          if not files or len(files) > 20: sys.exit('Unexpected conflict count')
+          def stage(i, path):
+              return subprocess.check_output(['git', 'show', f':{i}:{path}'], text=True)
+          MISSING = object()
+          def threeway(base, ours, theirs, path=''):
+              if ours == theirs: return ours
+              if ours == base: return theirs
+              if theirs == base: return ours
+              if isinstance(ours, dict) and isinstance(theirs, dict) and (base is MISSING or isinstance(base, dict)):
+                  a = {}
+                  # Preserve upstream order and all fork-specific keys.
+                  for k in dict.fromkeys([*theirs, *ours]):
+                      old = base.get(k, MISSING) if base is not MISSING else MISSING
+                      a1, a2 = ours.get(k, MISSING), theirs.get(k, MISSING)
+                      v = threeway(old, a1, a2, path + '/' + k)
+                      if v is not MISSING: a[k] = v
+                  return a
+              raise ValueError('Overlapping semantic change: ' + path)
+          for p in files:
+              if p == '.github/workflows/ci.yml':
+                  content = pathlib.Path(p).read_text()
+                  pattern = re.compile(r'^<<<<<<< HEAD\n(.*?)^=======\n(.*?)^>>>>>>> .*?\n', re.M | re.S)
+                  output, n = pattern.subn(lambda m: m.group(1) + m.group(2), content)
+                  if n != 1 or '<<<<<<<' in output: sys.exit('Unexpected CI YAML conflict')
+                  if 'Verify brand copies match' not in output or 'Test Desktop window capture' not in output:
+                      sys.exit('Missing one CI check')
+                  pathlib.Path(p).write_text(output)
+              elif re.fullmatch(r'packages/views/locales/[^/]+/(agents|settings)\.json', p):
+                  old = json.loads(stage(1,p)); ours = json.loads(stage(2,p)); theirs = json.loads(stage(3,p))
+                  joined = threeway(old, ours, theirs)
+                  if joined is MISSING: sys.exit('Unexpected top-level deletion')
+                  data = json.dumps(joined, ensure_ascii=False, indent=2) + '\n'
+                  json.loads(data)
+                  pathlib.Path(p).write_text(data)
+                  print('Combined locale:',p)
+              else:
+                  sys.exit('Unreviewed non-locale conflict: ' + p)
+          subprocess.check_call(['git', 'add', '--', *files])
           PY
-            echo 'Changes (summary):'
-            git status --short
+          fi
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo 'Unresolved conflicts'
+            git diff --name-only --diff-filter=U
             exit 1
           fi
+          test -f flake.nix && test -f nix/README.md
+          test -f server/cmd/multica/cmd_teambridge.go
+          test -f server/internal/integrations/mattermost/access.go
+          test -f server/migrations/fork-prefix-allowlist.json
+          test -f packages/views/agents/components/tabs/plugins-tab.tsx
+          git diff --cached --check
           git commit -m "chore(sync): merge upstream $TARGET_SHA"
           git rm .github/workflows/zz-sync-run-once.yml
           git commit -m 'chore(sync): remove one-time merge workflow'
