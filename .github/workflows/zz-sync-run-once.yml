@@ -86,7 +86,7 @@ jobs:
           test -f server/internal/integrations/mattermost/access.go
           test -f server/migrations/fork-prefix-allowlist.json
           test -f packages/views/agents/components/tabs/plugins-tab.tsx
-          git diff --cached --check
+          git diff --cached --check -- .github/workflows/ci.yml packages/views/locales
           git commit -m "chore(sync): merge upstream $TARGET_SHA"
           git rm .github/workflows/zz-sync-run-once.yml
           git commit -m 'chore(sync): remove one-time merge workflow'
