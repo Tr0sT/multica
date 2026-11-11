@@ -126,6 +126,7 @@ import type {
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
+  ListProjectMembersResponse,
   ProjectResource,
   CreateProjectResourceRequest,
   UpdateProjectResourceRequest,
@@ -197,6 +198,10 @@ import type {
   PluginInstallRequest,
   PluginConfigRequest,
   IssuePullRequestsResponse,
+  IssueEnvironmentsResponse,
+  IssueEnvironmentAction,
+  IssueEnvironmentCommand,
+  StartIssueEnvironmentRequest,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -383,6 +388,7 @@ import {
   RuntimeUsageListSchema,
   SearchIssuesResponseSchema,
   ProjectSchema,
+  ListProjectMembersResponseSchema,
   ListProjectsResponseSchema,
   EMPTY_PROJECT,
   EMPTY_LIST_PROJECTS_RESPONSE,
@@ -480,6 +486,7 @@ import {
   TeamAppImpactSchema,
   EMPTY_ISSUE_UNREAD_PAGE,
   SubscribedIssueIdsSchema,
+  InvolvedSquadIdsSchema,
   IssueInboxReadSchema,
   InboxItemListSchema,
   ArchivedInboxPageSchema,
@@ -515,6 +522,9 @@ import {
   EMPTY_ISSUE_PROPERTIES_RESPONSE,
   EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
   IssuePullRequestsResponseSchema,
+  EMPTY_ISSUE_ENVIRONMENTS_RESPONSE,
+  IssueEnvironmentsResponseSchema,
+  IssueEnvironmentCommandSchema,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -953,9 +963,14 @@ export class ApiClient {
    * (MUL-7028). Comparing against the credential in use now is what tells the
    * two apart: a genuinely expired session still has the same token stored,
    * so the real case is unaffected.
+   *
+   * "Replaced" includes going from no credential to one. A flow that was
+   * already running at logout can still send a bearer-less request, and its
+   * 401 may land after the user has signed in again (#10190). Cookie mode is
+   * null on both sides, so its expiries still end the session.
    */
   private handleUnauthorized(credentialUsed: string | null) {
-    if (credentialUsed !== null && this.getToken() !== credentialUsed) {
+    if (this.getToken() !== credentialUsed) {
       this.logger.info("ignoring 401 for a credential that has since been replaced");
       return;
     }
@@ -1765,8 +1780,16 @@ export class ApiClient {
   }
 
   // Comments
-  async listComments(issueId: string): Promise<Comment[]> {
-    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/comments`);
+  async listIssueDeliverables(issueId: string): Promise<TimelineEntry[]> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/deliverables`);
+    return parseWithFallback(raw, TimelineEntriesSchema, [], {
+      endpoint: "GET /api/issues/:id/deliverables",
+    });
+  }
+
+  async listComments(issueId: string, options?: { thread: string }): Promise<Comment[]> {
+    const query = options ? `?${new URLSearchParams({ thread: options.thread })}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/comments${query}`);
     return parseWithFallback(raw, CommentsListSchema, [], {
       endpoint: "GET /api/issues/:id/comments",
     });
@@ -3030,10 +3053,12 @@ export class ApiClient {
     });
   }
 
-  async listTasksByIssue(issueId: string, includeDescendants = false): Promise<AgentTask[]> {
-    const raw = await this.fetch<unknown>(
-      `/api/issues/${issueId}/task-runs${includeDescendants ? "?scope=subtree" : ""}`,
-    );
+  async listTasksByIssue(issueId: string, includeDescendants = false, options?: { view: "timeline" }): Promise<AgentTask[]> {
+    const search = new URLSearchParams();
+    if (includeDescendants) search.set("scope", "subtree");
+    if (options?.view) search.set("view", options.view);
+    const query = search.size ? `?${search}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/task-runs${query}`);
     return parseWithFallback<AgentTask[]>(raw, AgentTaskListSchema, [], {
       endpoint: "GET /api/issues/:id/task-runs",
     });
@@ -4348,8 +4373,8 @@ export class ApiClient {
   // Callers must only reach for this once the metadata refresh has shown
   // there is no signed URL: in the other modes the endpoint 302s to storage,
   // where CORS is not configured for a JS fetch.
-  async getAttachmentBlob(id: string): Promise<Blob> {
-    const res = await this.fetchRaw(`/api/attachments/${id}/download`);
+  async getAttachmentBlob(id: string, signal?: AbortSignal): Promise<Blob> {
+    const res = await this.fetchRaw(`/api/attachments/${id}/download`, { signal });
     return res.blob();
   }
 
@@ -4386,6 +4411,26 @@ export class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  async getProjectMembers(id: string): Promise<ListProjectMembersResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/members`);
+    return parseWithFallback(raw, ListProjectMembersResponseSchema, { members: [], total: 0 }, {
+      endpoint: "GET /api/projects/:id/members",
+    });
+  }
+
+  async addProjectMembers(id: string, userIds: string[]): Promise<ListProjectMembersResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/members`, {
+      method: "POST", body: JSON.stringify({ user_ids: userIds }),
+    });
+    return parseWithFallback(raw, ListProjectMembersResponseSchema, { members: [], total: 0 }, {
+      endpoint: "POST /api/projects/:id/members",
+    });
+  }
+
+  async removeProjectMember(id: string, userId: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/members/${userId}`, { method: "DELETE" });
   }
 
   // Project resources
@@ -4983,6 +5028,15 @@ export class ApiClient {
     }) as Squad[];
   }
 
+  async listInvolvedSquadIds(): Promise<string[]> {
+    const raw = await this.fetch<unknown>("/api/squads/involved");
+    const parsed = parseWithFallback<{ squad_ids: string[] } | null>(raw, InvolvedSquadIdsSchema, null, {
+      endpoint: "GET /api/squads/involved",
+    });
+    if (!parsed) throw new Error("GET /api/squads/involved returned a malformed body");
+    return parsed.squad_ids;
+  }
+
   async getSquad(id: string): Promise<Squad> {
     const raw = await this.fetch<unknown>(`/api/squads/${id}`);
     return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
@@ -5298,6 +5352,53 @@ export class ApiClient {
       EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
       { endpoint: "GET /api/issues/:id/pull-requests" },
     );
+  }
+
+  /** Environments the issue's runs started, live ones plus recently ended. */
+  async listIssueEnvironments(issueId: string): Promise<IssueEnvironmentsResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/environments`);
+    return parseWithFallback(
+      raw,
+      IssueEnvironmentsResponseSchema,
+      EMPTY_ISSUE_ENVIRONMENTS_RESPONSE,
+      { endpoint: "GET /api/issues/:id/environments" },
+    );
+  }
+
+  /** Ask the environment's machine to stop it. Resolves once queued. */
+  async stopIssueEnvironment(issueId: string, environmentId: string): Promise<IssueEnvironmentCommand> {
+    return this.issueEnvironmentCommand(`/api/issues/${issueId}/environments/${environmentId}/stop`, "stop", { method: "POST" });
+  }
+
+  /** Ask the environment's machine to start it again from the same code. */
+  async restartIssueEnvironment(issueId: string, environmentId: string): Promise<IssueEnvironmentCommand> {
+    return this.issueEnvironmentCommand(`/api/issues/${issueId}/environments/${environmentId}/restart`, "restart", { method: "POST" });
+  }
+
+  /** Ask the environment's machine for the end of its log; poll the command for it. */
+  async readIssueEnvironmentLogs(issueId: string, environmentId: string): Promise<IssueEnvironmentCommand> {
+    return this.issueEnvironmentCommand(`/api/issues/${issueId}/environments/${environmentId}/logs`, "logs", { method: "POST" });
+  }
+
+  /** Start an environment the latest run on a machine declared. */
+  async startIssueEnvironment(issueId: string, body: StartIssueEnvironmentRequest): Promise<IssueEnvironmentCommand> {
+    return this.issueEnvironmentCommand(`/api/issues/${issueId}/environments/start`, "start", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getIssueEnvironmentCommand(issueId: string, commandId: string): Promise<IssueEnvironmentCommand> {
+    return this.issueEnvironmentCommand(`/api/issues/${issueId}/environment-commands/${commandId}`, "logs");
+  }
+
+  private async issueEnvironmentCommand(path: string, action: IssueEnvironmentAction, init?: RequestInit): Promise<IssueEnvironmentCommand> {
+    const raw = await this.fetch<unknown>(path, init);
+    const fallback: IssueEnvironmentCommand = {
+      id: "", action, status: "failed", error: "", environment_id: null, runtime_id: "", task_id: null, repo: "", name: "",
+      actor_type: "member", actor_id: null, created_at: new Date().toISOString(), completed_at: null, output: null,
+    };
+    return parseWithFallback(raw, IssueEnvironmentCommandSchema, fallback, { endpoint: `${init?.method ?? "GET"} ${path.replace(/[0-9a-f-]{36}/g, ":id")}` });
   }
 
   /** Link a PR the workspace already mirrors, by pasted URL or by id (undo). */
