@@ -103,6 +103,10 @@ const (
 	EventProjectResourceUpdated = "project_resource:updated"
 	EventProjectResourceDeleted = "project_resource:deleted"
 
+	// EventProjectMembersChanged carries {project_id}: a private project's
+	// member list changed (MUL-8472).
+	EventProjectMembersChanged = "project:members_changed"
+
 	// Label events
 	EventLabelCreated       = "label:created"
 	EventLabelUpdated       = "label:updated"
@@ -193,6 +197,10 @@ const (
 	EventPullRequestLinked         = "pull_request:linked"
 	EventPullRequestUpdated        = "pull_request:updated"
 	EventPullRequestUnlinked       = "pull_request:unlinked"
+
+	// An issue's local environments changed: one started, stopped, changed
+	// state, or its daemon stopped reporting it.
+	EventEnvironmentChanged = "environment:changed"
 
 	// VCS integration events (Forgejo / Gitea / GitLab)
 	EventVCSConnectionCreated = "vcs_connection:created"
