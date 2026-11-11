@@ -44,14 +44,7 @@ jobs:
             done
             python3 scripts/tmp-sync-resolve-20261111.py
             node --test scripts/ci-scope.test.mjs
-            python3 - <<'PY'
-            from pathlib import Path
-            p=Path('packages/views/issues/components/issue-environments-section.tsx')
-            s=p.read_text()
-            if not s.endswith('\n\n'):
-                raise SystemExit('Unexpected trailing content in upstream issue-environments-section')
-            p.write_text(s.rstrip('\n')+'\n')
-            PY
+            python3 -c "from pathlib import Path; p=Path('packages/views/issues/components/issue-environments-section.tsx'); s=p.read_text(); assert s.endswith(chr(10)*2), 'unexpected trailing content'; p.write_text(s.rstrip(chr(10))+chr(10))"
             git add -- packages/views/issues/components/issue-environments-section.tsx
             git diff --cached --check
           fi
