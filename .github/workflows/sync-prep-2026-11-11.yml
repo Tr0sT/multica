@@ -39,13 +39,7 @@ jobs:
             done
             for file in .github/workflows/ci.yml scripts/ci-scope.test.mjs server/cmd/server/router.go server/internal/handler/agent.go; do
               echo "::group::Conflict contents in $file"
-              python3 - "$file" <<'PY'
-import sys, pathlib
-lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
-for i,line in enumerate(lines):
-    if line.startswith('<<<<<<<'):
-        print('\n'.join(f'{k+1}: {lines[k]}' for k in range(max(0,i-5),min(len(lines),i+35))))
-PY
+              sed -n '/^<<<<<<< /,/^>>>>>>> /p' "$file" | head -n 110
               echo "::endgroup::"
             done
             exit 4
