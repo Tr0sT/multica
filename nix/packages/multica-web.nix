@@ -35,45 +35,36 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   # shortcut: use system fallback fonts offline; bundle fonts to restore exact typography.
+  # Keep Next.js self-contained when Nix builds without Google Fonts access.
+  # Fail closed if upstream changes the font declarations or their constructors.
   postPatch = ''
     node <<'JS'
     const fs = require("fs");
-    function replace(path, from, to) {
-      let text = fs.readFileSync(path, "utf8");
-      if (!text.includes(from)) throw new Error(`missing pattern in ''${path}: ''${from}`);
-      fs.writeFileSync(path, text.replace(from, to));
+    const path = "apps/web/app/layout.tsx";
+    let source = fs.readFileSync(path, "utf8");
+    const imports = 'import { Inter, Geist_Mono, JetBrains_Mono, Source_Serif_4 } from "next/font/google";';
+    if (!source.includes(imports)) {
+      throw new Error("Update the offline font patch for upstream's new font imports");
     }
-    replace("apps/web/app/layout.tsx", 'import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";', "");
-    replace("apps/web/app/layout.tsx", `const inter = Inter({
-      subsets: ["latin"],
-      style: ["normal", "italic"],
-      axes: ["opsz"],
-      variable: "--font-inter",
-    });`, 'const inter = { variable: "" };');
-    replace("apps/web/app/layout.tsx", `const geistMono = Geist_Mono({
-      subsets: ["latin"],
-      variable: "--font-mono",
-      fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
-    });`, 'const geistMono = { variable: "" };');
-    replace("apps/web/app/layout.tsx", `const sourceSerif = Source_Serif_4({
-      subsets: ["latin"],
-      style: ["normal", "italic"],
-      variable: "--font-serif",
-      fallback: [
-        "ui-serif",
-        "Iowan Old Style",
-        "Apple Garamond",
-        "Baskerville",
-        "Times New Roman",
-        "serif",
-      ],
-    });`, 'const sourceSerif = { variable: "" };');
-    replace("apps/web/app/(landing)/layout.tsx", 'import { Instrument_Serif } from "next/font/google";', "");
-    replace("apps/web/app/(landing)/layout.tsx", `const instrumentSerif = Instrument_Serif({
-      subsets: ["latin"],
-      weight: "400",
-      variable: "--font-instrument-serif",
-    });`, 'const instrumentSerif = { variable: "" };');
+    source = source.replace(imports, "");
+    for (const [name, ctor] of [
+      ["inter", "Inter"],
+      ["geistMono", "Geist_Mono"],
+      ["jetbrainsMono", "JetBrains_Mono"],
+      ["sourceSerif", "Source_Serif_4"],
+    ]) {
+      const start = "const " + name + " = " + ctor + "({";
+      const at = source.indexOf(start);
+      if (at < 0 || source.indexOf(start, at + 1) >= 0) {
+        throw new Error("Unexpected or duplicated font declaration: " + name);
+      }
+      const end = source.indexOf("\n});", at);
+      if (end < 0) throw new Error("Unterminated font declaration: " + name);
+      source = source.slice(0, at)
+        + 'const ' + name + ' = { variable: "" };'
+        + source.slice(end + 4);
+    }
+    fs.writeFileSync(path, source);
     JS
   '';
 
