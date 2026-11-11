@@ -42,7 +42,9 @@ jobs:
               sed -n '/^<<<<<<< /,/^>>>>>>> /p' "$file" | head -n 110
               echo "::endgroup::"
             done
-            exit 4
+            python3 scripts/tmp-sync-resolve-20261111.py
+            node --test scripts/ci-scope.test.mjs
+            git diff --cached --check
           fi
           # Leave workflow changes for an explicit connector review, because
           # the ephemeral GITHUB_TOKEN cannot safely update workflow files.
