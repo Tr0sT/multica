@@ -115,8 +115,12 @@ replace_conflict("scripts/ci-scope.test.mjs",
 p=pathlib.Path("scripts/ci-scope.test.mjs")
 text=p.read_text()
 old="assert.match(action, /continue-on-error: true/);"
-if text.count(old)!=1: raise RuntimeError("quality gate assertion differs")
-p.write_text(text.replace(old,"assert.doesNotMatch(action, /continue-on-error:/);"))
+if text.count(old) > 1: raise RuntimeError("Ambiguous quality assertion")
+if text.count(old) == 1:
+    text=text.replace(old,"assert.doesNotMatch(action, /continue-on-error:/);")
+if "assert.doesNotMatch(action, /continue-on-error:/);" not in text:
+    raise RuntimeError("Missing fail-closed quality assertion")
+p.write_text(text)
 
 subprocess.run(["gofmt","-w","server/cmd/server/router.go","server/internal/handler/agent.go"],check=True)
 subprocess.run(["git","add","--",*sorted(expected)],check=True)
