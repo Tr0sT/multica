@@ -48,9 +48,9 @@ jobs:
             from pathlib import Path
             p=Path('packages/views/issues/components/issue-environments-section.tsx')
             s=p.read_text()
-            if not s.endswith('\\n\\n'):
+            if not s.endswith('\n\n'):
                 raise SystemExit('Unexpected trailing content in upstream issue-environments-section')
-            p.write_text(s.rstrip('\\n')+'\\n')
+            p.write_text(s.rstrip('\n')+'\n')
             PY
             git add -- packages/views/issues/components/issue-environments-section.tsx
             git diff --cached --check
