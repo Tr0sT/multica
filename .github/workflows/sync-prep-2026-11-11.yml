@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           EXPECTED_FORK=31e5f2cf7b3c60c0a7550f552b17cfa0916420e5
           TARGET=079ec9f676ffccc8df20b43d96bda62dd86169f4
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_FORK"
+          git merge-base --is-ancestor "$EXPECTED_FORK" HEAD
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_FORK"
           git remote add upstream https://github.com/multica-ai/multica.git
           git fetch --no-tags upstream "$TARGET"
