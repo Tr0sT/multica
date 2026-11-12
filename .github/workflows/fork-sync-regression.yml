@@ -1,0 +1,131 @@
+name: Fork sync regression
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-sync-regression-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-diagnostics:
+    if: github.repository == 'Tr0sT/multica' && (github.event_name == 'push' || startsWith(github.head_ref, 'sync/upstream-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOFLAGS: -count=1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - name: Record source and run the unmodified guarded agent suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/agent-evidence/revision.txt"
+          git rev-parse HEAD^{tree} >> "$RUNNER_TEMP/agent-evidence/revision.txt"
+          git ls-files -s server/pkg/agent scripts/test-go.sh scripts/go-test-with-agent-cli-guard.sh > "$RUNNER_TEMP/agent-evidence/source-blobs.txt"
+          bash scripts/test-go.sh --race --only agent 2>&1 | tee "$RUNNER_TEMP/agent-evidence/tests.log"
+      - name: Preserve diagnostic output without masking test failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-agent-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/agent-evidence/
+          if-no-files-found: error
+          retention-days: 7
+  readonly-chat-browser:
+    if: github.repository == 'Tr0sT/multica' && (github.event_name == 'push' || startsWith(github.head_ref, 'sync/upstream-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: multica
+          POSTGRES_USER: multica
+          POSTGRES_PASSWORD: multica
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U multica -d multica"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+      JWT_SECRET: synthetic-fork-sync-browser-test-only-never-production
+      EMAIL_DRIVER: log
+      ALLOW_SIGNUP: 'true'
+      PORT: '8080'
+      FRONTEND_PORT: '3000'
+      FRONTEND_ORIGIN: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies and browser
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: Build and migrate only the disposable database
+        working-directory: server
+        run: |
+          go build -o "$RUNNER_TEMP/fork-server" ./cmd/server
+          go run ./cmd/migrate up
+      - name: Verify readonly inspection in the real isolated web app
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/fork-sync
+          git rev-parse HEAD > test-results/fork-sync/revision.txt
+          "$RUNNER_TEMP/fork-server" > "$RUNNER_TEMP/fork-server.log" 2>&1 &
+          backend=$!
+          pnpm --filter @multica/web dev > "$RUNNER_TEMP/fork-web.log" 2>&1 &
+          frontend=$!
+          trap 'kill "$backend" "$frontend" 2>/dev/null || true' EXIT
+          ready=false
+          for i in $(seq 1 120); do
+            kill -0 "$backend"
+            kill -0 "$frontend"
+            if curl -fsS http://localhost:8080/health >/dev/null && curl -fsS http://localhost:3000/login >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true
+          pnpm exec playwright test e2e/chat-admin-inspection.spec.ts --project=chromium --reporter=line
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-browser-evidence-${{ github.sha }}
+          path: |
+            test-results/
+            ${{ runner.temp }}/fork-server.log
+            ${{ runner.temp }}/fork-web.log
+          if-no-files-found: error
+          retention-days: 7
