@@ -276,6 +276,9 @@ export function MattermostAgentBindButton({
   agentName,
   className,
   onShowConnectedDetails,
+  inline = false,
+  onClose,
+  onBusyChange,
 }: {
   agentId: string;
   agentName?: string;
@@ -284,6 +287,10 @@ export function MattermostAgentBindButton({
    * badge — the agent inspector passes a "jump to the Integrations tab"
    * handler so management actions live in one place. */
   onShowConnectedDetails?: () => void;
+  /** Reuse the full connection form inside the shared channel dialog. */
+  inline?: boolean;
+  onClose?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t, i18n } = useT("settings");
   const wsId = useWorkspaceId();
@@ -342,6 +349,7 @@ export function MattermostAgentBindButton({
     setDeniedReply({ mode: "text" });
     setContextMode("message");
     setLookbackHours(24);
+    onClose?.();
   }
 
   async function handleSubmit() {
@@ -349,6 +357,7 @@ export function MattermostAgentBindButton({
     const access_token = accessToken.trim();
     if (submitting || !agentId || !server_url || !access_token) return;
     setSubmitting(true);
+    onBusyChange?.(true);
     try {
       const allowedUsernames = parseAllowedUsernames(allowedUsers);
       const reply = accessMode === "allowlist" ? await prepareMattermostDeniedReply(deniedReply, setDeniedReply, wsId) : undefined;
@@ -386,18 +395,125 @@ export function MattermostAgentBindButton({
       setContextMode("message");
       setAttachmentMode("links");
       setLookbackHours(24);
+      onClose?.();
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : t(($) => $.mattermost.connect_failed_toast),
       );
     } finally {
       setSubmitting(false);
+      onBusyChange?.(false);
     }
   }
 
   const canSubmit = serverUrl.trim() !== "" && accessToken.trim() !== "" && !submitting &&
     (accessMode !== "allowlist" || (deniedReply.mode !== "unknown" &&
       (deniedReply.mode !== "images" || !!deniedReply.files?.length || !!deniedReply.image_attachment_ids?.length)));
+
+  const connectionFields = (
+    <>
+      {!inline && (
+        <DialogHeader>
+          <DialogTitle>{t(($) => $.mattermost.connect_dialog_title)}</DialogTitle>
+          <DialogDescription>
+            {t(($) => $.mattermost.connect_dialog_description)}
+          </DialogDescription>
+        </DialogHeader>
+      )}
+
+      <button
+        type="button"
+        onClick={() => openExternal(mattermostDocsUrl(i18n.language))}
+        className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
+        data-testid="mattermost-docs-link"
+      >
+        <ExternalLink className="h-4 w-4" />
+        {t(($) => $.mattermost.connect_docs_link)}
+      </button>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="mattermost-server-url">
+          {t(($) => $.mattermost.server_url_label)}
+        </Label>
+        <Input
+          id="mattermost-server-url"
+          data-testid="mattermost-server-url"
+          type="url"
+          value={serverUrl}
+          onChange={(e) => setServerUrl(e.target.value)}
+          // Server URL shape: a format hint, not copy.
+          placeholder="https://mattermost.example.com"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={submitting}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="mattermost-access-token">
+          {t(($) => $.mattermost.access_token_label)}
+        </Label>
+        <Input
+          id="mattermost-access-token"
+          data-testid="mattermost-access-token"
+          type="password"
+          value={accessToken}
+          onChange={(e) => setAccessToken(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={submitting}
+        />
+      </div>
+
+      <MattermostAccessFields
+        accessMode={accessMode}
+        setAccessMode={setAccessMode}
+        allowedUsers={allowedUsers}
+        setAllowedUsers={setAllowedUsers}
+        disabled={submitting}
+      />
+
+      {accessMode === "allowlist" && <MattermostDeniedReplyFields value={deniedReply} onChange={setDeniedReply} disabled={submitting} />}
+
+      <MattermostContextFields
+        contextMode={contextMode}
+        setContextMode={setContextMode}
+        lookbackHours={lookbackHours}
+        setLookbackHours={setLookbackHours}
+        disabled={submitting}
+      />
+      <MattermostAttachmentFields value={attachmentMode} onChange={setAttachmentMode} disabled={submitting} />
+
+      <DialogFooter>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={closeDialog}
+          disabled={submitting}
+        >
+          {t(($) => $.mattermost.connect_cancel)}
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          data-testid="mattermost-connect-submit"
+        >
+          {submitting
+            ? t(($) => $.mattermost.connect_submitting)
+            : t(($) => $.mattermost.connect_submit)}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="grid gap-4" data-testid="mattermost-connect-dialog">
+        {connectionFields}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -428,96 +544,7 @@ export function MattermostAgentBindButton({
         </DialogTrigger>
 
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-testid="mattermost-connect-dialog">
-          <DialogHeader>
-            <DialogTitle>{t(($) => $.mattermost.connect_dialog_title)}</DialogTitle>
-            <DialogDescription>
-              {t(($) => $.mattermost.connect_dialog_description)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <button
-            type="button"
-            onClick={() => openExternal(mattermostDocsUrl(i18n.language))}
-            className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
-            data-testid="mattermost-docs-link"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {t(($) => $.mattermost.connect_docs_link)}
-          </button>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="mattermost-server-url">
-              {t(($) => $.mattermost.server_url_label)}
-            </Label>
-            <Input
-              id="mattermost-server-url"
-              data-testid="mattermost-server-url"
-              type="url"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              // Server URL shape: a format hint, not copy.
-              placeholder="https://mattermost.example.com"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="mattermost-access-token">
-              {t(($) => $.mattermost.access_token_label)}
-            </Label>
-            <Input
-              id="mattermost-access-token"
-              data-testid="mattermost-access-token"
-              type="password"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-            />
-          </div>
-
-          <MattermostAccessFields
-            accessMode={accessMode}
-            setAccessMode={setAccessMode}
-            allowedUsers={allowedUsers}
-            setAllowedUsers={setAllowedUsers}
-            disabled={submitting}
-          />
-
-          {accessMode === "allowlist" && <MattermostDeniedReplyFields value={deniedReply} onChange={setDeniedReply} disabled={submitting} />}
-
-          <MattermostContextFields
-            contextMode={contextMode}
-            setContextMode={setContextMode}
-            lookbackHours={lookbackHours}
-            setLookbackHours={setLookbackHours}
-            disabled={submitting}
-          />
-          <MattermostAttachmentFields value={attachmentMode} onChange={setAttachmentMode} disabled={submitting} />
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={closeDialog}
-              disabled={submitting}
-            >
-              {t(($) => $.mattermost.connect_cancel)}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              data-testid="mattermost-connect-submit"
-            >
-              {submitting
-                ? t(($) => $.mattermost.connect_submitting)
-                : t(($) => $.mattermost.connect_submit)}
-            </Button>
-          </DialogFooter>
+          {connectionFields}
         </DialogContent>
       </Dialog>
     </div>
@@ -662,7 +689,7 @@ function MattermostAgentBotConnectedBadge({
   );
 }
 
-function MattermostEditButton({
+export function MattermostEditButton({
   installation,
   disabled = false,
 }: {
