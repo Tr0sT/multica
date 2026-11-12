@@ -3,7 +3,9 @@ on:
   push:
     branches: [sync/upstream-2026-11-12-191e84be]
 permissions:
-  contents: read
+  # Native GitHub attachment upload requires repository write access.
+  # This one-shot job only attaches the four hash-verified synthetic captures.
+  contents: write
   actions: read
   pull-requests: write
 jobs:
