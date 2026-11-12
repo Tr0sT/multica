@@ -1,0 +1,64 @@
+name: PR 19 isolated sync preparation
+
+on:
+  push:
+    branches:
+      - sync/upstream-2026-11-12-191e84be
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FORK_SHA: 0a8b72e12cf56e6d3263504b2b173e2154c115b1
+      UPSTREAM_SHA: c3a9d8fd1e460f9cf79be7160f19cd1a12624332
+    steps:
+      - name: Checkout pinned fork history without stored credentials
+        uses: actions/checkout@v6
+        with:
+          ref: 0a8b72e12cf56e6d3263504b2b173e2154c115b1
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle exact public Git objects for offline review
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$FORK_SHA"
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$UPSTREAM_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
+          git update-ref refs/sync/upstream "$UPSTREAM_SHA"
+          git update-ref refs/sync/fork "$FORK_SHA"
+          git fetch --no-tags https://github.com/Tr0sT/multica.git "$GITHUB_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git update-ref refs/sync/pr "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/sync-review"
+          git bundle create "$RUNNER_TEMP/sync-review/multica.bundle" refs/sync/fork refs/sync/upstream refs/sync/pr
+          git bundle verify "$RUNNER_TEMP/sync-review/multica.bundle"
+          {
+            printf 'fork=%s\nupstream=%s\npr=%s\n' "$FORK_SHA" "$UPSTREAM_SHA" "$GITHUB_SHA"
+            printf 'merge_base=%s\n' "$(git merge-base "$FORK_SHA" "$UPSTREAM_SHA")"
+            git log -1 --format='upstream_date=%cI' "$UPSTREAM_SHA"
+          } | tee "$RUNNER_TEMP/sync-review/revisions.txt"
+      - name: Report merge conflicts without modifying a remote branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Sync preparation'
+          git config user.email 'sync-preparation@users.noreply.github.com'
+          status=0
+          git merge --no-commit --no-ff "$UPSTREAM_SHA" || status=$?
+          test "$status" -le 1
+          git diff --name-only --diff-filter=U | tee "$RUNNER_TEMP/sync-review/conflicts.txt"
+          git diff --stat "$FORK_SHA" > "$RUNNER_TEMP/sync-review/merge-stat.txt"
+          printf 'merge_exit=%s\n' "$status" >> "$RUNNER_TEMP/sync-review/revisions.txt"
+      - name: Upload public history and merge diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: multica-pr19-sync-review
+          path: ${{ runner.temp }}/sync-review/
+          retention-days: 2
+          if-no-files-found: error
