@@ -32,6 +32,7 @@ import (
 const ChecksumManifestName = "checksums.txt"
 
 const defaultReleaseAPIBaseURL = "https://api.github.com"
+const releaseRepository = "Tr0sT/multica"
 
 // MULTICA_RELEASE_API_BASE_URL points at a GitHub Releases API-compatible
 // mirror. MULTICA_RELEASE_DOWNLOAD_BASE_URL points at an artifact mirror
@@ -254,7 +255,7 @@ func verifyAssetSHA256(data []byte, expectedHex, assetName string) error {
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/multica-ai/multica/releases/tags/"+url.PathEscape(tag), nil)
+	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/"+releaseRepository+"/releases/tags/"+url.PathEscape(tag), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -277,10 +278,10 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// FetchLatestRelease fetches the latest release tag from the multica GitHub repo.
+// FetchLatestRelease fetches the latest release tag from the fork's release source.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/multica-ai/multica/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/"+releaseRepository+"/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -346,17 +347,6 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew runs `brew upgrade multica-ai/tap/multica`.
-// Returns the combined output and any error.
-func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", "multica-ai/tap/multica")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
-	}
-	return string(out), nil
-}
-
 func updateDownloadTimeoutOrDefault(timeout time.Duration) time.Duration {
 	if timeout <= 0 {
 		return DefaultUpdateDownloadTimeout
@@ -381,13 +371,13 @@ func fetchURLBytes(url string, timeout time.Duration) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// UpdateViaDownload downloads the latest release binary from GitHub and replaces
+// UpdateViaDownload downloads the requested release from the configured source and replaces
 // the current executable in-place. Returns the combined output message and any error.
 func UpdateViaDownload(targetVersion string) (string, error) {
 	return UpdateViaDownloadWithTimeout(targetVersion, DefaultUpdateDownloadTimeout)
 }
 
-// UpdateViaDownloadWithTimeout downloads the latest release binary with a caller-selected timeout.
+// UpdateViaDownloadWithTimeout downloads the requested release with a caller-selected timeout.
 func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Duration) (string, error) {
 	// Determine current binary path.
 	exePath, err := selfexec.Resolve()

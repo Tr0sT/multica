@@ -10,6 +10,7 @@
   },
   "exports": {
     "./navigation": "./navigation/index.ts",
+    "./dev-toolbar": "./dev-toolbar/index.ts",
     "./common/actor-avatar": "./common/actor-avatar.tsx",
     "./common/appearance-sync": "./common/appearance-sync.tsx",
     "./common/cli-install-command": "./common/cli-install-command.tsx",
@@ -66,6 +67,7 @@
     "./dingtalk": "./dingtalk/index.ts",
     "./wecom": "./wecom/index.ts",
     "./telegram": "./telegram/index.ts",
+    "./mattermost": "./mattermost/index.ts",
     "./invitations": "./invitations/index.ts",
     "./onboarding": "./onboarding/index.ts",
     "./star-prompt": "./star-prompt/index.ts",

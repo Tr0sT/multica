@@ -2,6 +2,8 @@
 
 Deploy Multica on your own infrastructure in minutes.
 
+For native NixOS packages and systemd services, see [NixOS deployment](nix/README.md).
+
 ## Architecture
 
 | Component | Description | Technology |

@@ -23,6 +23,7 @@ import { useNavigation } from "../../navigation";
 import { IntegrationChannelIcon } from "../../settings/components/integration-channel-icon";
 import { ChannelDisconnectDialog } from "../../settings/components/channel-disconnect-dialog";
 import { ChannelConnectDialog } from "../../settings/components/channel-connect-dialog";
+import { MattermostEditButton } from "../../settings/components/mattermost-tab";
 import {
   DingTalkBotGroups,
   getDingTalkBotIdentity,
@@ -66,7 +67,9 @@ function AgentChannelContact({
     enabled: channel === "dingtalk",
   });
   const name =
-    connection.channel === "wecom"
+    connection.channel === "mattermost"
+      ? connection.installation.bot_username
+      : connection.channel === "wecom"
       ? connection.installation.bot_name
       : (data?.bot_identities?.[installation.id]?.bot_name ??
         getDingTalkBotIdentity(data?.groups ?? [], installation.id)?.bot_name);
@@ -208,7 +211,7 @@ function AgentChannelRow({
       ? identity?.bot_name
       : connection.channel === "wecom"
         ? connection.installation.bot_name
-        : connection.channel === "telegram" &&
+        : (connection.channel === "telegram" || connection.channel === "mattermost") &&
             connection.installation.bot_username
           ? `@${connection.installation.bot_username}`
           : undefined;
@@ -246,6 +249,11 @@ function AgentChannelRow({
               </span>
             ) : null}
           </div>
+          {connection.channel === "mattermost" && connection.installation.server_url ? (
+            <p className="truncate text-caption text-muted-foreground">
+              {connection.installation.server_url}
+            </p>
+          ) : null}
           <span
             className={
               identityIssue
@@ -274,6 +282,9 @@ function AgentChannelRow({
             <ExternalLink />
             {t(($) => $.channels.open)}
           </Button>
+        ) : null}
+        {canManage && connection.channel === "mattermost" ? (
+          <MattermostEditButton installation={connection.installation} />
         ) : null}
         {canManage ? (
           <DropdownMenu>

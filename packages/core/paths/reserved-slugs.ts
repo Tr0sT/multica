@@ -315,6 +315,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "sdk",
   "tokens",
   "cli",
+  "mattermost",
 
   // DingTalk account-bind route
   // `/dingtalk/bind` is a global pre-workspace route where a member links their

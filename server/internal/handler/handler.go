@@ -31,6 +31,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
 	"github.com/multica-ai/multica/server/internal/integrations/ghsnapshot"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	"github.com/multica-ai/multica/server/internal/integrations/mattermost"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
@@ -401,6 +402,16 @@ type Handler struct {
 	// The process owner starts and joins it; the synchronous event bus only
 	// enqueues EventChatDone work.
 	TelegramOutbound *telegram.Outbound
+
+	// MattermostInstall owns the Mattermost bot install lifecycle (register a
+	// pasted server URL + bot access token / list / revoke) and the at-rest
+	// encryption of each token. Nil unless MULTICA_MATTERMOST_SECRET_KEY is set.
+	MattermostInstall *mattermost.InstallService
+	MattermostFiles   *mattermost.FileLinks
+	// MattermostBindingTokens mints/redeems the user-binding tokens behind the
+	// "link your Mattermost account" prompt. Nil unless Mattermost is configured.
+	MattermostBindingTokens *mattermost.BindingTokenService
+	MattermostOutbound      *mattermost.Outbound
 
 	// channelFileDelivery names the channel types that can, IN THIS
 	// DEPLOYMENT, carry a file the agent produced the last hop into the
@@ -825,19 +836,6 @@ func (h *Handler) NotifyRuntimeRecovered(_ context.Context, workspaceID string) 
 		return
 	}
 	h.PublishRuntimeRefresh(workspaceID, "system", "", "heartbeat_recovery")
-}
-
-// publishTask is publish() plus a TaskID hint so the realtime layer can route
-// the event to the per-task scope rather than the whole workspace.
-func (h *Handler) publishTask(eventType, workspaceID, actorType, actorID, taskID string, payload any) {
-	h.Bus.Publish(events.Event{
-		Type:        eventType,
-		WorkspaceID: workspaceID,
-		ActorType:   actorType,
-		ActorID:     actorID,
-		TaskID:      taskID,
-		Payload:     payload,
-	})
 }
 
 // publishChat is publish() plus the chat session routing hints. actorID must

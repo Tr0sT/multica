@@ -1,0 +1,383 @@
+---
+title: Mattermost Bot
+description: Connect a Multica agent to a bot account on your own Mattermost server for direct messages, channel mentions, threads, and /issue.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Multica connects to a bot account that you create in your own Mattermost server. One bot maps to one Multica agent. Create a separate bot for each agent that needs its own Mattermost identity.
+
+Mattermost support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/multica-ai/multica/issues).
+
+Opening the link only previews the account. Check the Mattermost username, server, workspace, and signed-in Multica account, then select **Link account**. Do not confirm a link sent by someone else for an account you do not own. Replacing the server or bot disconnects its old user/chat routes and invalidates old links; the Multica chat history is retained.
+
+## Chat participants and visibility
+
+The Chat list and header show the Mattermost username for direct conversations and the channel name for group threads. These names are saved with incoming messages; an older chat without a saved name is updated when its next message arrives.
+
+Workspace owners and admins can use **Chat owner** to view their own chats, all members’ chats, or one member’s chats, including other admins. Inspection is read-only and does not mark the owner's messages as read. Sending, renaming, pinning, archiving and deleting remain restricted to the chat owner. Other workspace members can only list and open their own chats.
+
+The filter selects the Multica chat owner. For Mattermost users without a linked Multica account, this is the bot installer; the Mattermost username identifies the actual correspondent.
+
+## Before you start
+
+- A Multica workspace owner or admin must connect the bot.
+- The Multica API server must be able to reach your Mattermost server over HTTPS at an operator-approved URL. Because Mattermost is self-hosted, this is often an internal address rather than a public one.
+- Bot accounts must be enabled in Mattermost (**System Console → Integrations → Bot Accounts**).
+- You need the bot's access token. Treat it as a password.
+
+## 1. Create the bot account
+
+1. In Mattermost, open **System Console → Integrations → Bot Accounts** and make sure bot account creation is enabled.
+2. Open **Integrations → Bot Accounts** from the main menu of a team, then click **Add Bot Account**.
+3. Give it a username — this is the name members will `@`-mention — plus a display name and icon.
+4. Click **Create Bot Account** and copy the token it shows you. Mattermost shows it once.
+5. Add the bot to the channels it should work in. A bot only receives messages from channels it is a member of.
+
+<Callout type="warning">
+Never paste the token into an issue, chat message, log, or source repository. If it is exposed, revoke it in **Integrations → Bot Accounts** and reconnect the bot with a replacement token.
+</Callout>
+
+<Callout type="info">
+Use a **bot account**, not a personal access token. Multica refuses a personal token: its own posts would come back in as inbound messages, and the bot would answer itself.
+</Callout>
+
+## 2. Connect it to an agent
+
+1. In Multica, open **Agents**, select an agent, and open **Integrations**.
+2. Click **Connect Mattermost**.
+3. Paste your Mattermost server URL (for example `https://mattermost.example.com`) and the bot access token.
+4. Choose **Who can use this bot**.
+5. Choose **History sent to agent** and, for **Chat history**, the period. Click **Connect**.
+
+Multica calls your server to verify the token, confirms the account is a bot, encrypts the token, and opens one supervised WebSocket connection. A bot already connected to another agent or workspace must be disconnected there first.
+
+You can connect multiple bots from the same or different servers to one workspace. Each agent has its own bot token, connection, context setting, and conversation routes. One Mattermost bot can belong to only one agent, and each agent can have one Mattermost bot.
+
+### Who can use the bot
+
+- **Linked Multica workspace members** (default): requires account linking, current workspace membership, and permission to run the agent.
+- **Selected Mattermost accounts**: enter up to 100 `@usernames`, separated by commas or new lines. New entries are verified on the connected Mattermost server and saved by account ID; renaming an account does not transfer its access to someone else. Only listed accounts can use the bot, even if others have linked Multica accounts. An empty list blocks everyone. As with **Any Mattermost user**, no Multica account is required and requests use the installer's permissions, tools and connected apps. Removing an entry blocks its next request.
+- **Any Mattermost user**: accepts direct messages and addressed channel messages without a Multica account or account linking. Requests run on behalf of the bot installer, who must remain a workspace member with permission to run the agent. These users can use the agent’s tools and connected apps; the resulting Multica chats belong to the installer. No Multica accounts or memberships are created.
+
+Replies stay where the bot was invoked: in the direct conversation or the original channel thread. Direct conversations remain separate. Changing access mode applies to new requests without reconnecting the bot, and each mode keeps separate Multica conversation history. Owners and admins can change it with **Edit** beside the connected bot.
+
+In **Selected Mattermost accounts** mode, **Reply to accounts outside the list** chooses either a text message or one random image from a set uploaded from your computer. Add or remove images individually; each new reply picks one independently, so repeats are possible. Existing single-image settings remain a set of one. Images can be PNG, JPEG, GIF or WebP up to 5 MiB each; text can contain up to 4000 characters. Leaving text empty keeps the standard access-denied message. The bot sends the reply directly through Mattermost, without creating a chat or starting an agent, so no agent tokens are used. Images are sent as attachments without a caption. Unaddressed channel messages and duplicate deliveries do not trigger another reply. If an image is unavailable or Mattermost rejects its upload, the standard text refusal is sent instead.
+
+### Choose the context
+
+- **Current message only** (default): no extra Mattermost history is sent to the agent, including the thread root.
+- **Whole thread**: load the thread containing the request, up to that message. A top-level request has no earlier thread messages.
+- **Chat history**: load messages and replies from the current channel or direct message for the last **1 hour, 6 hours, 24 hours, 3 days, 7 days, 30 days, 60 days, 90 days, or 1 year (365 days)**, ending at the request. **No limit** removes the date cutoff; the message, size, and read-budget limits below still apply.
+
+For a summary bot, select **Whole thread**, then mention it inside the discussion: `@summary summarize the decisions, action items, owners, and open questions`. Choose **Chat history** for summaries across discussions in the current channel. The adapter never follows a message URL to read a different channel.
+
+Selected history is saved with the request in Multica and sent to the agent's model, including other participants' messages. Existing Multica conversation history is separate: `/new` and `/clear` reset that conversation's context, but the configured Mattermost history can be loaded again on the next request. To change the selection, choose **Edit** next to the connected bot in the agent's Integrations tab or **Settings → Messaging → Mattermost**, then save. No access token is needed. Changes apply automatically, usually within 30 seconds.
+
+History includes text, authors, timestamps, post links and, when enabled, attachment references, with at most 1,000 posts and 128 KiB of serialized entries per request, 4,000 characters per post, and a bounded page/time budget. Larger histories are marked partial and the agent is instructed to disclose that limit. Read failures are marked unavailable instead of silently producing a summary from incomplete input. File contents are not downloaded automatically. More history increases model context usage.
+
+### Read history on demand
+
+An agent can keep **Current message only** and fetch additional history when the request needs it. Assign the shared `mattermost-readonly` skill (source: `deploy/nord/skills/mattermost-readonly`) and set `MATTERMOST_URL` and `MATTERMOST_TOKEN` in that agent's secret environment. Use the matching bot's token; `MULTICA_TOKEN` cannot authenticate to Mattermost. The runtime must reach the Mattermost server and have Python 3.
+
+Mattermost runs receive the source `channel_id`, `thread_id` and `post_id` from the first turn, refreshed on each subsequent run. A top-level group message is its own thread root; a direct message outside a thread has an empty thread ID. These IDs stay in the agent's run context. The skill reads channel and thread pages as needed; the saved Multica transcript is not the whole Mattermost channel.
+
+This configuration is separate from automatic history settings. The helper only reads, but the raw token retains all permissions of its bot account. Token rotation requires updating the agent's environment; disconnecting the integration does not remove this separately configured credential.
+
+## First use and account binding
+
+This account-linking flow applies only to **Linked Multica workspace members** mode.
+
+The first time a member messages the bot, it sends a single-use Multica account-binding link. Open it, sign in to the same Multica workspace, review and confirm the account link, then return to Mattermost and send the message again. The link expires after 15 minutes; message the bot again to get a new link.
+
+In a channel, the bot never posts the bearer link publicly. It asks the sender to open a direct message first.
+
+Only current workspace members can use the bot. Membership is checked again for every message.
+
+## Use the bot
+
+### Direct messages
+
+Open a direct message with the bot and send text. No `@`-mention is required.
+
+### Channels and group messages
+
+Add the bot to a channel, then `@`-mention it. Accepted messages continue the Multica conversation for that thread; unaddressed channel chatter is not collected.
+
+Sending only `@multica` also invokes the agent, with its configured instructions and selected context.
+
+A mention-free reply also reaches the bot when the thread's root post was written by the bot itself — so a conversation the bot started can continue without repeating its name. In a thread rooted by a person, mention the bot each time.
+
+Each thread is its own Multica chat. Two `@`-mention threads in one channel are two independent conversations, and a direct message is one continuous conversation.
+
+### Commands
+
+- `@multica /issue <title>` creates a Multica issue; following lines are used as its optional description. `@multica /issue` without a title returns usage guidance.
+- `@multica /new` creates a new empty Multica Chat and routes later messages in that thread to it. `@multica /new <message>` creates the Chat with that message as its first turn.
+- `@multica /clear` keeps the current Multica Chat and applies a fresh agent-visible context to the next non-empty message.
+
+<Callout type="info">
+Examples use `@multica`; replace it with your bot’s username. Include the mention even in direct messages so Mattermost sends ordinary message text instead of executing a native slash command.
+</Callout>
+
+### Replies and supported content
+
+The bot replies in the thread the request came from, renders the agent's Markdown natively, and splits long replies under the server's maximum post size. The reply is posted once the agent finishes rather than streamed.
+
+The bot can send images and files produced by the agent. The agent uses `multica attachment upload <local-path>`; after the reply text, each attachment appears in a separate post in the same thread. Replies containing only attachments are supported. This requires Multica object storage and the bot's `upload_file` permission in Mattermost. Each file is limited to 100 MiB, or the Mattermost server's lower limit. If a file is unavailable or its upload is rejected permanently, the bot posts a notice and continues with the remaining files.
+
+**Attachments sent to agent** applies to the current message and the selected history:
+
+- **Send links** (default): pass filenames, MIME types, sizes and temporary download links. File contents, thumbnails and video frames are not loaded into the conversation. The agent is instructed to download only files needed for the user's request with `multica attachment download '<download_url>' -o ./attachments`.
+- **Do not send**: omit attachment references. Messages containing text still work; file-only messages receive an unsupported-content notice when addressed to the bot.
+
+At most 50 file references are included per request, prioritizing the current message and then recent history. Missing metadata is marked unavailable and truncated lists are marked partial. File-only direct messages also reach the agent in link mode; without an instruction, it asks what to do. Unaddressed channel files stay silent.
+
+Links require `MULTICA_PUBLIC_URL` and a matching Multica CLI version on the agent runtime. They grant access to a single file for 24 hours and must be kept private. Disabling or changing the installation, moving it to another workspace, deleting the source post or losing bot access makes old links unusable. Expired links require the user to share the file again or invoke the bot with history that includes it. Incoming link mode does not require object storage; files remain in Mattermost until explicitly downloaded.
+
+There is no typing indicator: Mattermost exposes typing only over its WebSocket API, with no server-side equivalent Multica can call for a message it is already processing.
+
+### Delivery recovery
+
+When a run fails with no automatic retry pending, the bot posts a short error notice in the original conversation. Internal error details stay in Multica. Notices are queued for new failures, so updating the server does not replay historical failures.
+
+Replies and delivered chunks are recorded in the database. The worker resumes after a restart and retries definite transient rejections. If a POST response is lost, it searches for the bot’s delivery marker instead of blindly sending a duplicate. An unconfirmed outcome stays pending for reconciliation and is logged; inspect the Mattermost thread and the stored Multica reply before any manual resend. Reconciliation scans at most 4000 posts. Messages sent while the inbound WebSocket is disconnected are not replayed by this adapter.
+
+## Manage connections
+
+Open **Settings → Messaging → Mattermost** to view connected bots and the server each one belongs to. Owners and admins can disconnect one. Disconnecting closes the connection and stops outbound replies but preserves Multica conversations and audit records.
+
+### CLI management
+
+The fork exposes the same integration through `multica teambridge`. `multica
+mattermost` is an alias. All commands return structured JSON with `--output json`
+and honor the normal `--profile`, `--workspace-id`, and Multica authentication
+settings. They require a human CLI context; daemon tasks and task-scoped tokens
+cannot use them for administration.
+
+```bash
+multica --profile production teambridge list --output json
+```
+
+The list response contains `installations`, `configured`, and
+`install_supported`. Each installation includes the agent binding, server and bot
+identity, context selection, access mode, allowed accounts, refusal reply,
+active/revoked status, installer, and timestamps. Bot tokens are never returned by
+`list`, `install` or `update`. The list includes revoked installations so an export does not silently
+lose their public settings.
+
+To connect or reactivate a bot, put the request in a private JSON file outside
+your source repository:
+
+```json
+{
+  "server_url": "https://teambridge.example.com",
+  "access_token": "<bot-access-token>",
+  "context": {"mode": "channel", "lookback_hours": 8760},
+  "access_mode": "allowlist",
+  "allowed_usernames": ["sergey"],
+  "denied_reply": {"mode": "text", "text": "Please contact the bot administrator."}
+}
+```
+
+```bash
+chmod 600 ./bot-install.json
+multica teambridge install --agent <agent-uuid> \
+  --config-file ./bot-install.json --output json
+```
+
+`--config-stdin` accepts the same JSON from a secret manager or other pipe.
+There is no inline token flag. Remove a temporary credential file when finished.
+Installing activates the bot and records the current user as installer. Installing
+over an existing binding can rotate its token; changing its server or bot account
+also disconnects old account/chat routes. Use `update` for ordinary settings
+changes, which preserve the token and original installer.
+
+The update file contains only the editable settings:
+
+```json
+{
+  "context": {"mode": "thread", "lookback_hours": 0},
+  "attachment_mode": "links",
+  "access_mode": "allowlist",
+  "allowed_usernames": ["sergey"],
+  "denied_reply": {"mode": "text", "text": "Please contact the bot administrator."}
+}
+```
+
+```bash
+multica teambridge update <installation-uuid> \
+  --config-file ./bot-settings.json --output json
+multica teambridge revoke <installation-uuid> --output json
+```
+
+Use `allowed_usernames: []` to block everyone in `allowlist` mode. Omit
+`allowed_usernames` for `members` and `anyone`. Context mode is `message`, `thread`
+or `channel`; channel lookback accepts 0, 1, 6, 24, 72, 168, 720, 1440, 2160 or
+8760 hours. Zero means no date cutoff for channel context. List responses retain
+the server's compatibility shapes, including `channel_extended` for extended
+history and `image` for a one-image refusal.
+
+#### Back up or restore bot tokens
+
+Human workspace owners and admins can use the dedicated token contract:
+
+```bash
+multica --profile production teambridge token export <installation-uuid> \
+  --output-file ./credentials/bot-token --output json
+multica --profile production teambridge token import <installation-uuid> \
+  --token-file ./credentials/bot-token --output json
+```
+
+Export writes the exact stored token to a **new** file, without a trailing
+newline. On POSIX the file has mode `0600` and newly created directories have mode
+`0700`. Existing files, symlinks and directory junctions are refused, including
+symlinked parent directories. Windows uses the destination directory's ACLs;
+choose a directory restricted to your account. Import accepts a private regular
+file of at most 16 KiB, or `--token-stdin` for a protected pipe. It trims surrounding
+whitespace, as token installation does. There is no inline token flag.
+
+Stdout contains only `installation_id`, `workspace_id` and either `exported: true`
+or `updated: true/false`. Tokens and their hashes or lengths are not printed,
+including with `--debug`. API redirects are refused. Export reads the encrypted
+value saved in Multica and does not contact Mattermost, so a temporary Mattermost
+outage does not prevent a backup.
+
+Import changes only the encrypted credential. A changed token is verified against
+the installation's saved server and bot account before it is stored. The
+installation ID, agent binding, original installer, context, access settings,
+refusal images, account/chat bindings and active/revoked status are preserved.
+Restoring a revoked installation's credential does not reactivate it. Importing
+the same token again returns `updated: false` without a database write or
+connection reload; a changed active credential reloads its existing connection.
+Invalid, revoked-in-Mattermost and other-bot tokens are rejected without replacing
+the existing credential.
+
+Both the server and CLI must support these commands. The server endpoints are
+`GET` and `PUT /api/workspaces/{workspace-id}/mattermost/installations/{installation-id}/token`.
+GET returns `installation_id`, `workspace_id` and `access_token`; PUT accepts
+`access_token` and returns `installation_id`, `workspace_id` and `updated`.
+Responses use `Cache-Control: no-store`. Workspace membership alone is
+insufficient: the server requires a human owner/admin and rejects machine and
+task credentials. An installation from another workspace cannot be selected by
+substituting its UUID.
+
+Store exported credentials privately and remove temporary files after use.
+**Never publish snapshots containing secrets to a public Git repository.**
+
+#### Verify exported account identities
+
+`verify` checks an active bot token and optional allowed-account IDs through
+read-only TeamBridge lookups. This helps a configuration importer detect a
+username that was renamed or later assigned to a different account before it
+grants access. Put the request in a private file or pass it on stdin:
+
+```json
+{
+  "server_url": "https://teambridge.example.com",
+  "access_token": "<bot-access-token>",
+  "expected_bot_user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "allowed_users": [
+    {"id": "bbbbbbbbbbbbbbbbbbbbbbbbbb", "username": "sergey"}
+  ]
+}
+```
+
+```bash
+multica teambridge verify --config-file ./bot-verification.json --output json
+```
+
+The result is `{"verified":true}` on success. An omitted account ID requests a
+username existence check. The CLI machine must be able to reach the TeamBridge
+server over HTTPS. Verification does not install a bot, change accounts, send a
+message, or start an agent.
+
+#### Transfer refusal images
+
+```bash
+multica teambridge image upload ./denied.png --output json
+multica teambridge image download <attachment-uuid> \
+  --output-file ./denied.png --output json
+```
+
+These commands transfer standalone workspace images for refusal replies. They
+validate PNG, JPEG, GIF or WebP content up to 5 MiB and reject images associated
+with a task, chat, issue or comment. Downloads return attachment metadata and the
+written file path; uploads return the new attachment ID. To use uploaded images,
+set `denied_reply` in an install/update request:
+
+```json
+{
+  "mode": "images",
+  "image_attachment_ids": ["<first-attachment-uuid>", "<second-attachment-uuid>"]
+}
+```
+
+The general `multica attachment upload` command remains for files produced inside
+a task. Its task attachments are unsuitable for these standalone refusal images.
+
+[`multica-declarative`](https://github.com/Tr0sT/multica-declarative) uses these
+commands for optional TeamBridge export and import, including actual image bytes,
+agent-name remapping, account identity checks, and idempotent settings updates.
+Its ordinary declarations continue to work with the official CLI. Full export
+with `--with-teambridge` includes actual bot token values automatically, and full
+import restores managed tokens for existing installations without reinstalling
+them. `--without-secrets` / `secrets: omit` excludes secrets from export and leaves
+existing secrets unmanaged during import, including avoiding local token-file
+reads. Snapshots contain supported declarative configuration, not every internal
+secret or all deployment data: account/chat bindings, encryption keys and runtime
+conversation state are outside this configuration contract.
+
+## Self-hosting setup
+
+Set a stable 32-byte encryption key before starting the API server:
+
+```dotenv
+MULTICA_MATTERMOST_SECRET_KEY=<base64-encoded 32-byte key>
+MULTICA_MATTERMOST_ALLOWED_SERVERS=https://mattermost.example.com
+```
+
+Generate one with `openssl rand -base64 32`. Keep it long-term: losing or rotating it makes existing bot tokens unreadable and requires reconnecting each bot.
+
+The operator must set `MULTICA_MATTERMOST_ALLOWED_SERVERS` to a comma-separated list of exact HTTPS base URLs. Include any deployment sub-path. HTTP, credentials in URLs, queries, fragments, and unapproved destinations are refused before any connection. Removing a URL also blocks existing installations on their next connection or send.
+
+Binding links use `MULTICA_APP_URL`, falling back to `FRONTEND_ORIGIN`. The resulting address must be reachable by members.
+
+<Callout type="warning">
+Multica never follows an HTTP redirect when talking to your Mattermost server, so a misconfigured redirect cannot send the bot token to another host. If your deployment redirects (for example HTTP to HTTPS), enter the final URL — the one you would use in a browser — rather than the one that redirects.
+</Callout>
+
+## Verifying a change against a real server
+
+The adapter ships with an end-to-end suite that runs against a real Mattermost,
+not a fixture. It is the only thing that can catch the adapter being wrong about
+Mattermost rather than wrong about itself, so run it after changing the adapter.
+
+```bash
+eval "$(./scripts/mattermost-e2e-up.sh)"    # start a throwaway server, provision it, export the env
+(cd server && go test -tags=mattermoste2e ./internal/integrations/mattermost/ -run E2E -v -count=1)
+./scripts/mattermost-e2e-down.sh             # remove the container
+```
+
+The bootstrap requires Docker, curl, Node.js, and OpenSSL. It uses random
+passwords, binds only to localhost, and refuses to replace an existing container.
+
+The suite is behind the `mattermoste2e` build tag and an env gate, so `make test`
+never reaches the network. The bootstrap script creates its own admin, team, bot
+account, channel and second user inside one container, so tearing that container
+down is a complete cleanup.
+
+## Troubleshooting
+
+- **Bot cannot be verified**: first check the server URL and the API server's network or proxy. Generate a new token only when Mattermost itself rejects the current one — the error message distinguishes the two cases.
+- **"This token belongs to a user account"**: you pasted a personal access token. Create a bot account and use its token.
+- **No reply in a channel**: confirm the bot is a member of that channel, and that the message `@`-mentions it or is a reply in a thread the bot started.
+- **`@channel` does not trigger the bot**: this is deliberate. The bot answers only its own name, so a broadcast mention does not page every bot in the channel.
+- **Binding link expired**: send the bot another direct message and use the newest link.
+- **Bot does not run**: check whether the agent is archived and whether its [runtime](/daemon-runtimes) is online.
+
+## Next steps
+
+- [Chat integrations](/channels) — compare platforms and understand session and identity handling.
+- [Chat](/chat) — how bot messages become agent runs.
+- [Issues](/issues) — the work created by `@multica /issue`.

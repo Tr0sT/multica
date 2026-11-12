@@ -31,23 +31,37 @@ func TestReleaseSourceOverridesGitHub(t *testing.T) {
 	}
 }
 
-func TestFetchLatestReleaseUsesConfiguredAPI(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/multica-ai/multica/releases/latest" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(GitHubRelease{TagName: "v9.8.7"})
-	}))
-	defer server.Close()
-	t.Setenv(releaseAPIBaseURLEnv, server.URL)
+func TestFetchReleaseUsesForkRepository(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		path  string
+		fetch func() (*GitHubRelease, error)
+	}{
+		{"latest", "/repos/Tr0sT/multica/releases/latest", FetchLatestRelease},
+		{"tag", "/repos/Tr0sT/multica/releases/tags/v9.8.7", func() (*GitHubRelease, error) {
+			return fetchReleaseByTag("v9.8.7")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.path {
+					t.Errorf("release path = %q, want %q", r.URL.Path, tt.path)
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(GitHubRelease{TagName: "v9.8.7"})
+			}))
+			defer server.Close()
+			t.Setenv(releaseAPIBaseURLEnv, server.URL)
 
-	got, err := FetchLatestRelease()
-	if err != nil {
-		t.Fatalf("FetchLatestRelease() error = %v", err)
-	}
-	if got.TagName != "v9.8.7" {
-		t.Fatalf("release tag = %q, want v9.8.7", got.TagName)
+			got, err := tt.fetch()
+			if err != nil {
+				t.Fatalf("fetch release: %v", err)
+			}
+			if got.TagName != "v9.8.7" {
+				t.Fatalf("release tag = %q, want v9.8.7", got.TagName)
+			}
+		})
 	}
 }

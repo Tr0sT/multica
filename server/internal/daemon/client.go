@@ -204,6 +204,7 @@ func daemonHTTPClientCapabilities() string {
 
 func daemonCommonCapabilities() []string {
 	return []string{
+		protocol.DaemonCapabilityAgentPluginBundlesV1,
 		protocol.DaemonCapabilitySkillBundlesV1,
 		protocol.DaemonCapabilityCoalescedCommentsV1,
 		protocol.DaemonCapabilityLocalWorktreeV1,
@@ -716,6 +717,15 @@ func (c *Client) ReportTaskEnvironmentConfigs(ctx context.Context, taskID string
 	}
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/environment-configs", taskID), map[string]any{
 		"environments": envs,
+	}, nil)
+}
+
+// ReportTaskContextReceipt records which context sources this run was handed
+// (MUL-9013). The server keeps one receipt per task; a second report for the
+// same task (the fresh-session retry) replaces the first.
+func (c *Client) ReportTaskContextReceipt(ctx context.Context, taskID string, receipt ContextReceipt) error {
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/context-receipt", taskID), map[string]any{
+		"receipt": receipt,
 	}, nil)
 }
 

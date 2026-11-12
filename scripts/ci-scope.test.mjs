@@ -74,6 +74,17 @@ test("scheduled and manual runs select every scope without a path-filter result"
   }
 });
 
+test("same-repository upstream sync PR selects all scopes on the combined tree", () => {
+  for (const files of [[], ["packages/views/issues/components/advanced-filter-panel.tsx"]]) {
+    const { quality_only, ...scopes } = decideScopes("pull_request", filterFiles(files), true);
+    assert.ok(Object.values(scopes).every((value) => value === "true"));
+    assert.equal(quality_only, "false");
+    assert.equal(decideScopes("push", filterFiles(files), true).full, "false");
+    assert.equal(decideScopes("pull_request", filterFiles(files)).full, "false");
+  }
+  assert.match(workflow, /FORK_SYNC_PR:.*startsWith\(github\.event\.pull_request\.head\.ref, 'sync\/upstream-'\)/);
+});
+
 test("missing, malformed and unsupported filter results fail closed", () => {
   for (const value of [undefined, "", "unknown", true]) {
     assert.throws(() => decideScopes("push", { ...filterFiles([]), backend: value }), /backend/);
@@ -172,6 +183,13 @@ for (const gate of ["frontend", "backend"]) {
     assert.throws(() => checkGate(extra, mapping), /Unchecked dependency/);
   });
 }
+
+test("the backend gate owns the three-platform installer matrix", () => {
+  assert.equal(productionMapping("backend").installer, "installer");
+  assert.match(jobs.installer, /^        os: \[ubuntu-latest, macos-26-intel, windows-latest\]$/m);
+  assert.match(jobs["macos-runtime"], /^    runs-on: macos-26-intel$/m);
+  assert.doesNotMatch(jobs.installer, /continue-on-error:/);
+});
 
 // The gates trust job results, and continue-on-error reports a failed step as
 // a success, so a gate cannot see a failure behind it.

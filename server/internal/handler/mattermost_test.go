@@ -1,0 +1,155 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/multica-ai/multica/server/internal/integrations/mattermost"
+	"github.com/multica-ai/multica/server/internal/testutil"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
+)
+
+func TestUpdateMattermostInstallationRejectsInvalidInput(t *testing.T) {
+	h := &Handler{MattermostInstall: &mattermost.InstallService{}}
+	validID := "11111111-1111-4111-8111-111111111111"
+	for _, tc := range []struct{ workspace, installation, body string }{
+		{"bad-id", validID, `{"context":{"mode":"message"}}`},
+		{validID, "bad-id", `{"context":{"mode":"message"}}`},
+		{validID, validID, `{`},
+		{validID, validID, `{}`},
+		{validID, validID, `{"context":null}`},
+		{validID, validID, `{"context":{}}`},
+		{validID, validID, `{"context":{"mode":"unknown"}}`},
+		{validID, validID, `{"context":{"mode":"channel","lookback_hours":4}}`},
+		{validID, validID, `{"attachment_mode":"invalid"}`},
+		{validID, validID, `{"attachment_mode":""}`},
+		{validID, validID, `{"attachment_mode":null}`},
+		{validID, validID, `{"attachment_mode":true}`},
+		{validID, validID, `{"access_mode":"unknown"}`},
+		{validID, validID, `{"access_mode":""}`},
+		{validID, validID, `{"access_mode":true}`},
+		{validID, validID, `{"access_mode":null}`},
+		{validID, validID, `{"access_mode":"allowlist"}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":null}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":"alice"}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_usernames":["alice/bob"]}`},
+		{validID, validID, `{"allowed_usernames":["alice"]}`},
+		{validID, validID, `{"access_mode":"anyone","allowed_usernames":["alice"]}`},
+		{validID, validID, `{"access_mode":"allowlist","allowed_users":[{"id":"forged","username":"alice"}]}`},
+		{validID, validID, `{"denied_reply":{"mode":"unknown"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"image","image_attachment_id":"invalid"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"text","image_attachment_id":"11111111-1111-4111-8111-111111111111"}}`},
+		{validID, validID, `{"denied_reply":{"mode":"text","text":12}}`},
+	} {
+		r := testutil.JSONRequest(http.MethodPatch, "/", tc.body)
+		testutil.WithHeaders(r, "X-User-ID", validID)
+		r = testutil.WithURLParams(r, "id", tc.workspace, "installationId", tc.installation)
+		testutil.Call(t, h.UpdateMattermostInstallation, r).Want(http.StatusBadRequest)
+	}
+}
+
+func TestMattermostAccessResponse(t *testing.T) {
+	for _, tc := range []struct{ config, want string }{
+		{`{}`, "members"},
+		{`{"access_mode":"anyone"}`, "anyone"},
+		{`{"access_mode":"allowlist"}`, "allowlist"},
+		{`{"access_mode":"future-mode"}`, "unknown"},
+	} {
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)})
+		if string(response.AccessMode) != tc.want {
+			t.Fatalf("access for %s = %s, want %s", tc.config, response.AccessMode, tc.want)
+		}
+	}
+}
+
+func TestMattermostAttachmentModeResponse(t *testing.T) {
+	for _, tc := range []struct{ config, want string }{
+		{`{}`, "links"}, {`{"attachment_mode":"links"}`, "links"},
+		{`{"attachment_mode":"none"}`, "none"}, {`{"attachment_mode":"future"}`, "unknown"},
+	} {
+		if got := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(tc.config)}).AttachmentMode; string(got) != tc.want {
+			t.Fatalf("attachment mode = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestMattermostAllowedUsersResponse(t *testing.T) {
+	response := mattermostInstallationToResponse(db.ChannelInstallation{
+		Config: []byte(`{"access_mode":"allowlist","allowed_users":[{"id":"alice-id","username":"alice"}]}`),
+	})
+	if len(response.AllowedUsers) != 1 || response.AllowedUsers[0].ID != "alice-id" || response.AllowedUsers[0].Username != "alice" {
+		t.Fatalf("allowlist missing from response: %+v", response)
+	}
+	for _, config := range []string{`{}`, `{broken`} {
+		if users := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(config)}).AllowedUsers; users == nil {
+			t.Fatal("old and malformed installations must return an empty array")
+		}
+	}
+}
+
+func TestMattermostReplySetsPreserveSingleImageResponseCompatibility(t *testing.T) {
+	first := "11111111-1111-4111-8111-111111111111"
+	second := "22222222-2222-4222-8222-222222222222"
+	for _, raw := range []string{
+		`{"mode":"image","image_attachment_id":"` + first + `"}`,
+		`{"mode":"images","image_attachment_ids":["` + first + `"]}`,
+	} {
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(`{"denied_reply":` + raw + `}`)})
+		if response.DeniedReply.Mode != "image" || response.DeniedReply.ImageAttachmentID != first || len(response.DeniedReply.ImageAttachmentIDs) != 0 {
+			t.Fatalf("single-image API contract changed: %+v", response.DeniedReply)
+		}
+	}
+	response := mattermostInstallationToResponse(db.ChannelInstallation{Config: []byte(`{"denied_reply":{"mode":"images","image_attachment_ids":["` + first + `","` + second + `"]}}`)})
+	if response.DeniedReply.Mode != "images" || len(response.DeniedReply.ImageAttachmentIDs) != 2 || response.DeniedReply.ImageAttachmentID != "" {
+		t.Fatalf("image set would be truncated by an older client: %+v", response.DeniedReply)
+	}
+}
+
+func TestMattermostBindingRequiresExplicitConfirmation(t *testing.T) {
+	// No database is wired: these requests must be rejected before redemption.
+	h := &Handler{MattermostBindingTokens: &mattermost.BindingTokenService{}}
+	for _, body := range []string{`{"token":"token"}`, `{"token":"token","confirmed":false}`} {
+		r := httptest.NewRequest(http.MethodPost, "/api/mattermost/binding/redeem", strings.NewReader(body))
+		r.Header.Set("X-User-ID", "11111111-1111-4111-8111-111111111111")
+		w := httptest.NewRecorder()
+		h.RedeemMattermostBindingToken(w, r)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "confirmation") {
+			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestMattermostInstallationResponseExcludesCredentials(t *testing.T) {
+	response := mattermostInstallationToResponse(db.ChannelInstallation{
+		Config: []byte(`{"server_url":"https://chat.example.com","bot_user_id":"bot","access_token_encrypted":"ciphertext-sentinel","context":{"mode":"channel","lookback_hours":24}}`),
+	})
+	if response.Context.Mode != mattermost.ContextChannel || response.Context.LookbackHours != 24 {
+		t.Fatal("management response lost context settings")
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "token") || strings.Contains(string(encoded), "ciphertext-sentinel") {
+		t.Fatal("management response exposed credentials")
+	}
+}
+
+func TestMattermostExtendedContextResponse(t *testing.T) {
+	for _, hours := range []int{0, 1440, 2160, 8760} {
+		config, err := json.Marshal(map[string]any{
+			"context": mattermost.ContextSettings{Mode: mattermost.ContextChannel, LookbackHours: hours},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := mattermostInstallationToResponse(db.ChannelInstallation{Config: config})
+		if response.Context.Mode != "channel_extended" || response.Context.LookbackHours != 0 ||
+			response.Context.ExtendedLookbackHours == nil || *response.Context.ExtendedLookbackHours != hours {
+			t.Fatalf("period %d lost or incompatible with older clients: %+v", hours, response.Context)
+		}
+	}
+}

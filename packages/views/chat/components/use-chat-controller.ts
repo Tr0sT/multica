@@ -176,11 +176,11 @@ const CHAT_VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 1_000_000;
  *  - ChatWindow: the floating FAB overlay (adds resize / expand / minimize).
  *  - ChatPage:   the first-class Chat tab (two-pane thread list + conversation).
  *
- * The only thing the caller supplies is `isActive` — whether its surface is
- * currently on screen — which gates auto-mark-read so a background overlay
- * doesn't silently clear unread state the user hasn't actually seen.
+ * `isActive` gates auto-mark-read so hidden surfaces do not clear unread state.
+ * `creatorId` selects an administrator's inspection list; other members' chats
+ * remain read-only, including their read cursors and deferred drafts.
  */
-export function useChatController(opts?: { isActive?: boolean }) {
+export function useChatController(opts?: { isActive?: boolean; creatorId?: string }) {
   const isActive = opts?.isActive ?? true;
   const { t } = useT("chat");
   const wsId = useWorkspaceId();
@@ -197,9 +197,17 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const { data: members = [], isSuccess: membersLoaded } = useQuery(
     memberListOptions(wsId),
   );
+  const currentMember = members.find((m) => m.user_id === user?.id);
+  const memberRole = currentMember?.role;
+  const canInspectMembers = memberRole === "owner" || memberRole === "admin";
+  const creatorId = canInspectMembers ? opts?.creatorId : undefined;
   const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery(
-    chatSessionsOptions(wsId),
+    chatSessionsOptions(wsId, creatorId),
   );
+  const currentSession = activeSessionId
+    ? sessions.find((s) => s.id === activeSessionId)
+    : null;
+  const isReadOnly = !!currentSession && currentSession.creator_id !== user?.id;
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery(
     projectListOptions(wsId),
   );
@@ -214,13 +222,17 @@ export function useChatController(opts?: { isActive?: boolean }) {
     // The floating window stays mounted while closed; it must not load a
     // persisted session's transcript nobody is looking at.
     enabled: !!activeSessionId && isActive,
+    refetchInterval: isReadOnly && isActive ? 10_000 : false,
   });
 
   const messagePages = activeSessionId ? rawMessagePages?.pages ?? [] : [];
   const allMessages = [...messagePages].reverse().flatMap((page) => page.messages);
 
   const { data: pendingTask, isLoading: pendingTaskLoading } = useQuery(
-    pendingChatTaskOptions(activeSessionId ?? ""),
+    {
+      ...pendingChatTaskOptions(activeSessionId ?? ""),
+      refetchInterval: isReadOnly && isActive ? 10_000 : false,
+    },
   );
   const showSkeleton =
     !!activeSessionId && (messagesLoading || pendingTaskLoading);
@@ -245,7 +257,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // mark-read below.)
   const appForeground = useAppForeground();
   const { restoreDraftRequest, enqueueLocalRestore, handleRestoreDraftApplied } =
-    useChatDraftRestore(activeSessionId, isActive && appForeground);
+    useChatDraftRestore(activeSessionId, isActive && appForeground && currentSession?.creator_id === user?.id);
   const {
     cancelChatTask,
     handleEditQueuedTask,
@@ -281,9 +293,6 @@ export function useChatController(opts?: { isActive?: boolean }) {
     [],
   );
 
-  const currentSession = activeSessionId
-    ? sessions.find((s) => s.id === activeSessionId)
-    : null;
   const isSessionArchived = currentSession?.status === "archived";
   const candidateProjectId = currentSession
     ? currentSession.project_id ?? null
@@ -311,8 +320,6 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const setSessionProject = useSetChatSessionProject();
   const setArchived = useSetChatSessionArchived();
 
-  const currentMember = members.find((m) => m.user_id === user?.id);
-  const memberRole = currentMember?.role;
   const availableAgents = agents.filter(
     (a) => !a.archived_at && canAssignAgent(a, user?.id, memberRole),
   );
@@ -387,7 +394,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const currentHasUnread =
     sessions.find((s) => s.id === activeSessionId)?.has_unread ?? false;
   useEffect(() => {
-    if (!isActive || !appForeground || !activeSessionId) return;
+    if (!isActive || !appForeground || !activeSessionId || isReadOnly) return;
     if (!currentHasUnread) return;
     const sessionId = activeSessionId;
     const timer = setTimeout(() => {
@@ -397,7 +404,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     }, 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- markRead ref stable
-  }, [isActive, appForeground, activeSessionId, currentHasUnread]);
+  }, [isActive, appForeground, activeSessionId, currentHasUnread, isReadOnly]);
 
   const sessionPromiseRef = useRef<Promise<string | null> | null>(null);
   const ensureSession = useCallback(
@@ -454,12 +461,12 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // session. Lives in the shared controller so every surface self-heals.
   useEffect(() => {
     if (getCurrentWsId() !== wsId) return;
-    if (!activeSessionId || !sessionsLoaded) return;
+    if (!isActive || !activeSessionId || !sessionsLoaded || !membersLoaded) return;
     if (sessions.some((s) => s.id === activeSessionId)) return;
     if (hasInFlightPendingTask(qc, activeSessionId)) return;
     uiLogger.info("clearing dangling activeSessionId", { sessionId: activeSessionId });
     setActiveSession(null);
-  }, [wsId, activeSessionId, sessionsLoaded, sessions, qc, setActiveSession]);
+  }, [wsId, isActive, activeSessionId, sessionsLoaded, membersLoaded, sessions, qc, setActiveSession]);
 
   // Upload transport moved into the coordinated-upload engine inside ChatInput
   // (MUL-5181 L2); surfaces only forward whether the affordance exists.
@@ -479,6 +486,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       // Read-only conversation: the agent is retired and can no longer pick up
       // work, so refuse to enqueue a task that would sit orphaned forever. The
       // input is disabled in this state; this is the belt-and-braces guard.
+      if (isReadOnly) return false;
       if (isAgentArchived) {
         apiLogger.warn("sendChatMessage skipped: agent is archived", {
           sessionId: activeSessionId,
@@ -649,6 +657,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       activeSessionId,
       activeAgent,
       isAgentArchived,
+      isReadOnly,
       isAgentAccessRevoked,
       pendingTask,
       pendingTaskId,
@@ -848,6 +857,9 @@ export function useChatController(opts?: { isActive?: boolean }) {
     // identity / lists
     wsId,
     user,
+    members,
+    canInspectMembers,
+    isReadOnly,
     agents,
     availableAgents,
     agentsSettled,

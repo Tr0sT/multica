@@ -4,16 +4,17 @@ The `multica` CLI connects your local machine to Multica. It handles authenticat
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Fork release
 
-```bash
-brew install multica-ai/tap/multica
-```
+Download the CLI archive for your OS and architecture from
+[Tr0sT/multica releases](https://github.com/Tr0sT/multica/releases), verify it
+against the release's `checksums.txt`, and install the extracted `multica` binary
+on your `PATH`. The upstream Homebrew tap and install scripts ship the upstream CLI.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/Tr0sT/multica.git
 cd multica
 make build
 cp server/bin/multica /usr/local/bin/multica
@@ -22,16 +23,21 @@ cp server/bin/multica /usr/local/bin/multica
 ### Update
 
 ```bash
-brew upgrade multica-ai/tap/multica
-```
-
-For install script or manual installs, use:
-
-```bash
 multica update
 ```
 
-`multica update` uses GitHub Releases by default. Self-hosted installations can
+`multica update` and the runtime's web Update action download CLI releases from
+`Tr0sT/multica`, verify their SHA-256 checksum, and replace the installed binary.
+They do not run `brew upgrade`, even for a binary installed under Homebrew.
+The backend's source repository does not select the update source.
+
+Install this fork's CLI once before using either update path: an older CLI still
+contains its old download source, even when connected to the fork's backend.
+Keep fork binaries outside the upstream Homebrew formula's directory so a later
+`brew upgrade` does not overwrite them. Nix-managed binaries must instead be
+updated through their flake input; see [the Nix guide](nix/README.md#cli-and-agent-machines).
+
+Self-hosted installations can
 point the CLI at a GitHub Releases-compatible metadata mirror and an artifact
 mirror without changing the command. To let a daemon poll that source, also
 enable self-update explicitly because self-hosted auto-update is disabled by
@@ -44,10 +50,10 @@ export MULTICA_DAEMON_AUTO_UPDATE=true
 multica update
 ```
 
-The metadata mirror must serve `/repos/multica-ai/multica/releases/latest` and
-`/repos/multica-ai/multica/releases/tags/<tag>`. The artifact mirror must serve
+The metadata mirror must serve `/repos/Tr0sT/multica/releases/latest` and
+`/repos/Tr0sT/multica/releases/tags/<tag>`. The artifact mirror must serve
 `/<tag>/<asset-name>` and preserve the published `checksums.txt` contents.
-When these variables are unset, the GitHub defaults remain unchanged.
+When these variables are unset, the fork's GitHub releases are used.
 
 ## Quick Start
 
@@ -391,7 +397,7 @@ Daemon behavior is configured via flags or environment variables:
 | GC enabled | — | `MULTICA_GC_ENABLED` | `true` (set `false`/`0` to disable) |
 | GC scan interval | — | `MULTICA_GC_INTERVAL` | `2h` |
 | GC TTL (done/cancelled issues) | — | `MULTICA_GC_TTL` | `24h` |
-| GC completed-task TTL (issue tasks) | — | `MULTICA_GC_COMPLETED_TASK_TTL` | `14d` on Multica Cloud, `0` (disabled) elsewhere |
+| GC completed-task TTL (issue tasks) | — | `MULTICA_GC_COMPLETED_TASK_TTL` | `14d` (set `0` to disable) |
 | GC orphan TTL (no `.gc_meta.json`) | — | `MULTICA_GC_ORPHAN_TTL` | `72h` |
 | GC artifact TTL (completed tasks) | — | `MULTICA_GC_ARTIFACT_TTL` | `12h` (set `0` to disable) |
 | GC artifact patterns | — | `MULTICA_GC_ARTIFACT_PATTERNS` | `node_modules,.next,.turbo` |
@@ -407,7 +413,7 @@ The daemon periodically scans `MULTICA_WORKSPACES_ROOT` for cleanup. The active-
 
 - **Full task cleanup** — when an issue's status is `done` or `cancelled` and has been idle for `MULTICA_GC_TTL`, the entire task directory is removed.
 - **Completed-task retention bound** — `MULTICA_GC_COMPLETED_TASK_TTL` fully removes an inactive issue task once its `.gc_meta.json` `completed_at` age exceeds the configured duration, even while the parent issue remains open. Cleanup waits for a successful parent-issue status check, never removes an active environment, and never fully removes a `local_directory` environment. A later rerun provisions a fresh environment instead of resuming the removed checkout.
-  - The default depends on where the daemon points: `14d` against Multica Cloud, and `0` (disabled, retain indefinitely) for self-host and every other origin — including cloud staging and previews. Set the variable to opt in or out on either side; an explicit `0` disables the policy on Cloud too.
+  - The default is `14d` on every server, Multica Cloud and self-host alike. Set the variable to change it; an explicit `0` disables the policy and keeps every completed environment until its issue becomes `done` or `cancelled`.
   - Removing an environment discards work an agent left uncommitted or unpushed on its branch, along with that task's `output/` and `logs/`. The per-issue Codex session store lives outside `MULTICA_WORKSPACES_ROOT` under its own TTL, so a later rerun still resumes the agent's prior session — it just starts from a fresh checkout. Size the TTL against that trade, and keep it comfortably above `MULTICA_GC_INTERVAL`: the active-root guard protects a task that is currently running, not one whose follow-up run is queued but unclaimed.
 - **Orphan cleanup** — task directories with no `.gc_meta.json` (e.g. left over from a daemon crash) are removed once they exceed `MULTICA_GC_ORPHAN_TTL`.
 - **Artifact-only cleanup** — when a task has been completed for at least `MULTICA_GC_ARTIFACT_TTL` but the issue is still open, regenerable build outputs whose directory basename matches `MULTICA_GC_ARTIFACT_PATTERNS` are removed. The daemon also reclaims the exact managed path `codex-home/.sandbox-bin`; old task metadata without `completed_at` becomes eligible for this managed-only cleanup after its `.gc_meta.json` file has been idle for `MULTICA_GC_ORPHAN_TTL`. The rest of the task (source, `.git`, `output/`, `logs/`, `.gc_meta.json`, Codex auth/config/session state) is preserved so the agent can resume it. The same basename patterns apply to unarchived chats that use a daemon-managed work directory once the chat status check succeeds and the last run has been complete for `MULTICA_GC_ARTIFACT_TTL`. After a successful cleanup, the daemon skips repeat scans for that run. A later completed run becomes eligible again after the same delay.

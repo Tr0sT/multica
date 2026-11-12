@@ -36,6 +36,7 @@ import (
 	composiointeg "github.com/multica-ai/multica/server/internal/integrations/composio"
 	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	"github.com/multica-ai/multica/server/internal/integrations/mattermost"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
@@ -1314,6 +1315,63 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("telegram integration disabled (MULTICA_TELEGRAM_SECRET_KEY not set)")
 	}
 
+	// Both encryption and operator-approved HTTPS destinations are required.
+	if mattermostKey, err := secretbox.LoadKey("MULTICA_MATTERMOST_SECRET_KEY"); err == nil {
+		box, err := secretbox.New(mattermostKey)
+		policy, policyErr := mattermost.NewServerPolicy(os.Getenv("MULTICA_MATTERMOST_ALLOWED_SERVERS"))
+		if err != nil {
+			slog.Error("mattermost: secretbox.New failed; mattermost integration disabled", "error", err)
+		} else if policyErr != nil {
+			slog.Error("mattermost: invalid server policy; integration disabled", "error", policyErr)
+		} else {
+			mattermostBindingSvc := mattermost.NewBindingTokenService(queries, pool, box.Open, policy)
+			h.MattermostBindingTokens = mattermostBindingSvc
+			mattermostReplier := mattermost.NewOutboundReplier(mattermost.OutboundReplierConfig{
+				Queries: queries,
+				Objects: store,
+				Binding: mattermostBindingSvc,
+				Decrypt: box.Open,
+				Policy:  policy,
+				// The bind link (/mattermost/bind) is a web-app page: app URL,
+				// not the API URL. Mirrors the Slack and Telegram repliers.
+				AppURL: appURLFromEnv(),
+				Logger: slog.Default(),
+			})
+			// No TypingNotifier: Mattermost's typing signal is a WebSocket
+			// action with no REST equivalent, so there is nothing this seam
+			// could call from the request path. See the adapter's design note.
+			channelRouter.Register(mattermost.TypeMattermost, mattermost.NewMattermostResolverSet(queries, pool, mattermostReplier))
+			h.MattermostOutbound = mattermost.NewOutbound(queries, pool, box.Open, policy, nil, slog.Default())
+			if store != nil {
+				h.MattermostOutbound.EnableFileDelivery(store)
+				h.DeclareChannelFileDelivery(string(mattermost.TypeMattermost))
+			}
+			h.MattermostOutbound.Register(bus)
+
+			// Per-installation inbound: the Supervisor builds + supervises one
+			// WebSocket connection per active Mattermost installation,
+			// authenticated with that installation's OWN bot access token.
+			fileLinks, fileErr := mattermost.NewFileLinks(queries, mattermostKey, box.Open, policy, signupConfig.PublicURL)
+			if fileErr != nil {
+				slog.Error("mattermost: file links disabled", "error", fileErr)
+			} else {
+				h.MattermostFiles = fileLinks
+			}
+			mattermost.RegisterMattermost(channelRegistry, mattermost.ChannelDeps{Decrypt: box.Open, Policy: policy, Logger: slog.Default(), FileLinks: fileLinks})
+
+			installSvc, ierr := mattermost.NewInstallService(queries, pool, box, policy, slog.Default())
+			if ierr != nil {
+				slog.Error("mattermost: InstallService init failed; install disabled", "error", ierr)
+			} else {
+				h.MattermostInstall = installSvc
+				installSvc.EnableReplyImages(store)
+			}
+			slog.Info("mattermost integration enabled (per-installation websocket)")
+		}
+	} else {
+		slog.Info("mattermost integration disabled (MULTICA_MATTERMOST_SECRET_KEY not set)")
+	}
+
 	// Composio integration (MUL-3720). Gated by COMPOSIO_API_KEY plus the
 	// composio_mcp_apps feature flag. The env var is the project-scoped key the
 	// standalone SDK authenticates Composio with (sent as x-api-key; the project
@@ -1565,6 +1623,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// The authenticated /api/attachments/{id}/download route below is
 	// unchanged — this one is purely additive.
 	r.Get("/api/attachments/{id}/signed-download", h.DownloadAttachmentWithCapability)
+	// A sealed, expiring capability grants access to one Mattermost file.
+	r.Get("/api/mattermost/files/download", h.DownloadMattermostFile)
 
 	// Avatar serving. Public for the same reason as the capability download
 	// above: the auth cookie is SameSite=Strict, so an auth-gated URL cannot
@@ -1678,6 +1738,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/models/{requestId}/result", h.ReportModelListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/{requestId}/result", h.ReportLocalSkillListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/import/{requestId}/result", h.ReportLocalSkillImportResult)
+		r.Post("/runtimes/{runtimeId}/agent-marketplaces/{marketplaceId}/sync/{requestId}", h.ReportAgentMarketplaceSync)
 		r.Post("/runtimes/{runtimeId}/environment-commands/claim", h.ClaimEnvironmentCommands)
 		r.Post("/runtimes/{runtimeId}/environment-commands/{commandId}/result", h.ReportEnvironmentCommandResult)
 
@@ -1692,6 +1753,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/tasks/{taskId}/usage", h.ReportTaskUsage)
 		r.Post("/tasks/{taskId}/environments", h.ReportTaskEnvironments)
 		r.Post("/tasks/{taskId}/environment-configs", h.ReportTaskEnvironmentConfigs)
+		r.Post("/tasks/{taskId}/context-receipt", h.ReportTaskContextReceipt)
 		r.Post("/tasks/{taskId}/messages", h.ReportTaskMessages)
 		r.Get("/tasks/{taskId}/messages", h.ListTaskMessages)
 		r.Post("/tasks/{taskId}/cancel-ack", h.AckTaskCancelled)
@@ -1984,6 +2046,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/telegram/installations/{installationId}", h.RevokeTelegramInstallation)
 					r.Post("/telegram/install", h.RegisterTelegramBot)
 				})
+
+				// Mattermost integration. Same admin/member split as Telegram:
+				// listing is member-visible; install, update and revoke are admin-only.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Get("/mattermost/installations", h.ListMattermostInstallations)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Delete("/mattermost/installations/{installationId}", h.RevokeMattermostInstallation)
+					r.Patch("/mattermost/installations/{installationId}", h.UpdateMattermostInstallation)
+					r.Post("/mattermost/install", h.RegisterMattermostBot)
+					r.With(handler.RequireHumanActor).Get("/mattermost/installations/{installationId}/token", h.ExportMattermostToken)
+					r.With(handler.RequireHumanActor).Put("/mattermost/installations/{installationId}/token", h.ImportMattermostToken)
+				})
 			})
 		})
 
@@ -2011,6 +2088,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// workspace-scoped, identity from the session, token proves only
 		// "this Telegram user id requested binding".
 		r.Post("/api/telegram/binding/redeem", h.RedeemTelegramBindingToken)
+		// Mattermost binding-token redemption. Same rationale: not
+		// workspace-scoped, identity from the session, token proves only
+		// "this Mattermost user id requested binding".
+		r.Post("/api/mattermost/binding/redeem", h.RedeemMattermostBindingToken)
+		r.Post("/api/mattermost/binding/preview", h.PreviewMattermostBindingToken)
 
 		// Composio integration (MUL-3720). User-scoped (no workspace context):
 		// a connection belongs to a user. These four require a logged-in
@@ -2129,6 +2211,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/table/facets", h.ListIssueTableFacets)
 				r.Get("/search", h.SearchIssues)
 				r.Get("/child-progress", h.ChildIssueProgress)
+				r.Get("/pull-requests", h.ListIssuePullRequestSummaries)
 				r.Get("/children", h.ListChildrenByParents)
 				r.Get("/grouped", h.ListGroupedIssues)
 				// The caller's issues with an agent result they have not seen
@@ -2211,6 +2294,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Task messages (user-facing, not daemon auth)
 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
+			r.Get("/api/tasks/{taskId}/context-receipt", h.GetTaskContextReceipt)
 			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
 
 			// Issue quick actions (definitions; running one lives under
@@ -2418,6 +2502,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/dingtalk/groups", h.ListDingTalkGroupsForAgent)
 					r.Get("/skills", h.ListAgentSkills)
 					r.Put("/skills", h.SetAgentSkills)
+					r.Get("/marketplace-plugins", h.GetAgentPluginSelection)
+					r.Put("/marketplace-plugins", h.SetAgentPluginSelection)
 					r.Post("/skills/add", h.AddAgentSkills)
 					r.Get("/labels", h.ListLabelsForAgent)
 					r.Post("/labels", h.AttachLabelToAgent)
@@ -2456,6 +2542,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Skills
+			r.Route("/api/agent-marketplaces", func(r chi.Router) {
+				r.Get("/", h.ListAgentMarketplaces)
+				r.Post("/", h.CreateAgentMarketplace)
+				r.Post("/{id}/refresh", h.RefreshAgentMarketplace)
+				r.Delete("/{id}", h.DeleteAgentMarketplace)
+			})
+
 			r.Route("/api/skills", func(r chi.Router) {
 				r.Get("/", h.ListSkills)
 				r.Post("/", h.CreateSkill)
@@ -2661,6 +2754,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/{id}/unread", h.MarkInboxUnread)
 				r.Post("/{id}/archive", h.ArchiveInboxItem)
 				r.Post("/{id}/unarchive", h.UnarchiveInboxItem)
+				r.Delete("/{id}", h.DeleteInboxItem)
 			})
 
 			// Notification preferences

@@ -269,5 +269,13 @@
     "unarchive": "Desarchivar chat",
     "delete": "Eliminar chat",
     "agent_settings": "Ajustes del agente"
+  },
+  "owner_filter": {
+    "label": "Propietario del chat",
+    "mine": "Mis chats",
+    "all": "Todos los miembros",
+    "former_member": "Antiguo miembro",
+    "read_only": "Estás viendo el chat de otro miembro. Solo su propietario puede enviar mensajes o modificarlo.",
+    "visibility": "Visible para ti y los administradores del espacio de trabajo."
   }
 }

@@ -237,6 +237,8 @@ services:
       # Tool steps shown in the streamed reply: auto (default; details in
       # private chats, kind of work in groups), off, summary or detail.
       MULTICA_TELEGRAM_TOOL_PROGRESS: ${MULTICA_TELEGRAM_TOOL_PROGRESS:-}
+      MULTICA_MATTERMOST_SECRET_KEY: ${MULTICA_MATTERMOST_SECRET_KEY:-}
+      MULTICA_MATTERMOST_ALLOWED_SERVERS: ${MULTICA_MATTERMOST_ALLOWED_SERVERS:-}
     restart: unless-stopped
 
   frontend:

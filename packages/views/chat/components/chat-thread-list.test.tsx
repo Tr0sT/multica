@@ -116,6 +116,24 @@ function renderList(
 
 const ARCHIVE_LABEL = enChat.list.archive;
 
+it("names Mattermost participants and hides mutation actions for another member's chat", () => {
+  const session = makeSession({ id: "foreign", creator_id: "other", channel_source: { channel_type: "mattermost", installation_id: "installation", route_revision: 1, sender_username: "alice.example" } });
+  render(
+    <VirtuosoMockContext.Provider value={{ viewportHeight: 560, itemHeight: 56 }}>
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      <ChatThreadList sessions={[session]} agents={[agent]} viewerId="user-1" activeSessionId={null} onSelectSession={vi.fn()} onArchive={vi.fn()} />
+    </I18nProvider>
+    </VirtuosoMockContext.Provider>,
+  );
+  expect(screen.getByText(/@alice\.example/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: ARCHIVE_LABEL })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: enChat.list.pin })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: enChat.list.row_actions_aria })).not.toBeInTheDocument();
+  fireEvent.contextMenu(screen.getByText(/@alice\.example/), { clientX: 30, clientY: 90 });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: enChat.header.rename })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+});
 describe("ChatThreadList windowing", () => {
   it("mounts only a window of a long history without an archive footer", () => {
     renderList(null, {

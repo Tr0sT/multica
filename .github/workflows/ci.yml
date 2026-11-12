@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # PRs and main pushes use the same paths. Scheduled/manual runs validate all
-  # scopes, including platform stress tests, without charging every merge for them.
+  # Ordinary PRs and main pushes use path filtering. Sync PRs and scheduled/manual
+  # runs validate all scopes on the combined tree before a history-preserving merge.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -40,11 +40,8 @@ jobs:
         with:
           node-version: 22
 
-      # Path selection must be proven before it skips anything. Every other
-      # scripts/**/*.test.mjs suite runs through `pnpm test:scripts` in the
-      # frontend-quality action.
-      - name: Test CI selection
-        run: node --test scripts/ci-scope.test.mjs
+      - name: Test CI selection and gates
+        run: node --test scripts/ci-scope.test.mjs scripts/check-image-budget.test.mjs scripts/pr-shots.test.mjs
 
       - name: Filter paths
         id: filter
@@ -62,6 +59,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           FILTER_RESULTS: ${{ toJSON(steps.filter.outputs) }}
+          FORK_SYNC_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'sync/upstream-') }}
         run: node scripts/ci-scope.mjs decide
 
   sqlc-check:
@@ -219,11 +217,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Report runner CPU
-        run: |
-          nproc
-          lscpu
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -410,6 +403,14 @@ jobs:
       - name: Test
         # pkg/agent runs on its own runner: backend-agent-tests below.
         run: bash scripts/test-go.sh --race --only regular
+
+      - name: Verify TeamBridge token backup with the built CLI and PostgreSQL
+        working-directory: server
+        run: |
+          go build -o "$RUNNER_TEMP/multica-token-test" ./cmd/multica
+          MULTICA_TOKEN_TEST_CLI="$RUNNER_TEMP/multica-token-test" \
+            go test -race -tags=teambridgetokenintegration ./internal/handler \
+            -run '^TestMattermostTokenCLIEncryptedRoundTrip$' -count=1 -v
 
       # Go's own trim (cmd/go/internal/cache) with this run as the window
       # instead of five days: only `-a`/`-d` entries, and an executable entry
@@ -783,6 +784,10 @@ jobs:
         working-directory: server
         run: go build ./cmd/multica
 
+      - name: Test TeamBridge token files and Windows junction protection
+        working-directory: server
+        run: go test ./cmd/multica -run '^TestTeamBridgeToken' -count=1
+
       - name: Test Windows Cursor background ownership
         working-directory: server
         # Cursor's background shell is captured through a second Job Object, and
@@ -808,7 +813,8 @@ jobs:
   macos-runtime:
     needs: changes
     if: ${{ needs.changes.outputs.full == 'true' }}
-    runs-on: macos-latest
+    # Keep native Darwin tests independent of ARM64 runner capacity.
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
@@ -836,6 +842,18 @@ jobs:
         shell: bash
         working-directory: server
         run: CGO_ENABLED=0 go test ./pkg/agent -run '^TestCaptureCursorBackground(KernelRejectsStaleIdentity|DetachedSession|LateDescendant)$' -count=1
+
+      - name: Cross-compile macOS ARM64 CLI and native test packages
+        shell: bash
+        working-directory: server
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: |
+          go build -o "$RUNNER_TEMP/multica-darwin-arm64" ./cmd/multica
+          go test -c -o "$RUNNER_TEMP/agent-darwin-arm64.test" ./pkg/agent
+          go test -c -o "$RUNNER_TEMP/daemon-darwin-arm64.test" ./internal/daemon
 
   image-budget:
     # Soft gate against the 21.7MB of raw PNG/JPG that MUL-6352 cleared out:
@@ -875,7 +893,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-26-intel, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -922,6 +940,15 @@ jobs:
 
       - name: Test UI performance comparison runner
         run: bash scripts/perf-compare.test.sh
+
+      - name: Test Desktop window capture
+        run: node --test scripts/desktop-window-capture.test.mjs
+
+      - name: Verify brand copies match multica-brand.ts
+        # Keep CLI, mobile, and logo SVG copies in sync with the shared source.
+        run: |
+          node scripts/brand/sync.mjs --check
+          node --test scripts/brand/sync.test.mjs
 
       - name: Verify reserved-slugs.ts is up to date
         # Re-runs the generator and fails on any drift from the

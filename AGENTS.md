@@ -22,6 +22,7 @@ Multica is a task management platform where people and agents collaborate on iss
 | `apps/desktop/` | Electron and desktop-only UI/state. Application navigation goes through `apps/desktop/src/renderer/src/platform/`. |
 | `apps/mobile/` | Independent Expo/React Native client: owns UI, state, hooks, providers, i18n, build, and release. Shares core types and pure utilities, including platform-independent schemas; runtime imports use the pure module's own subpath, not a barrel that also re-exports hooks or stores (lint-enforced). |
 | `apps/docs/` | Fumadocs documentation site |
+| `nix/` and `flake.nix` | Native packages built from this checkout, NixOS services, and VM checks. See `nix/README.md`; keep package/module names compatible with existing multica-nix consumers. |
 
 - Dependency direction is `views -> core + ui`; core and ui remain independent. Shared packages export raw TypeScript compiled by consuming apps.
 - Extract logic used by both web and desktop into the appropriate shared package. Keep framework/Electron APIs in the app layer; inject platform-specific UI through props/slots.
@@ -47,6 +48,7 @@ Run these from the repository root:
 | Go backend | `make test` |
 | End-to-end | `pnpm exec playwright test` |
 | Combined web/backend verification | `make check` |
+| Nix packaging and NixOS services | `nix flake check --print-build-logs` |
 | Mobile | Commands in [apps/mobile/AGENTS.md](apps/mobile/AGENTS.md#verification) |
 
 Docs-only changes can use link/reference checks and `git diff --check`; state that code tests were not run.
@@ -79,6 +81,23 @@ Installed desktop clients may talk to newer backends. Preserve response compatib
 - Register every concurrent index build in `server/cmd/migrate/main.go` so an interrupted build's INVALID index is dropped before retry: up-direction builds in `concurrentIndexCleanups`, down-direction rebuilds in `concurrentDownIndexCleanups` (version → index name).
 - Before pushing a migration, rebase onto the latest `origin/main`, number it as the current highest prefix plus one, and run `go test ./cmd/migrate ./internal/migrations` from `server/`.
 - Conditionally skipped migrations are still recorded in `schema_migrations`. Later DDL touching conditional objects must be idempotent (`IF EXISTS` / `IF NOT EXISTS`); document recovery if the missing object would break runtime behavior.
+
+## Fork-specific integration invariants
+
+- CLI/runtime update discovery and downloads use `Tr0sT/multica` releases. Do not route fork updates or fork release publishing through the upstream Homebrew tap.
+- Preserve Mattermost/TeamBridge channel handling and CLI contract (including encrypted token backup, stable allowlisted account IDs, history/attachments, and denied replies) when accepting upstream UI or database refactors.
+- Admin chat inspection must remain read-only for other members and preserve the `creator` URL/list filter through chat navigation. Keep the channel and owner attribution in conversation headers.
+- Preserve the per-`webhook_delivery_id` duplicate filter in `FindRecentAutopilotDuplicateIssue`, and both plugin-snapshot and issue-unread cleanup when updating issue deletion SQL; regenerate sqlc outputs after changing the queries.
+- Independently published migration prefix collisions belong in `server/migrations/fork-prefix-allowlist.json` with exact full identities, not broad numeric exceptions.
+
+## Agent Marketplace Plugins
+
+- Agent marketplace packages are native Codex plugins, separate from the Multica Plugin V1 platform. See [docs/agent-marketplaces.md](docs/agent-marketplaces.md).
+- Keep marketplace catalog management and per-agent plugin selection reachable from the agent's Advanced settings, including its unsaved-selection guard.
+- Read Git sources through an online runtime owned by the requesting member. Preserve workspace boundaries and keep its Git credentials on that machine.
+- Pin package versions per issue/chat and agent when work starts. Refreshing a catalog or changing agent selections applies to new conversations.
+- Prepare selected packages only inside the task's Codex home. Never run package installation through the shared user plugin-cache link or mutate the user's plugin configuration.
+- Gate managed plugin dispatch on the daemon capability; an older daemon must not silently run without the selected packages.
 
 ## Backend UUID Rules
 

@@ -1,0 +1,90 @@
+[
+  {
+    "prefix": 585,
+    "versions": [
+      "585_issue_origin_mattermost_chat",
+      "585_issue_workflow_owner"
+    ],
+    "reason": "Independently published fork Mattermost origin and upstream workflow ownership migrations. Preserve both full schema_migrations identities; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 586,
+    "versions": [
+      "586_cloud_agent_connection",
+      "586_issue_origin_mattermost_chat_validate"
+    ],
+    "reason": "Independently published upstream cloud connection and fork Mattermost constraint validation migrations. Preserve both identities; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 587,
+    "versions": [
+      "587_channel_reply_delivery_task_idx",
+      "587_cloud_agent_connection_provider_index"
+    ],
+    "reason": "Independently published fork delivery and upstream cloud connection indexes. Preserve both identities and concurrent-index cleanup hooks; upgrade coverage: TestForkPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 595,
+    "versions": [
+      "595_agent_marketplaces",
+      "595_issue_view_preference_sidebar"
+    ],
+    "reason": "Independently published fork marketplace tables and upstream sidebar preference constraint. Their DDL touches separate tables; preserve full applied identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 596,
+    "versions": [
+      "596_agent_marketplace_id_index",
+      "596_issue_view_preference_sidebar_projects"
+    ],
+    "reason": "Independently published fork marketplace ID index and upstream sidebar-projects constraint. Distinct objects and independent dependencies; preserve full identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 597,
+    "versions": [
+      "597_agent_marketplace_source_index",
+      "597_issue_unread"
+    ],
+    "reason": "Independently published fork marketplace source index and upstream issue_unread table. Distinct tables, with per-branch dependencies intact. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 598,
+    "versions": [
+      "598_agent_marketplace_name_index",
+      "598_issue_unread_unique_index"
+    ],
+    "reason": "Independently published fork marketplace name index and upstream unread unique index on distinct tables; preserve both full identities. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 599,
+    "versions": [
+      "599_agent_plugin_version_id_index",
+      "599_issue_unread_primary_key"
+    ],
+    "reason": "Independently published fork plugin-version index and upstream unread primary-key attachment. Upstream 599 depends on its 598 index; separate fork object, no SQL collision. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade."
+  },
+  {
+    "prefix": 600,
+    "versions": [
+      "600_agent_plugin_version_source_index",
+      "600_wecom_install_session"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  },
+  {
+    "prefix": 601,
+    "versions": [
+      "601_agent_plugin_snapshot_context_index",
+      "601_wecom_install_session_due_idx"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  },
+  {
+    "prefix": 602,
+    "versions": [
+      "602_agent_marketplace_pending_index",
+      "602_wecom_install_session_request_idx"
+    ],
+    "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  }
+]

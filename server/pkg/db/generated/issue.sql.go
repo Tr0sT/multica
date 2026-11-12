@@ -520,6 +520,10 @@ cleared_pr_automation AS (
 cleared_pr_exclusions AS (
     DELETE FROM issue_pull_request_exclusion WHERE issue_id IN (SELECT target.id FROM target)
 ),
+cleared_agent_plugin_snapshots AS (
+    DELETE FROM agent_plugin_snapshot
+    WHERE workspace_id = $2 AND context_key IN (SELECT 'issue:' || target.id::text FROM target)
+),
 cleared_unread AS (
     DELETE FROM issue_unread WHERE issue_id IN (SELECT target.id FROM target)
 ),
@@ -531,6 +535,9 @@ cleared_environment_commands AS (
 ),
 cleared_environment_configs AS (
     DELETE FROM issue_environment_config WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_task_context_receipts AS (
+    DELETE FROM task_context_receipt WHERE issue_id IN (SELECT target.id FROM target)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)
 `
@@ -556,6 +563,8 @@ type DeleteIssueParams struct {
 // when a caller passes a foreign issue_id with its own workspace_id (the issue
 // itself is correctly untouched, but the links are already gone) — the exact
 // cross-tenant leak the #1661 guard above exists to prevent.
+// task_context_receipt has no FK; the issue's tasks go by the legacy cascade,
+// so their receipts are swept here by the issue_id copied onto each row.
 func (q *Queries) DeleteIssue(ctx context.Context, arg DeleteIssueParams) error {
 	_, err := q.db.Exec(ctx, deleteIssue, arg.ID, arg.WorkspaceID)
 	return err
@@ -759,6 +768,8 @@ WHERE i.workspace_id = $1
     WHERE r.issue_id = i.id
       AND r.autopilot_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
+      -- Distinct webhook deliveries must not be folded into title matches.
+      AND ($7::uuid IS NULL OR r.webhook_delivery_id = $7::uuid)
   )
 ORDER BY i.created_at ASC
 LIMIT 1
@@ -771,6 +782,7 @@ type FindRecentAutopilotDuplicateIssueParams struct {
 	ProjectID          pgtype.UUID        `json:"project_id"`
 	NormalizedTitle    string             `json:"normalized_title"`
 	CreatedAfter       pgtype.Timestamptz `json:"created_after"`
+	WebhookDeliveryID  pgtype.UUID        `json:"webhook_delivery_id"`
 }
 
 func (q *Queries) FindRecentAutopilotDuplicateIssue(ctx context.Context, arg FindRecentAutopilotDuplicateIssueParams) (Issue, error) {
@@ -781,6 +793,7 @@ func (q *Queries) FindRecentAutopilotDuplicateIssue(ctx context.Context, arg Fin
 		arg.ProjectID,
 		arg.NormalizedTitle,
 		arg.CreatedAfter,
+		arg.WebhookDeliveryID,
 	)
 	var i Issue
 	err := row.Scan(

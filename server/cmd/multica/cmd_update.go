@@ -33,33 +33,17 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 	// Check the configured release source.
 	latest, err := cli.FetchLatestRelease()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not check latest version: %v\n", err)
-	} else {
-		latestVer := strings.TrimPrefix(latest.TagName, "v")
-		currentVer := strings.TrimPrefix(version, "v")
-		if currentVer == latestVer {
-			fmt.Fprintln(os.Stderr, "Already up to date.")
-			return nil
-		}
-		fmt.Fprintf(os.Stderr, "Latest version:  %s\n\n", latest.TagName)
+		return fmt.Errorf("check latest release: %w", err)
 	}
-
-	// Detect installation method and update accordingly.
-	if cli.IsBrewInstall() {
-		fmt.Fprintln(os.Stderr, "Updating via Homebrew...")
-		output, err := cli.UpdateViaBrew()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", output)
-			return fmt.Errorf("brew upgrade failed: %w\nYou can try manually: brew upgrade multica-ai/tap/multica", err)
-		}
-		fmt.Fprintln(os.Stderr, "Update complete.")
+	latestVer := strings.TrimPrefix(latest.TagName, "v")
+	currentVer := strings.TrimPrefix(version, "v")
+	if currentVer == latestVer {
+		fmt.Fprintln(os.Stderr, "Already up to date.")
 		return nil
 	}
+	fmt.Fprintf(os.Stderr, "Latest version:  %s\n\n", latest.TagName)
 
-	// Not installed via brew — download the binary from the configured release source.
-	if latest == nil {
-		return fmt.Errorf("could not determine latest version; check the configured release source")
-	}
+	// The upstream Homebrew tap would replace the fork, so download the fork release directly.
 	targetVersion := latest.TagName
 	fmt.Fprintf(os.Stderr, "Downloading %s from the configured release source...\n", targetVersion)
 	output, err := cli.UpdateViaDownloadWithTimeout(targetVersion, updateDownloadTimeout)

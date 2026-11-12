@@ -140,6 +140,8 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // they are still pending: a fresh self-hosted install, which is exactly where an
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
+	"651_task_context_receipt_issue_idx":                        "idx_task_context_receipt_issue",
+	"650_task_context_receipt_workspace_idx":                    "idx_task_context_receipt_workspace",
 	"648_project_subscriber_user_idx":                           "idx_project_subscriber_workspace_user",
 	"645_issue_member_creator_index":                            "idx_issue_workspace_member_creator",
 	"644_issue_requester_index":                                 "idx_issue_workspace_requester",
@@ -162,6 +164,14 @@ var concurrentIndexCleanups = map[string]string{
 	"619_workspace_composio_connection_status_idx":              "idx_workspace_composio_connection_status",
 	"618_workspace_composio_connection_account_idx":             "idx_workspace_composio_connection_account",
 	"613_skill_version_index":                                   "idx_skill_version_skill_version",
+	"596_agent_marketplace_id_index":                            "agent_marketplace_id_idx",
+	"597_agent_marketplace_source_index":                        "agent_marketplace_source_idx",
+	"598_agent_marketplace_name_index":                          "agent_marketplace_name_idx",
+	"599_agent_plugin_version_id_index":                         "agent_plugin_version_id_idx",
+	"600_agent_plugin_version_source_index":                     "agent_plugin_version_source_idx",
+	"601_agent_plugin_snapshot_context_index":                   "agent_plugin_snapshot_context_idx",
+	"602_agent_marketplace_pending_index":                       "agent_marketplace_pending_idx",
+	"587_channel_reply_delivery_task_idx":                       "idx_channel_reply_delivery_task_id",
 	"606_agent_task_queue_runtime_active_index":                 "idx_agent_task_queue_runtime_active",
 	"604_wecom_install_session_begin_rate_idx":                  "idx_wecom_install_session_begin_rate",
 	"603_wecom_install_session_agent_pending_idx":               "idx_wecom_install_session_agent_pending",

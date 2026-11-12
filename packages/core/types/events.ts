@@ -20,6 +20,7 @@ export type WSEventType =
   | "comment:resolved"
   | "comment:unresolved"
   | "agent:status"
+  | "agent_plugins:changed"
   | "agent:created"
   | "agent:archived"
   | "agent:restored"
@@ -39,6 +40,7 @@ export type WSEventType =
   | "inbox:unread"
   | "inbox:archived"
   | "inbox:unarchived"
+  | "inbox:deleted"
   | "inbox:batch-read"
   | "inbox:batch-archived"
   | "workspace:updated"
@@ -662,6 +664,7 @@ export interface WSEventPayloadMap {
   "reaction:added": ReactionAddedPayload;
   "reaction:removed": ReactionRemovedPayload;
   "agent:status": AgentStatusPayload;
+  "agent_plugins:changed": { agent_id?: string } | null;
   "agent:created": AgentCreatedPayload;
   "agent:archived": AgentArchivedPayload;
   "agent:restored": AgentRestoredPayload;
@@ -681,6 +684,7 @@ export interface WSEventPayloadMap {
   "inbox:unread": InboxUnreadPayload;
   "inbox:archived": InboxArchivedPayload;
   "inbox:unarchived": InboxUnarchivedPayload;
+  "inbox:deleted": { item_id: string; recipient_id: string; count: number };
   "inbox:batch-read": InboxBatchReadPayload;
   "inbox:batch-archived": InboxBatchArchivedPayload;
   "workspace:updated": WorkspaceUpdatedPayload;

@@ -7,8 +7,9 @@ export const filters = JSON.parse(
   readFileSync(new URL("../.github/ci-paths.json", import.meta.url), "utf8"),
 );
 
-export function decideScopes(event, filtered) {
-  const full = event === "schedule" || event === "workflow_dispatch";
+export function decideScopes(event, filtered, forkSyncPr = false) {
+  // Sync PRs validate the combined fork like a full manual run, not just changed paths.
+  const full = event === "schedule" || event === "workflow_dispatch" || (event === "pull_request" && forkSyncPr);
   if (!full && event !== "push" && event !== "pull_request") {
     throw new Error(`Unsupported CI event: ${event}`);
   }
@@ -51,7 +52,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try {
     switch (process.argv[2]) {
       case "decide": {
-        const outputs = decideScopes(process.env.EVENT_NAME, JSON.parse(process.env.FILTER_RESULTS));
+        const outputs = decideScopes(process.env.EVENT_NAME, JSON.parse(process.env.FILTER_RESULTS), process.env.FORK_SYNC_PR === "true");
         appendFileSync(process.env.GITHUB_OUTPUT,
           Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(""));
         break;

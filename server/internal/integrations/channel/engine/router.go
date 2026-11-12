@@ -387,8 +387,9 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 	}
 
 	// 4b. Invoke permission (MUL-3963): the same verdict the web chat applies
-	//     before it opens a session. It judges the SENDER, never the installer
-	//     who owns a group's route, and it runs before anything is stored — so
+	//     before it opens a session. It judges the resolved authorization
+	//     principal; owning a group's route alone grants no access. It runs
+	//     before anything is stored — so
 	//     a refused turn reaches no Chat, no /issue, and no later run's context.
 	allowed, err := r.tasks.MemberMayInvokeAgent(ctx, inst.AgentID, identity.UserID)
 	if err != nil {
@@ -1113,16 +1114,20 @@ func (r *Router) scheduleReply(set ResolverSet, inst ResolvedInstallation, msg c
 	if set.Replier == nil {
 		return
 	}
+	timeout := set.ReplyTimeout
+	if timeout <= 0 {
+		timeout = r.replyTimeout
+	}
 	r.replyWg.Add(1)
 	go func() {
 		defer r.replyWg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), r.replyTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		set.Replier.Reply(ctx, inst, msg, res)
 		if ctx.Err() == context.DeadlineExceeded {
 			r.logger.Warn("channel router: outbound reply timed out",
 				"event_id", msg.EventID, "outcome", string(res.Outcome),
-				"timeout", r.replyTimeout.String())
+				"timeout", timeout.String())
 		}
 	}()
 }

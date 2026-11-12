@@ -83,6 +83,7 @@ vi.mock("./agent-advanced-settings", () => ({
       "custom_args",
       "runtime_config",
       "skills",
+      "plugins",
       "mcp_config",
       "composio_mcp",
     ].includes(value),
@@ -571,6 +572,8 @@ describe("AgentDetailPage deep links", () => {
     ["tab=settings", "advanced:general"],
     ["tab=capabilities", "advanced:skills"],
     ["view=mcp_config", "advanced:mcp_config"],
+    ["view=plugins", "advanced:plugins"],
+    ["tab=plugins", "advanced:plugins"],
   ])("maps the legacy link %s to %s", async (search, expected) => {
     renderPage(search);
     expect(await screen.findByTestId("advanced-settings")).toHaveTextContent(

@@ -19,6 +19,15 @@ const state = vi.hoisted(() => ({
   open: vi.fn(),
 }));
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@multica/core/auth", () => {
+  const auth = { user: { id: "user-1" } };
+  return {
+    useAuthStore: Object.assign(
+      (selector: (value: typeof auth) => unknown) => selector(auth),
+      { getState: () => auth },
+    ),
+  };
+});
 vi.mock("@multica/core/permissions", () => ({
   useCurrentMember: () => ({
     role: state.role,
@@ -56,6 +65,11 @@ vi.mock("@multica/core/api", async (original) => ({
       "listDingTalkInstallations",
       "listWecomInstallations",
       "listTelegramInstallations",
+      "listMattermostInstallations",
+      "listMembers",
+      "registerMattermostBot",
+      "updateMattermostInstallation",
+      "deleteMattermostInstallation",
       "registerSlackBYO",
       "registerDingTalkBYO",
       "registerWecomBYO",
@@ -122,10 +136,14 @@ beforeEach(() => {
     "listDingTalkInstallations",
     "listWecomInstallations",
     "listTelegramInstallations",
+    "listMattermostInstallations",
   ] as const) {
     vi.mocked(api[name]).mockResolvedValue(listing() as never);
   }
   vi.mocked(api.listAgents).mockResolvedValue([agent, otherAgent]);
+  vi.mocked(api.listMembers).mockImplementation(async () =>
+    (state.member ? [{ user_id: "user-1", role: state.role }] : []) as never,
+  );
   vi.mocked(api.listAgentDingTalkGroups).mockResolvedValue({
     groups: [],
     group_discovery_supported: false,
@@ -261,6 +279,9 @@ describe("agent messaging channels", () => {
     expect(
       within(dialog).getByRole("button", { name: /WeCom Ask an admin/ }),
     ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: /Mattermost Ask an admin/ }),
+    ).toBeDisabled();
   });
 
   it("hides unconfigured platforms from members", async () => {
@@ -339,7 +360,7 @@ describe("agent messaging channels", () => {
     expect(screen.queryByText("Telegram")).toBeNull();
   });
 
-  it.each(["lark", "slack", "dingtalk", "wecom", "telegram"] as const)(
+  it.each(["lark", "slack", "dingtalk", "wecom", "telegram", "mattermost"] as const)(
     "confirms %s disconnect and preserves the connection on failure",
     async (channel) => {
       const methods = {
@@ -348,6 +369,7 @@ describe("agent messaging channels", () => {
         dingtalk: ["listDingTalkInstallations", "deleteDingTalkInstallation"],
         wecom: ["listWecomInstallations", "deleteWecomInstallation"],
         telegram: ["listTelegramInstallations", "deleteTelegramInstallation"],
+        mattermost: ["listMattermostInstallations", "deleteMattermostInstallation"],
       } as const;
       const [list, remove] = methods[channel];
       vi.mocked(api[list]).mockResolvedValue(listing([active]) as never);
@@ -610,7 +632,7 @@ describe("workspace overview", () => {
     );
     expect(state.replace).toHaveBeenCalledWith("/acme/settings?tab=channels");
     expect(screen.getByText("Who can connect")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Connect" })).toHaveLength(5);
+    expect(screen.getAllByRole("button", { name: "Connect" })).toHaveLength(6);
   });
 
   it("reports failed reads as unavailable and keeps a retry control", async () => {
@@ -624,5 +646,83 @@ describe("workspace overview", () => {
     expect(
       screen.getByRole("button", { name: "Scan again" }),
     ).toBeInTheDocument();
+  });
+});
+
+
+describe("fork Mattermost channel integration", () => {
+  const installed = {
+    ...active,
+    bot_username: "support_bot",
+    server_url: "https://chat.example.test",
+    access_mode: "allowlist",
+    allowed_users: [{ id: "stable-user-id", username: "alice" }],
+    context: { mode: "channel", lookback_hours: 72 },
+    attachment_mode: "none",
+    installed_at: "2026-11-01T00:00:00Z",
+  };
+
+  it("keeps all six platform marks in the workspace overview", async () => {
+    show(<ChannelsTab />);
+    await screen.findByTestId("integration-channel-icon-mattermost");
+    const marks = ["lark", "slack", "dingtalk", "wecom", "telegram", "mattermost"]
+      .map((id) => screen.getByTestId(`integration-channel-icon-${id}`).innerHTML);
+    expect(new Set(marks).size).toBe(6);
+  });
+
+  it("shows the bot and server to members without exposing edit or disconnect", async () => {
+    state.role = "member";
+    vi.mocked(api.listMattermostInstallations).mockResolvedValue(listing([installed]) as never);
+    show(<AgentChannelsSection agent={agent} />);
+    expect(await screen.findByText("@support_bot")).toBeInTheDocument();
+    expect(screen.getByText(installed.server_url)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Manage Mattermost" })).toBeNull();
+    expect(api.updateMattermostInstallation).not.toHaveBeenCalled();
+    expect(api.deleteMattermostInstallation).not.toHaveBeenCalled();
+  });
+
+  it("keeps existing bot settings editable when new installations are disabled", async () => {
+    vi.mocked(api.listMattermostInstallations).mockResolvedValue({
+      ...listing([installed]), install_supported: false,
+    } as never);
+    show(<AgentChannelsSection agent={agent} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "History sent to agent" })).toHaveTextContent("Chat history");
+    expect(screen.getByRole("combobox", { name: "Attachments sent to agent" })).toHaveTextContent("Do not send");
+    expect(screen.queryByTestId("mattermost-access-token")).toBeNull();
+    expect(api.registerMattermostBot).not.toHaveBeenCalled();
+  });
+
+  it("reuses the full connection form inside one shared modal and preserves failed input", async () => {
+    const onOpenChange = vi.fn();
+    vi.mocked(api.registerMattermostBot)
+      .mockRejectedValueOnce(new Error("Synthetic registration failure"))
+      .mockResolvedValueOnce({ ...active, attachment_mode: "links", access_mode: "members" } as never);
+    show(<ChannelConnectDialog agents={[agent]} initialAgent={agent} open onOpenChange={onOpenChange} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Mattermost$/ }));
+    const server = await screen.findByTestId("mattermost-server-url");
+    const token = screen.getByTestId("mattermost-access-token");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("combobox", { name: "History sent to agent" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Attachments sent to agent" })).toBeInTheDocument();
+    fireEvent.change(server, { target: { value: "https://chat.example.test" } });
+    fireEvent.change(token, { target: { value: "synthetic-not-a-real-token" } });
+    fireEvent.click(screen.getByTestId("mattermost-connect-submit"));
+    await waitFor(() => expect(api.registerMattermostBot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId("mattermost-connect-submit")).toBeEnabled());
+    expect(server).toHaveValue("https://chat.example.test");
+    expect(token).toHaveValue("synthetic-not-a-real-token");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("mattermost-connect-submit"));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(api.registerMattermostBot).toHaveBeenLastCalledWith("ws-1", "agent-1", {
+      server_url: "https://chat.example.test",
+      access_token: "synthetic-not-a-real-token",
+      access_mode: "members",
+      attachment_mode: "links",
+      context: { mode: "message" },
+    });
   });
 });

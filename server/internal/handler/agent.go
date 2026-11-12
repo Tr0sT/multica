@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/agentplugins"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/attribution"
 	"github.com/multica-ai/multica/server/internal/logger"
@@ -401,9 +402,10 @@ type AgentTaskResponse struct {
 	// cannot see (MUL-8472): only identity, status, timing and usage remain.
 	Restricted bool `json:"restricted,omitempty"`
 
-	StartClaimSupported      bool                   `json:"start_claim_supported,omitempty"`
-	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
-	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
+	AgentPlugins             *agentplugins.TaskContext `json:"agent_plugins,omitempty"`
+	StartClaimSupported      bool                      `json:"start_claim_supported,omitempty"`
+	CancelledByCommentChange bool                      `json:"cancelled_by_comment_change,omitempty"`
+	CancelledBy              *TaskCancellationActor    `json:"cancelled_by,omitempty"`
 
 	ID                   string                 `json:"id"`
 	AgentID              string                 `json:"agent_id"`
@@ -556,6 +558,9 @@ type AgentTaskResponse struct {
 	IssueAssigneeID          string               `json:"issue_assignee_id,omitempty"`           // assignee UUID at claim time; empty when unassigned
 	ChatSessionID            string               `json:"chat_session_id,omitempty"`             // non-empty for chat tasks
 	ChatChannelType          string               `json:"chat_channel_type,omitempty"`           // "slack" when the chat session is backed by an IM channel; empty for a web-only chat. Makes the agent channel-aware (read history from the channel, not Multica)
+	ChatChannelID            string               `json:"chat_channel_id,omitempty"`             // Mattermost API channel ID, not the composite session-isolation key
+	ChatChannelThreadID      string               `json:"chat_channel_thread_id,omitempty"`      // Mattermost root post ID; empty for an unthreaded direct message
+	ChatChannelMessageID     string               `json:"chat_channel_message_id,omitempty"`     // triggering Mattermost post ID from this task's delivery snapshot
 	ChatChannelDeliversFiles bool                 `json:"chat_channel_delivers_files,omitempty"` // server capability: THIS deployment can put a file the agent produced into THIS conversation — the adapter goes back for the bound attachment AND object storage exists to go back to. Absent/false on a server predating it, which is the safe reading: the agent is told to describe its file in words. Never inferred daemon-side from chat_channel_type; see handler.Handler.channelDeliversFiles
 	ChatType                 string               `json:"chat_type,omitempty"`                   // channel_chat_session_binding.chat_type — "group" for a shared room, "p2p" for a 1:1 with the bot. Lets the per-turn prompt tell the agent who else can read its replies; empty for a web-only chat
 	ChatNoticeLocale         string               `json:"chat_notice_locale,omitempty"`          // locale for bridge-generated delivery notices; optional and ignored by installed daemons
@@ -2537,6 +2542,14 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		if pendingMovedTo.Valid {
 			h.TaskService.NotifyRuntimeMayHaveWork(pendingMovedTo)
 		}
+	}
+	// A cap change can make the agent's queued work claimable right away
+	// (#10455). Nudge its runtime now that the write is visible, as a runtime
+	// cap change does, instead of leaving the queue to the daemon's next poll.
+	// A runtime switch above already woke the same runtime.
+	capChanged := req.MaxConcurrentTasks != nil && *req.MaxConcurrentTasks != existing.MaxConcurrentTasks
+	if capChanged && updated.RuntimeID.Valid && updated.RuntimeID != pendingMovedTo && h.TaskService != nil {
+		h.TaskService.NotifyRuntimeCapacityChanged(updated.RuntimeID)
 	}
 
 	// Nullable runtime overrides: null/empty in the request means explicitly

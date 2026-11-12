@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 
+	"github.com/multica-ai/multica/server/internal/agentplugins"
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/remotemcp"
@@ -76,6 +77,7 @@ type ProjectWorkflowData struct {
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
+	AgentPlugins *agentplugins.TaskContext `json:"agent_plugins,omitempty"`
 	// StartClaimSupported gates retries when talking to older servers.
 	StartClaimSupported  bool                   `json:"start_claim_supported,omitempty"`
 	DispatchedAt         string                 `json:"dispatched_at,omitempty"`
@@ -140,6 +142,9 @@ type Task struct {
 	IssueAssigneeID               string                 `json:"issue_assignee_id,omitempty"`                // assignee UUID at claim time; empty when unassigned
 	ChatSessionID                 string                 `json:"chat_session_id,omitempty"`                  // non-empty for chat tasks
 	ChatChannelType               string                 `json:"chat_channel_type,omitempty"`                // "slack" when the chat session is backed by an IM channel; empty for a web-only chat. Drives the channel-awareness block in the prompt
+	ChatChannelID                 string                 `json:"chat_channel_id,omitempty"`                  // Mattermost API channel ID, not the composite session-isolation key
+	ChatChannelThreadID           string                 `json:"chat_channel_thread_id,omitempty"`           // Mattermost root post ID; empty for an unthreaded direct message
+	ChatChannelMessageID          string                 `json:"chat_channel_message_id,omitempty"`          // triggering Mattermost post ID from this task's delivery snapshot
 	ChatChannelDeliversFiles      bool                   `json:"chat_channel_delivers_files,omitempty"`      // server capability: this deployment carries a file the agent produces the last hop into this conversation. Absent on a server predating it, which reads as false — the run is told to describe its file in words, and the worst case is a delivery that could have happened did not. Must never be re-derived from chat_channel_type: whether the hop exists depends on the SERVER's storage and adapter wiring, which no daemon can see (MUL-4899)
 	ChatType                      string                 `json:"chat_type,omitempty"`                        // "group" when the channel conversation is a shared room, "p2p" for a 1:1 with the bot. Empty for a web chat or an old server; the per-turn prompt then reports unknown rather than guessing 1:1
 	ChatInThread                  bool                   `json:"chat_in_thread,omitempty"`                   // true when the latest @mention was a thread reply; selects which read command the prompt tells the agent to start with

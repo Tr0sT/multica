@@ -46,6 +46,7 @@ type shutdownSequence struct {
 
 	JoinWebhookWorker func()
 	JoinTelegram      func()
+	JoinMattermost    func()
 
 	// JoinChannelSupervisor waits for the per-installation goroutines so the
 	// lease renewer can issue a final release before exit; without it the next
@@ -71,6 +72,7 @@ func (s shutdownSequence) run() {
 		s.StopHeartbeats,
 		s.JoinWebhookWorker,
 		s.JoinTelegram,
+		s.JoinMattermost,
 		s.JoinChannelSupervisor,
 		s.DrainChannelRouter,
 		s.StopMetricsServer,

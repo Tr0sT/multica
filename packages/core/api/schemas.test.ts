@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   AgentTaskSchema,
   IssueSchema,
@@ -15,6 +16,14 @@ import {
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_LIST_TELEGRAM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
+  MattermostInstallationSchema,
+  ListMattermostInstallationsResponseSchema,
+  RedeemMattermostBindingTokenResponseSchema,
+  EMPTY_MATTERMOST_INSTALLATION,
+  EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE,
+  EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE,
+  MattermostBindingPreviewSchema,
+  EMPTY_MATTERMOST_BINDING_PREVIEW,
   AgentTaskListSchema,
   AgentActivityBucketListSchema,
   TaskMessageListSchema,
@@ -185,6 +194,15 @@ describe("ChatSessionSchema", () => {
     expect(parseWithFallback({ id: 42 }, ChatSessionSchema, EMPTY_CHAT_SESSION, {
       endpoint: "GET /api/chat/sessions/:id",
     })).toEqual(EMPTY_CHAT_SESSION);
+  });
+
+  it("reads Mattermost identity and ignores malformed optional names", () => {
+    const source = { channel_type: "mattermost", installation_id: "installation-1", route_revision: 1 };
+    expect(ChatSessionSchema.parse({ ...baseSession, channel_source: { ...source, sender_username: "alice.example" } }).channel_source?.sender_username).toBe("alice.example");
+    const parsed = ChatSessionSchema.parse({ ...baseSession, channel_source: { ...source, sender_username: 42, channel_name: null } });
+    expect(parsed.channel_source?.channel_type).toBe("mattermost");
+    expect(parsed.channel_source?.sender_username).toBeUndefined();
+    expect(parsed.channel_source?.channel_name).toBeUndefined();
   });
 
   it("drops one malformed list item without hiding the other Chats", () => {
@@ -2192,6 +2210,140 @@ describe("Telegram installation schemas", () => {
         { endpoint: "POST /api/telegram/binding/redeem" },
       ),
     ).toEqual(EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE);
+  });
+});
+// Mattermost drives the same connect/disabled/revoked UI decisions as
+// Telegram, plus one field neither Slack nor Telegram has: server_url. It is
+// self-hosted, so a missing or malformed server URL must render as "not
+// connected" rather than as a row pointing nowhere.
+describe("Mattermost installation schemas", () => {
+  it("reads saved single-image replies as a one-image set", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old", denied_reply: {
+      mode: "image", image_attachment_id: "11111111-1111-4111-8111-111111111111",
+    } }).denied_reply).toEqual({ mode: "images", text: "", image_attachment_ids: ["11111111-1111-4111-8111-111111111111"] });
+  });
+  it("defaults missing automatic replies and preserves unknown reply types", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).denied_reply).toEqual({ mode: "text", text: "", image_attachment_ids: [] });
+    expect(MattermostInstallationSchema.parse({ id: "future", denied_reply: { mode: "video" } }).denied_reply.mode).toBe("unknown");
+  });
+  it("defaults missing access to members and preserves unsupported access as unknown", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).access_mode).toBe("members");
+    expect(MattermostInstallationSchema.parse({ id: "open", access_mode: "anyone" }).access_mode).toBe("anyone");
+    expect(MattermostInstallationSchema.parse({ id: "selected", access_mode: "allowlist" }).access_mode).toBe("allowlist");
+    for (const access_mode of ["future-mode", null, true, 1, {}]) {
+      expect(MattermostInstallationSchema.parse({ id: "unknown", access_mode }).access_mode).toBe("unknown");
+    }
+  });
+
+  it("defaults old allowlists and parses account identities", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).allowed_users).toEqual([]);
+    const allowed_users = [{ id: "alice-id", username: "alice" }];
+    expect(MattermostInstallationSchema.parse({ id: "selected", access_mode: "allowlist", allowed_users }).allowed_users)
+      .toEqual(allowed_users);
+  });
+
+  it.each([0, 1440, 2160, 8760])("parses extended period %s without breaking older clients", (hours) => {
+    const wire = { id: "i1", status: "active", context: { mode: "channel_extended", extended_lookback_hours: hours } };
+    expect(MattermostInstallationSchema.parse(wire).context).toEqual({ mode: "channel", lookback_hours: hours });
+    // Installed clients reject hours over 720; unknown modes keep the installation visible.
+    const olderSchema = MattermostInstallationSchema.omit({ context: true }).extend({
+      context: z.object({
+        mode: z.enum(["message", "thread", "channel", "unknown"]).catch("unknown"),
+        lookback_hours: z.number().int().min(0).max(720).default(0),
+      }),
+    });
+    const older = olderSchema.parse(wire);
+    expect(older.status).toBe("active");
+    expect(older.context.mode).toBe("unknown");
+  });
+
+  it("parses context settings and distinguishes unknown modes from message-only history", () => {
+    expect(MattermostInstallationSchema.parse({ id: "old" }).context).toEqual({ mode: "message", lookback_hours: 0 });
+    expect(MattermostInstallationSchema.parse({ id: "i1", context: { mode: "channel", lookback_hours: 168 } }).context)
+      .toEqual({ mode: "channel", lookback_hours: 168 });
+    expect(MattermostInstallationSchema.parse({ id: "i1", context: { mode: "future-mode" } }).context.mode).toBe("unknown");
+    for (const context of [
+      null, "channel", { mode: "channel", lookback_hours: -1 }, { mode: "channel", lookback_hours: "24" },
+      { mode: "channel_extended" }, { mode: "channel_extended", extended_lookback_hours: -1 },
+      { mode: "channel_extended", extended_lookback_hours: 1.5 },
+      { mode: "channel_extended", extended_lookback_hours: "0" },
+    ]) {
+      expect(parseWithFallback({ id: "i1", context }, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
+        endpoint: "POST /api/workspaces/:id/mattermost/install",
+      })).toEqual(EMPTY_MATTERMOST_INSTALLATION);
+    }
+  });
+  it("requires a complete HTTPS identity for account-link confirmation", () => {
+    const wire = {
+      workspace_id: "w1", workspace_name: "Acme", installation_id: "i1",
+      mattermost_user_id: "u1", username: "alice", server_url: "https://chat.example.com",
+    };
+    expect(MattermostBindingPreviewSchema.parse(wire)).toEqual({
+      workspaceId: "w1", workspaceName: "Acme", installationId: "i1",
+      mattermostUserId: "u1", username: "alice", serverUrl: "https://chat.example.com",
+    });
+    for (const malformed of [{}, null, { ...wire, server_url: "http://chat.example.com" }, { ...wire, username: "" }]) {
+      expect(parseWithFallback(malformed, MattermostBindingPreviewSchema, EMPTY_MATTERMOST_BINDING_PREVIEW, {
+        endpoint: "POST /api/mattermost/binding/preview",
+      })).toEqual(EMPTY_MATTERMOST_BINDING_PREVIEW);
+    }
+  });
+  it("parses a well-formed installation", () => {
+    const parsed = MattermostInstallationSchema.parse({
+      id: "i1",
+      workspace_id: "w1",
+      agent_id: "a1",
+      server_url: "https://mattermost.example.com",
+      bot_user_id: "botuserid0000000000000000",
+      bot_username: "multica",
+      installer_user_id: "u1",
+      status: "active",
+    });
+    expect(parsed.server_url).toBe("https://mattermost.example.com");
+    expect(parsed.bot_username).toBe("multica");
+    expect(parsed.status).toBe("active");
+  });
+
+  it("defaults incomplete data to the disconnected state", () => {
+    const parsed = MattermostInstallationSchema.parse({ id: "i1" });
+    expect(parsed.status).toBe("revoked");
+    expect(parsed.server_url).toBe("");
+    expect(parsed.bot_user_id).toBe("");
+    expect(parsed.bot_username).toBe("");
+
+    const list = ListMattermostInstallationsResponseSchema.parse({});
+    expect(list).toEqual({ installations: [], configured: false });
+  });
+
+  it("keeps unknown forward-compatible installation fields", () => {
+    const parsed = MattermostInstallationSchema.parse({ id: "i1", future_field: "keep" });
+    expect((parsed as unknown as { future_field?: string }).future_field).toBe("keep");
+  });
+
+  it("falls back safely for malformed list, install, and redeem responses", () => {
+    expect(
+      parseWithFallback(
+        "not json",
+        ListMattermostInstallationsResponseSchema,
+        EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE,
+        { endpoint: "GET /api/workspaces/:id/mattermost/installations" },
+      ),
+    ).toEqual(EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE);
+
+    expect(
+      parseWithFallback(42, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
+        endpoint: "POST /api/workspaces/:id/mattermost/install",
+      }),
+    ).toEqual(EMPTY_MATTERMOST_INSTALLATION);
+
+    expect(
+      parseWithFallback(
+        null,
+        RedeemMattermostBindingTokenResponseSchema,
+        EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE,
+        { endpoint: "POST /api/mattermost/binding/redeem" },
+      ),
+    ).toEqual(EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE);
   });
 });
 

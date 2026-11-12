@@ -476,6 +476,29 @@ func TestBuildChatPromptAttachmentIDsCanBeBoundToCreatedIssues(t *testing.T) {
 }
 
 func TestBuildChatPromptChannelAwareness(t *testing.T) {
+	t.Run("older server does not invent Mattermost IDs", func(t *testing.T) {
+		out := buildChatPrompt(Task{ChatChannelType: execenv.ChannelTypeMattermost, ChatMessage: "Read the thread"})
+		if strings.Contains(out, "Mattermost source:") {
+			t.Fatal("invented source IDs absent from the claim")
+		}
+	})
+
+	t.Run("mattermost source survives a fresh session without automatic history", func(t *testing.T) {
+		var task Task
+		if err := json.Unmarshal([]byte(`{"chat_channel_type":"mattermost","chat_channel_id":"room-1","chat_channel_thread_id":"root-1","chat_channel_message_id":"post-2","chat_message":"Read the whole chat"}`), &task); err != nil {
+			t.Fatal(err)
+		}
+		out := buildChatPrompt(task)
+		for _, want := range []string{`channel_id="room-1"`, `thread_id="root-1"`, `post_id="post-2"`, "mattermost-readonly", "not the full Mattermost channel"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Mattermost prompt missing %q", want)
+			}
+		}
+		if strings.Contains(out, "no command can fetch more") {
+			t.Error("Mattermost prompt incorrectly forbids configured history tools")
+		}
+	})
+
 	t.Run("slack-backed prompt teaches both read commands", func(t *testing.T) {
 		out := buildChatPrompt(Task{
 			ChatSessionID:   "sess-1",
@@ -596,6 +619,28 @@ func TestBuildChatPromptNoNarrationOnEveryChannel(t *testing.T) {
 	}
 }
 
+func TestMattermostPromptConnectsGitHistoryToTasks(t *testing.T) {
+	for _, channelType := range []string{execenv.ChannelTypeMattermost, execenv.ChannelTypeSlack, ""} {
+		for _, chatType := range []string{execenv.ChatTypeP2P, execenv.ChatTypeGroup} {
+			out := buildChatPrompt(Task{ChatChannelType: channelType, ChatType: chatType, ChatMessage: "Review recent changes."})
+			for _, rule := range []string{
+				"branch names and commit messages",
+				"full project key",
+				"issue-tracker tools",
+				"diffs",
+				"does not prove completion",
+				"tracker is unavailable",
+				"multica attachment download '<download_url>'",
+				"do not fetch or analyze every file in history",
+			} {
+				if strings.Contains(out, rule) != (channelType == execenv.ChannelTypeMattermost) {
+					t.Fatalf("channel=%q audience=%q: Git task guidance %q missing or leaked to another surface", channelType, chatType, rule)
+				}
+			}
+		}
+	}
+}
+
 // TestBuildChatPromptTwoLayerChannelPolicy pins the two INDEPENDENT axes of the
 // chat channel policy (MUL-4899). Collapsing them into one condition is exactly
 // the bug this matrix exists to catch:
@@ -637,6 +682,20 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 		wantHistory   bool
 		wantPhrases   []string
 	}{
+		{
+			name:          "mattermost with storage: upload and history",
+			channelType:   execenv.ChannelTypeMattermost,
+			deliversFiles: true,
+			wantUpload:    true,
+			wantHistory:   true,
+			wantPhrases:   []string{"sends it into the Mattermost conversation as a separate message"},
+		},
+		{
+			name:        "mattermost without storage: text only",
+			channelType: execenv.ChannelTypeMattermost,
+			wantHistory: true,
+			wantPhrases: []string{"delivered to Mattermost as text"},
+		},
 		{
 			name:        "direct chat: upload, no history",
 			channelType: "",

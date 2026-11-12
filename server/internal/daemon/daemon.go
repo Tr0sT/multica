@@ -1230,7 +1230,7 @@ func (d *Daemon) adoptAgentPath(ctx context.Context, provider, command, newPath,
 	// older or broken install must not be launched under the daemon's stale
 	// version policy, and must not slip past the minimum-version gate that the
 	// registration path applies (MUL-4486 review).
-	version, err := detectAgentVersion(ctx, agent.Command{Path: newPath})
+	version, err := detectAgentVersion(ctx, agent.Command{Path: newPath}.ForVersionProbe(provider))
 	if err != nil {
 		d.logger.Warn("re-resolved agent executable failed version detection; keeping pinned path",
 			"provider", provider, "command", command, "new_path", newPath, "error", err)
@@ -2619,7 +2619,7 @@ probeLoop:
 				"name", name, "version", heal.rejected.Detected, "error", heal.rejected.Error())
 			return heal.rejected.Detected, heal.rejected.Error(), builtinProbeBelowMinimum
 		}
-		version, err := detectAgentVersion(ctx, agent.Command{Path: resolved.Path})
+		version, err := detectAgentVersion(ctx, agent.Command{Path: resolved.Path}.ForVersionProbe(name))
 		if err != nil {
 			lastErr = err
 			if time.Since(startedAt) >= runtimeVersionProbeRetryWindow {
@@ -3193,7 +3193,7 @@ func (d *Daemon) appendProfileRuntimes(ctx context.Context, workspaceID string, 
 		// wrapper's, and only the former means anything to the min-version
 		// gate (GH #7046).
 		version, verErr := detectAgentVersion(ctx, agent.NewCommand(resolved,
-			agent.FilterLaunchPrefix(runtimeType, profile.FixedArgs, d.logger)))
+			agent.FilterLaunchPrefix(runtimeType, profile.FixedArgs, d.logger)).ForVersionProbe(runtimeType))
 		if verErr != nil {
 			d.logger.Debug("custom runtime profile: version probe failed (registering with empty version)",
 				"workspace_id", workspaceID, "profile_id", profile.ID, "path", resolved, "error", verErr)
@@ -4587,6 +4587,11 @@ func (d *Daemon) handleHeartbeatActions(ctx context.Context, runtimeID string, r
 	if resp == nil {
 		return
 	}
+	if resp.PendingMarketplace != nil {
+		if rt := d.findRuntime(runtimeID); rt != nil {
+			go d.handleMarketplaceSync(ctx, *rt, *resp.PendingMarketplace)
+		}
+	}
 	if resp.PendingUpdate != nil || resp.PendingModelList != nil || resp.PendingLocalSkills != nil || resp.PendingLocalSkillImport != nil {
 		d.logger.Debug("heartbeat: pending actions",
 			"runtime_id", runtimeID,
@@ -5150,21 +5155,10 @@ func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireRe
 	}
 }
 
-// runUpdate executes the brew-or-download upgrade against targetVersion and
-// returns the human-readable output (always populated, even on failure when
-// brew gives us a useful diagnostic). The caller is responsible for the
-// `updating` CAS guard and for reporting status back to the server / triggering
-// the restart — extracted so the server-triggered path (handleUpdate) and the
-// auto-update poller (autoUpdateLoop) share the exact same execution body.
+// runUpdate downloads the requested fork release for both server-triggered and
+// automatic updates. Callers guard concurrent updates, report status, and restart
+// the daemon after success.
 func (d *Daemon) runUpdate(targetVersion string) (string, error) {
-	if cli.IsBrewInstall() {
-		d.logger.Info("updating CLI via Homebrew...")
-		out, err := cli.UpdateViaBrew()
-		if err != nil {
-			return out, fmt.Errorf("brew upgrade failed: %w", err)
-		}
-		return out, nil
-	}
 	d.logger.Info("updating CLI via direct download...", "target_version", targetVersion)
 	out, err := cli.UpdateViaDownload(targetVersion)
 	if err != nil {
@@ -7362,7 +7356,8 @@ func formatBytes(n int64) string {
 		return "unknown size"
 	case n < 1024:
 		return fmt.Sprintf("%d B", n)
-	case n < 1024*1024:
+	case n < 1024*1024-512:
+		// Sizes from 1023.5 KB up round to "1024 KB", so they print in MB.
 		return fmt.Sprintf("%.0f KB", float64(n)/1024)
 	default:
 		return fmt.Sprintf("%.2f MB", float64(n)/(1024*1024))
@@ -8001,6 +7996,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `multica repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
+		ManagedPlugins:      task.AgentPlugins != nil,
 		IssueID:             task.IssueID,
 		TriggerCommentID:    task.TriggerCommentID,
 		TriggerThreadID:     task.TriggerThreadID,
@@ -8722,6 +8718,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Build the runtime brief and inject it into the provider-specific
 	// instruction file when supported.
 	runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
+	runtimeBriefWritten := err == nil
 	if err != nil {
 		d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
 	}
@@ -8858,6 +8855,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
 		return TaskResult{}, err
 	}
+	pluginArgs, err := d.prepareManagedAgentPlugins(ctx, provider, codexVersion, entry.Path, profileFixedArgs, agentEnv, env.CodexHome, task.AgentPlugins)
+	if err != nil {
+		return TaskResult{}, asEnvironmentSetupFailure(err)
+	}
 	// The overlay is authoritative once built, so nothing on the command line
 	// may re-point HERMES_HOME out of it. Both argv regions are stripped
 	// together, against the same assembled argv the resolver read: a selection
@@ -8923,6 +8924,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			return TaskResult{}, fmt.Errorf("prepare fresh OpenCode session after clock check: %w", briefErr)
 		} else {
 			runtimeBrief = freshBrief
+			runtimeBriefWritten = true
 		}
 		prompt = BuildPrompt(task, provider, promptOptions...)
 	}
@@ -8997,6 +8999,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
 	execOpts := agent.ExecOptions{
+		CodexPluginArgs:            pluginArgs,
 		EnableTaskSupplement:       taskSupplementNegotiated,
 		CursorHookCommand:          cursorHookCommand,
 		Cwd:                        env.WorkDir,
@@ -9109,6 +9112,26 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"idle_watchdog", execOpts.IdleWatchdogTimeout,
 	)
 
+	// MUL-9013: record what this run is being handed, before it starts, so a
+	// run that dies early still has a receipt. Rebuilt for the cold retry.
+	receiptInput := contextReceiptInput{
+		Provider:             provider,
+		RuntimeVersion:       resolvedVersion,
+		CustomRuntime:        usesCustomProfileCommand,
+		Model:                model,
+		WorkDir:              env.WorkDir,
+		Prompt:               prompt,
+		RuntimeBrief:         runtimeBrief,
+		InlineBrief:          execOpts.SystemPrompt != "",
+		BriefWritten:         runtimeBriefWritten,
+		ResumedSession:       execOpts.ResumeSessionID != "",
+		MCPConfig:            mcpConfig,
+		TaskCtx:              taskCtx,
+		Skills:               env.SkillReceipts(provider, taskCtx.AgentSkills),
+		ExistingInstructions: execenv.ExistingRuntimeConfigContent(env.WorkDir, provider),
+	}
+	d.reportContextReceipt(ctx, task.ID, buildContextReceipt(receiptInput), taskLog)
+
 	// Shared across the resume-retry below so the retry's transcript rows
 	// keep ascending seq values for the same task.
 	var msgSeq atomic.Int32
@@ -9128,7 +9151,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	stopUsageFlush := d.startUsageFlush(ctx, task.ID, &liveUsage, taskLog)
 	defer stopUsageFlush()
-	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
+	result, tools, err := d.executeWithModelCapacityRetry(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
 		return TaskResult{}, err
 	}
@@ -9170,17 +9193,35 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		task.PriorSessionResumeUnavailable = true
 		execOpts.ResumeContinuityNotice = ""
 		taskCtx.PriorSessionResumed = false
-		if freshBrief, briefErr := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx); briefErr != nil {
+		runtimeBriefWritten = false
+		freshBrief, briefErr := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
+		if briefErr != nil {
 			taskLog.Warn("execenv: re-inject cold runtime config for fresh retry failed (non-fatal)", "error", briefErr)
 		} else {
 			runtimeBrief = freshBrief
+			runtimeBriefWritten = true
 			if providerNeedsInlineSystemPrompt(provider) {
 				execOpts.SystemPrompt = runtimeBrief
 			}
 		}
 		freshPrompt := BuildPrompt(task, provider, promptOptions...)
 
-		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, freshPrompt, withPriorTaskUsage(execOpts, firstUsage), taskLog, task.ID, env.CodexHome, &msgSeq)
+		receiptInput.Prompt = freshPrompt
+		receiptInput.RuntimeBrief = freshBrief
+		receiptInput.InlineBrief = execOpts.SystemPrompt != ""
+		if receiptInput.InlineBrief {
+			// A failed file rewrite leaves the prior inline payload in use.
+			receiptInput.RuntimeBrief = execOpts.SystemPrompt
+		}
+		receiptInput.BriefWritten = runtimeBriefWritten
+		receiptInput.ResumedSession = false
+		receiptInput.FreshRetry = true
+		receiptInput.TaskCtx = taskCtx
+		receiptInput.Skills = env.SkillReceipts(provider, taskCtx.AgentSkills)
+		receiptInput.ExistingInstructions = execenv.ExistingRuntimeConfigContent(env.WorkDir, provider)
+		d.reportContextReceipt(ctx, task.ID, buildContextReceipt(receiptInput), taskLog)
+
+		retryResult, retryTools, retryErr := d.executeWithModelCapacityRetry(ctx, backend, freshPrompt, withPriorTaskUsage(execOpts, firstUsage), taskLog, task.ID, env.CodexHome, &msgSeq)
 		if retryErr != nil {
 			taskLog.Error("fresh session also failed to start; keeping the original poisoned result", "error", retryErr)
 		} else if retryResult.Status != "completed" && retryResult.SessionID == "" {
@@ -9634,7 +9675,7 @@ func (d *Daemon) repairWorktreeDelivery(ctx context.Context, backend agent.Backe
 	if opts.Timeout <= 0 || opts.Timeout > worktreeRepairTimeout {
 		opts.Timeout = worktreeRepairTimeout
 	}
-	repair, repairTools, repairErr := d.executeAndDrain(ctx, backend, BuildWorktreeDeliveryRepairPrompt(problem), opts, taskLog, taskID, env.CodexHome, msgSeq)
+	repair, repairTools, repairErr := d.executeWithModelCapacityRetry(ctx, backend, BuildWorktreeDeliveryRepairPrompt(problem), opts, taskLog, taskID, env.CodexHome, msgSeq)
 	if repairErr != nil {
 		taskLog.Error("local_directory: worktree delivery repair turn failed to start", "error", repairErr)
 	} else if remaining := env.LocalWorktree.CheckDelivery(); remaining != nil {

@@ -10,6 +10,15 @@ formulae, and container images.
 The verification job runs the Go tests and `govulncheck` before any publishing
 job starts. The vulnerability scan is fail-closed by default.
 
+In `Tr0sT/multica`, the CLI release job publishes macOS, Linux, and Windows
+archives for amd64 and arm64 plus `checksums.txt` to the fork's GitHub release.
+It skips the upstream Homebrew tap and Desktop publishing. Use a new stable
+`vX.Y.Z` tag for updates offered by the web UI and daemon; source builds and
+prerelease versions are not offered by the update checker. A fork release with
+these assets must exist before clients can update. Existing CLIs with the old
+upstream update source need a one-time fork installation as described in
+[the CLI guide](../CLI_AND_DAEMON.md#update).
+
 CI and release jobs require Go `~1.27.4`: at least 1.27.4, while accepting
 newer 1.27 patches. This security floor is independent of the development
 minimum in `server/go.mod`. A plain `1.27.x` can resolve to an older patch

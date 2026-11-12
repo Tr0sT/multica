@@ -180,6 +180,21 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
+	creatorID := parseUUID(userID)
+	if filter := r.URL.Query().Get("creator_id"); filter != "" {
+		if filter == "all" {
+			creatorID = pgtype.UUID{}
+		} else {
+			creatorID, ok = parseUUIDOrBadRequest(w, filter, "creator_id")
+			if !ok {
+				return
+			}
+		}
+		if creatorID != parseUUID(userID) && (actorType != "member" || !isWorkspaceAdmin(member)) {
+			writeError(w, http.StatusForbidden, "only workspace admins can view other members' chats")
+			return
+		}
+	}
 
 	// Two call sites → two row types with identical shape. Collect into a
 	// common response slice via small per-branch loops.
@@ -187,7 +202,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	if status == "all" {
 		rows, err := h.Queries.ListAllChatSessionsByCreator(r.Context(), db.ListAllChatSessionsByCreatorParams{
 			WorkspaceID: parseUUID(workspaceID),
-			CreatorID:   parseUUID(userID),
+			CreatorID:   creatorID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
@@ -217,7 +232,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	} else {
 		rows, err := h.Queries.ListChatSessionsByCreator(r.Context(), db.ListChatSessionsByCreatorParams{
 			WorkspaceID: parseUUID(workspaceID),
-			CreatorID:   parseUUID(userID),
+			CreatorID:   creatorID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
@@ -243,6 +258,12 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				CreatedAt:   timestampToString(s.CreatedAt),
 				UpdatedAt:   timestampToString(s.UpdatedAt),
 			})
+		}
+	}
+	for i := range resp {
+		if resp[i].CreatorID != userID {
+			resp[i].HasUnread = false
+			resp[i].UnreadCount = 0
 		}
 	}
 	if err := h.hydrateChatSessionChannelMetadata(r.Context(), resp); err != nil {
@@ -329,7 +350,7 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())
 	sessionID := chi.URLParam(r, "sessionId")
 
-	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	session, ok := h.gatePublicChatSessionForReader(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
 	}
@@ -1196,7 +1217,7 @@ func (h *Handler) ListChatMessages(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())
 	sessionID := chi.URLParam(r, "sessionId")
 
-	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	session, ok := h.gatePublicChatSessionForReader(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
 	}
@@ -1229,7 +1250,7 @@ func (h *Handler) ListChatMessagesPage(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())
 	sessionID := chi.URLParam(r, "sessionId")
 
-	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	session, ok := h.gatePublicChatSessionForReader(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
 	}
@@ -1630,7 +1651,7 @@ func (h *Handler) GetPendingChatTask(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())
 	sessionID := chi.URLParam(r, "sessionId")
 
-	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	session, ok := h.gatePublicChatSessionForReader(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
 	}
@@ -1953,6 +1974,8 @@ type ChatSessionChannelSourceResponse struct {
 	ChannelType    string `json:"channel_type"`
 	InstallationID string `json:"installation_id"`
 	RouteRevision  int64  `json:"route_revision"`
+	SenderUsername string `json:"sender_username,omitempty"`
+	ChannelName    string `json:"channel_name,omitempty"`
 }
 
 func (h *Handler) hydrateChatSessionChannelMetadata(ctx context.Context, sessions []ChatSessionResponse) error {
@@ -1979,6 +2002,17 @@ func (h *Handler) hydrateChatSessionChannelMetadata(ctx context.Context, session
 		current := !binding.RetiredAt.Valid
 		sessions[i].ChannelSource = &ChatSessionChannelSourceResponse{
 			ChannelType: binding.ChannelType, InstallationID: uuidToString(binding.InstallationID), RouteRevision: binding.RouteRevision,
+		}
+		if binding.ChannelType == "mattermost" {
+			var metadata struct {
+				SenderUsername string `json:"sender_username"`
+				ChannelName    string `json:"channel_name"`
+			}
+			if err := json.Unmarshal(binding.Config, &metadata); err != nil {
+				return err
+			}
+			sessions[i].ChannelSource.SenderUsername = metadata.SenderUsername
+			sessions[i].ChannelSource.ChannelName = metadata.ChannelName
 		}
 		sessions[i].IsCurrentChannelRoute = &current
 	}

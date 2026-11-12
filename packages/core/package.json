@@ -165,6 +165,8 @@
     "./wecom/queries": "./wecom/queries.ts",
     "./telegram": "./telegram/index.ts",
     "./telegram/queries": "./telegram/queries.ts",
+    "./mattermost": "./mattermost/index.ts",
+    "./mattermost/queries": "./mattermost/queries.ts",
     "./feedback": "./feedback/index.ts",
     "./feedback/mutations": "./feedback/mutations.ts",
     "./realtime": "./realtime/index.ts",
@@ -200,7 +202,8 @@
     "./skills/pack-archive": "./skills/pack-archive.ts",
     "./skills/stores": "./skills/stores/index.ts",
     "./autopilots/stores": "./autopilots/stores/index.ts",
-    "./runtimes/qoder": "./runtimes/qoder.ts"
+    "./runtimes/qoder": "./runtimes/qoder.ts",
+    "./agent-marketplaces": "./agent-marketplaces/index.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

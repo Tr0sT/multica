@@ -23,10 +23,11 @@ const (
 	EventIssueReactionRemoved = "issue_reaction:removed"
 
 	// Agent events
-	EventAgentStatus   = "agent:status"
-	EventAgentCreated  = "agent:created"
-	EventAgentArchived = "agent:archived"
-	EventAgentRestored = "agent:restored"
+	EventAgentStatus         = "agent:status"
+	EventAgentCreated        = "agent:created"
+	EventAgentArchived       = "agent:archived"
+	EventAgentRestored       = "agent:restored"
+	EventAgentPluginsChanged = "agent_plugins:changed"
 
 	// Task events (server <-> daemon).
 	// Events describe task lifecycle or recorded usage changes. Front-end
@@ -51,6 +52,7 @@ const (
 	EventInboxUnread        = "inbox:unread"
 	EventInboxArchived      = "inbox:archived"
 	EventInboxUnarchived    = "inbox:unarchived"
+	EventInboxDeleted       = "inbox:deleted"
 	EventInboxBatchRead     = "inbox:batch-read"
 	EventInboxBatchArchived = "inbox:batch-archived"
 
@@ -245,4 +247,10 @@ const (
 	// front-ends invalidate the Telegram installations query on either.
 	EventTelegramInstallationCreated = "telegram_installation:created"
 	EventTelegramInstallationRevoked = "telegram_installation:revoked"
+
+	// Mattermost installation lifecycle. Same contract as the Slack pair:
+	// front-ends invalidate the Mattermost installations query on either.
+	EventMattermostInstallationCreated = "mattermost_installation:created"
+	EventMattermostInstallationUpdated = "mattermost_installation:updated"
+	EventMattermostInstallationRevoked = "mattermost_installation:revoked"
 )

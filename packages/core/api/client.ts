@@ -1,5 +1,17 @@
 import type { ZodType } from "zod";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
+import type {
+  AgentMarketplace,
+  AgentMarketplaceCatalog,
+  AgentPluginSelection,
+  AgentPluginSettings,
+  ConnectAgentMarketplaceRequest,
+} from "../types/agent-marketplace";
+import {
+  AgentMarketplaceSchema,
+  AgentMarketplaceCatalogSchema,
+  AgentPluginSettingsSchema,
+} from "./agent-marketplace-schemas";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
@@ -97,6 +109,7 @@ import type {
   TimelineEntry,
   AssigneeFrequencyEntry,
   TaskMessagePayload,
+  TaskContextReceiptResponse,
   Attachment,
   ChatSession,
   ChatPinnedAgent,
@@ -190,6 +203,7 @@ import type {
   IssueEnvironmentAction,
   IssueEnvironmentCommand,
   StartIssueEnvironmentRequest,
+  IssuePullRequestSummariesResponse,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -238,6 +252,12 @@ import type {
   ListTelegramInstallationsResponse,
   RegisterTelegramRequest,
   RedeemTelegramBindingTokenResponse,
+  MattermostInstallation,
+  ListMattermostInstallationsResponse,
+  RegisterMattermostRequest,
+  UpdateMattermostInstallationRequest,
+  RedeemMattermostBindingTokenResponse,
+  MattermostBindingPreview,
   Squad,
   SquadMember,
   SquadMemberStatusListResponse,
@@ -281,6 +301,7 @@ import { type Logger, noopLogger } from "../logger";
 import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
+import { getApiRequestObserver } from "./request-observer";
 import {
   RuntimeProfileSchema,
   RuntimeProfileListSchema,
@@ -389,6 +410,7 @@ import {
   SquadMemberStatusListResponseSchema,
   SubscribersListSchema,
   TaskMessageListSchema,
+  TaskContextReceiptResponseSchema,
   TimelineEntriesSchema,
   UserSchema,
   WebhookDeliveryResponseSchema,
@@ -434,6 +456,14 @@ import {
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_LIST_TELEGRAM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
+  MattermostInstallationSchema,
+  ListMattermostInstallationsResponseSchema,
+  RedeemMattermostBindingTokenResponseSchema,
+  EMPTY_MATTERMOST_INSTALLATION,
+  EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE,
+  EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE,
+  MattermostBindingPreviewSchema,
+  EMPTY_MATTERMOST_BINDING_PREVIEW,
   EMPTY_BILLING_BALANCE,
   EMPTY_BILLING_TRANSACTIONS_PAGE,
   EMPTY_BILLING_BATCHES_PAGE,
@@ -468,6 +498,7 @@ import {
   SubscribedIssueIdsSchema,
   InvolvedSquadIdsSchema,
   IssueInboxReadSchema,
+  InboxDeleteSchema,
   InboxItemListSchema,
   ArchivedInboxPageSchema,
   ArchivedInboxFacetsSchema,
@@ -505,6 +536,8 @@ import {
   EMPTY_ISSUE_ENVIRONMENTS_RESPONSE,
   IssueEnvironmentsResponseSchema,
   IssueEnvironmentCommandSchema,
+  EMPTY_ISSUE_PULL_REQUEST_SUMMARIES_RESPONSE,
+  IssuePullRequestSummariesResponseSchema,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -1014,12 +1047,30 @@ export class ApiClient {
 
     this.logger.info(`→ ${method} ${path}`, { rid });
 
-    const send = () =>
-      fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers: buildHeaders(),
-        credentials: "include",
-      });
+    const observer = getApiRequestObserver();
+    observer?.onStart({
+      requestId: rid,
+      method,
+      path,
+      body: typeof init?.body === "string" ? init.body : null,
+    });
+
+    const send = async () => {
+      try {
+        return await fetch(`${this.baseUrl}${path}`, {
+          ...init,
+          headers: buildHeaders(),
+          credentials: "include",
+        });
+      } catch (err) {
+        observer?.onEnd({
+          requestId: rid,
+          status: null,
+          error: err instanceof Error && err.name === "AbortError" ? "aborted" : String(err),
+        });
+        throw err;
+      }
+    };
 
     let res = await send();
 
@@ -1050,10 +1101,12 @@ export class ApiClient {
       const { message, body } = await this.parseErrorBody(res, `API error: ${res.status} ${res.statusText}`);
       const logLevel = res.status === 404 ? "warn" : "error";
       this.logger[logLevel](`← ${res.status} ${path}`, { rid, duration: `${Date.now() - start}ms`, error: message });
+      observer?.onEnd({ requestId: rid, status: res.status, error: message });
       throw new ApiError(message, res.status, res.statusText, body);
     }
 
     this.logger.info(`← ${res.status} ${path}`, { rid, duration: `${Date.now() - start}ms` });
+    observer?.onEnd({ requestId: rid, status: res.status, error: null });
     return res;
   }
 
@@ -2822,6 +2875,51 @@ export class ApiClient {
     );
   }
 
+  async getAgentMarketplaceCatalog(wsId: string): Promise<AgentMarketplaceCatalog> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces", { headers: { "X-Workspace-ID": wsId } });
+    return parseWithFallback<AgentMarketplaceCatalog>(raw, AgentMarketplaceCatalogSchema,
+      { marketplaces: [], plugins: [], valid: false }, { endpoint: "GET /api/agent-marketplaces" });
+  }
+
+  async connectAgentMarketplace(wsId: string, request: ConnectAgentMarketplaceRequest): Promise<AgentMarketplace | null> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces", {
+      method: "POST", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ url: request.url, ref: request.ref, runtime_id: request.runtimeId }),
+    });
+    return parseWithFallback<AgentMarketplace | null>(raw, AgentMarketplaceSchema, null,
+      { endpoint: "POST /api/agent-marketplaces" });
+  }
+
+  async refreshAgentMarketplace(wsId: string, id: string, runtimeId: string): Promise<AgentMarketplace | null> {
+    const raw = await this.fetch<unknown>("/api/agent-marketplaces/" + id + "/refresh", {
+      method: "POST", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ runtime_id: runtimeId }),
+    });
+    return parseWithFallback<AgentMarketplace | null>(raw, AgentMarketplaceSchema, null,
+      { endpoint: "POST /api/agent-marketplaces/:id/refresh" });
+  }
+
+  async disconnectAgentMarketplace(wsId: string, id: string): Promise<void> {
+    await this.fetch("/api/agent-marketplaces/" + id, { method: "DELETE", headers: { "X-Workspace-ID": wsId } });
+  }
+
+  async getAgentPluginSelection(wsId: string, agentId: string): Promise<AgentPluginSettings> {
+    const raw = await this.fetch<unknown>("/api/agents/" + agentId + "/marketplace-plugins", { headers: { "X-Workspace-ID": wsId } });
+    return parseWithFallback<AgentPluginSettings>(raw, AgentPluginSettingsSchema,
+      { configured: false, plugins: [], valid: false }, { endpoint: "GET /api/agents/:id/marketplace-plugins" });
+  }
+
+  async setAgentPluginSelection(wsId: string, agentId: string, plugins: AgentPluginSelection[]): Promise<AgentPluginSettings> {
+    const raw = await this.fetch<unknown>("/api/agents/" + agentId + "/marketplace-plugins", {
+      method: "PUT", headers: { "X-Workspace-ID": wsId },
+      body: JSON.stringify({ plugins: plugins.map((plugin) => ({
+        marketplace_id: plugin.marketplaceId, plugin_name: plugin.pluginName,
+      })) }),
+    });
+    return parseWithFallback<AgentPluginSettings>(raw, AgentPluginSettingsSchema,
+      { configured: false, plugins: [], valid: false }, { endpoint: "PUT /api/agents/:id/marketplace-plugins" });
+  }
+
   async initiateUpdate(
     runtimeId: string,
     targetVersion: string,
@@ -2997,6 +3095,16 @@ export class ApiClient {
     });
   }
 
+  async getTaskContextReceipt(taskId: string): Promise<TaskContextReceiptResponse> {
+    const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/context-receipt`);
+    return parseWithFallback<TaskContextReceiptResponse>(
+      raw,
+      TaskContextReceiptResponseSchema,
+      { receipt: null },
+      { endpoint: "GET /api/tasks/:id/context-receipt" },
+    );
+  }
+
   async listTasksByIssue(issueId: string, includeDescendants = false, options?: { view: "timeline" }): Promise<AgentTask[]> {
     const search = new URLSearchParams();
     if (includeDescendants) search.set("scope", "subtree");
@@ -3098,6 +3206,13 @@ export class ApiClient {
 
   async archiveInbox(id: string): Promise<InboxItem> {
     return this.fetch(`/api/inbox/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteInbox(id: string): Promise<{ count: number | null }> {
+    const raw = await this.fetch<unknown>(`/api/inbox/${id}`, { method: "DELETE" });
+    return parseWithFallback<{ count: number | null }>(raw, InboxDeleteSchema, { count: null }, {
+      endpoint: "DELETE /api/inbox/{id}",
+    });
   }
 
   // Archived notifications, backing the inbox's "Archived" sub-view. Capped
@@ -3938,7 +4053,7 @@ export class ApiClient {
   // File Upload & Attachments
   async uploadFile(
     file: File,
-    opts?: { issueId?: string; commentId?: string; chatSessionId?: string },
+    opts?: { issueId?: string; commentId?: string; chatSessionId?: string; workspaceId?: string },
     // Optional abort signal so a module-level upload coordinator (MUL-5181)
     // can cancel an in-flight upload on logout. When aborted, `fetch` rejects
     // with an AbortError, which the coordinator distinguishes from a real
@@ -3956,9 +4071,14 @@ export class ApiClient {
     this.logger.info("→ POST /api/upload-file", { rid });
 
     const credentialUsed = this.getToken();
+    const headers = this.authHeaders();
+    if (opts?.workspaceId) {
+      delete headers["X-Workspace-Slug"];
+      headers["X-Workspace-ID"] = opts.workspaceId;
+    }
     const res = await fetch(`${this.baseUrl}/api/upload-file`, {
       method: "POST",
-      headers: this.authHeaders(),
+      headers,
       body: formData,
       credentials: "include",
       signal,
@@ -3980,10 +4100,13 @@ export class ApiClient {
 
   // Chat Sessions
   async listChatSessions(
-    params?: { status?: string },
+    params?: { status?: string; creator_id?: string },
     workspace?: WorkspaceScope,
   ): Promise<ChatSession[]> {
-    const query = params?.status ? `?status=${params.status}` : "";
+    const search = new URLSearchParams();
+    if (params?.status) search.set("status", params.status);
+    if (params?.creator_id) search.set("creator_id", params.creator_id);
+    const query = search.size ? `?${search}` : "";
     const raw: unknown = await this.fetch(`/api/chat/sessions${query}`, {
       headers: workspaceHeader(workspace),
     });
@@ -5388,6 +5511,17 @@ export class ApiClient {
     return parseWithFallback(raw, IssueEnvironmentCommandSchema, fallback, { endpoint: `${init?.method ?? "GET"} ${path.replace(/[0-9a-f-]{36}/g, ":id")}` });
   }
 
+  /** Every linked PR in the workspace, for PR chips on issue cards and rows. */
+  async listIssuePullRequestSummaries(): Promise<IssuePullRequestSummariesResponse> {
+    const raw = await this.fetch<unknown>("/api/issues/pull-requests");
+    return parseWithFallback(
+      raw,
+      IssuePullRequestSummariesResponseSchema,
+      EMPTY_ISSUE_PULL_REQUEST_SUMMARIES_RESPONSE,
+      { endpoint: "GET /api/issues/pull-requests" },
+    );
+  }
+
   /** Link a PR the workspace already mirrors, by pasted URL or by id (undo). */
   async linkIssuePullRequest(
     issueId: string,
@@ -5986,6 +6120,84 @@ export class ApiClient {
       RedeemTelegramBindingTokenResponseSchema,
       EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
       { endpoint: "POST /api/telegram/binding/redeem" },
+    );
+  }
+
+  async listMattermostInstallations(
+    workspaceId: string,
+  ): Promise<ListMattermostInstallationsResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/mattermost/installations`);
+    return parseWithFallback(
+      raw,
+      ListMattermostInstallationsResponseSchema,
+      EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/mattermost/installations" },
+    );
+  }
+
+  async registerMattermostBot(
+    workspaceId: string,
+    agentId: string,
+    body: RegisterMattermostRequest,
+  ): Promise<MattermostInstallation> {
+    const search = new URLSearchParams({ agent_id: agentId });
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/mattermost/install?${search.toString()}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    return parseWithFallback(raw, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
+      endpoint: "POST /api/workspaces/:id/mattermost/install",
+    });
+  }
+
+  async deleteMattermostInstallation(workspaceId: string, installationId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/mattermost/installations/${installationId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async updateMattermostInstallation(
+    workspaceId: string,
+    installationId: string,
+    settings: UpdateMattermostInstallationRequest,
+  ): Promise<MattermostInstallation> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/mattermost/installations/${installationId}`,
+      { method: "PATCH", body: JSON.stringify(settings) },
+    );
+    return parseWithFallback(raw, MattermostInstallationSchema, EMPTY_MATTERMOST_INSTALLATION, {
+      endpoint: "PATCH /api/workspaces/:id/mattermost/installations/:installationId",
+    });
+  }
+
+  async redeemMattermostBindingToken(
+    token: string,
+  ): Promise<RedeemMattermostBindingTokenResponse> {
+    const raw = await this.fetch<unknown>(`/api/mattermost/binding/redeem`, {
+      method: "POST",
+      body: JSON.stringify({ token, confirmed: true }),
+    });
+    return parseWithFallback(
+      raw,
+      RedeemMattermostBindingTokenResponseSchema,
+      EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE,
+      { endpoint: "POST /api/mattermost/binding/redeem" },
+    );
+  }
+
+  async previewMattermostBindingToken(token: string): Promise<MattermostBindingPreview> {
+    const raw = await this.fetch<unknown>("/api/mattermost/binding/preview", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    return parseWithFallback(
+      raw,
+      MattermostBindingPreviewSchema,
+      EMPTY_MATTERMOST_BINDING_PREVIEW,
+      { endpoint: "POST /api/mattermost/binding/preview" },
     );
   }
 }
