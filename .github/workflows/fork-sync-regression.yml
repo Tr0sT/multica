@@ -48,7 +48,8 @@ jobs:
           retention-days: 7
   readonly-chat-browser:
     if: github.repository == 'Tr0sT/multica' && (github.event_name == 'push' || startsWith(github.head_ref, 'sync/upstream-'))
-    runs-on: ubuntu-latest
+    # The locked Playwright release supports 24.04, not ubuntu-latest's 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
@@ -64,7 +65,6 @@ jobs:
     env:
       DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
       JWT_SECRET: synthetic-fork-sync-browser-test-only-never-production
-      EMAIL_DRIVER: log
       ALLOW_SIGNUP: 'true'
       PORT: '8080'
       FRONTEND_PORT: '3000'
@@ -87,23 +87,25 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Install locked dependencies and browser
+        shell: bash
         run: |
-          pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/browser-evidence/revision.txt"
+          pnpm install --frozen-lockfile 2>&1 | tee "$RUNNER_TEMP/browser-evidence/dependencies.log"
+          pnpm exec playwright install --with-deps chromium 2>&1 | tee "$RUNNER_TEMP/browser-evidence/browser-install.log"
       - name: Build and migrate only the disposable database
         working-directory: server
         run: |
           go build -o "$RUNNER_TEMP/fork-server" ./cmd/server
           go run ./cmd/migrate up
-      - name: Verify readonly inspection in the real isolated web app
+      - name: Verify fork interactions in the real isolated web app
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p test-results/fork-sync
-          git rev-parse HEAD > test-results/fork-sync/revision.txt
-          "$RUNNER_TEMP/fork-server" > "$RUNNER_TEMP/fork-server.log" 2>&1 &
+          (cd server; exec "$RUNNER_TEMP/fork-server") > "$RUNNER_TEMP/browser-evidence/server.log" 2>&1 &
           backend=$!
-          pnpm --filter @multica/web dev > "$RUNNER_TEMP/fork-web.log" 2>&1 &
+          pnpm --filter @multica/web dev > "$RUNNER_TEMP/browser-evidence/web.log" 2>&1 &
           frontend=$!
           trap 'kill "$backend" "$frontend" 2>/dev/null || true' EXIT
           ready=false
@@ -117,7 +119,7 @@ jobs:
             sleep 2
           done
           test "$ready" = true
-          pnpm exec playwright test e2e/chat-admin-inspection.spec.ts --project=chromium --reporter=line
+          pnpm exec playwright test e2e/chat-admin-inspection.spec.ts e2e/fork-mattermost-channels.spec.ts --project=chromium --reporter=line 2>&1 | tee "$RUNNER_TEMP/browser-evidence/tests.log"
       - name: Preserve browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,7 +127,6 @@ jobs:
           name: fork-browser-evidence-${{ github.sha }}
           path: |
             test-results/
-            ${{ runner.temp }}/fork-server.log
-            ${{ runner.temp }}/fork-web.log
+            ${{ runner.temp }}/browser-evidence/
           if-no-files-found: error
           retention-days: 7
