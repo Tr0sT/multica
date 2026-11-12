@@ -62,6 +62,10 @@ vi.mock("./tabs/activity-tab", () => ({
 vi.mock("./agent-instructions-section", () => ({
   AgentInstructionsSection: () => <div>instructions-section</div>,
 }));
+vi.mock("./agent-channels-section", () => ({
+  AgentChannelLinks: () => <div>channel-links</div>,
+  AgentChannelsSection: () => <div id="messaging-channels">channels-section</div>,
+}));
 vi.mock("./agent-skills-section", () => ({
   AgentSkillsSection: ({ onManage }: { onManage: () => void }) => (
     <button type="button" onClick={onManage}>
@@ -82,7 +86,6 @@ vi.mock("./agent-advanced-settings", () => ({
       "plugins",
       "mcp_config",
       "composio_mcp",
-      "integrations",
     ].includes(value),
   AgentAdvancedSettings: ({
     section,

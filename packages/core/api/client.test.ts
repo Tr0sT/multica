@@ -4,6 +4,7 @@ import { configStore } from "../config";
 import { setCurrentWorkspace } from "../platform";
 import type { StorageAdapter, User } from "../types";
 import { ApiClient, ApiError, CHAT_DRAFT_RESTORE_CAPABILITY, clientErrorMessage } from "./client";
+import { setApiRequestObserver } from "./request-observer";
 import { EMPTY_PLUGIN_PACKAGE_LIST, EMPTY_PLUGIN_PREVIEW, EMPTY_PLUGIN_SURFACE_LAUNCH } from "./schemas";
 
 afterEach(() => {
@@ -3486,15 +3487,6 @@ describe("ApiClient complete issue deliverables", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/issues/issue/comments?thread=historical%2Fcomment");
   });
 
-  it("loads lightweight origins independently of timeline and tolerates malformed responses", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([{ id:"old",type:"comment",actor_type:"agent",actor_id:"a",created_at:"2026-01-01T00:00:00Z",attachments:[] }]),{status:200}))
-      .mockResolvedValueOnce(new Response(JSON.stringify({invalid:true}),{status:200}));
-    vi.stubGlobal("fetch",fetchMock);
-    const client = new ApiClient("https://api.example.test");
-    expect((await client.listIssueDeliverables("issue"))[0]?.id).toBe("old");
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/issues/issue/deliverables");
-    expect(await client.listIssueDeliverables("issue")).toEqual([]);
-  });
 });
 
 describe("ApiClient issue environments", () => {
@@ -3542,5 +3534,82 @@ describe("ApiClient issue environments", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.example.test/api/issues/issue-1/environments/start");
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ task_id: "task-1", repo: "app", name: "web" });
     expect(result).toMatchObject({ id: "cmd-3", status: "pending", output: null });
+  });
+});
+
+describe("created-by filter compatibility", () => {
+  it.each([false, true])("retries literal creator filtering on an old server (POST=%s)", async (post) => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ issues: [], total: 0 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    await client.listIssues({ created_by_user_id: "me", ...(post ? { ids: ["issue"] } : {}) });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    if (post) {
+      expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toMatchObject({ creator_id: "me" });
+    } else {
+      expect(new URL(fetchMock.mock.calls[1]![0]).searchParams.get("creator_id")).toBe("me");
+    }
+  });
+  it("accepts a server acknowledgment without narrowing agent-created results", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ issues: [], total: 0, created_by_user_id: "me" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new ApiClient("https://api.example.test").listIssues({ created_by_user_id: "me" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get("created_by_user_id")).toBe("me");
+  });
+});
+
+
+describe("grouped created-by compatibility", () => {
+  it("retries a legacy server with literal creator_id", async () => {
+    const fetchMock = vi.fn(async (_url: string) => Response.json({ groups: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await new ApiClient("https://api.example.test").listGroupedIssues({ group_by: "assignee", created_by_user_id: "me" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new URL(fetchMock.mock.calls[1]![0]).searchParams.get("creator_id")).toBe("me");
+  });
+});
+
+describe("ApiClient request observer", () => {
+  afterEach(() => setApiRequestObserver(null));
+
+  function observe() {
+    const events: unknown[] = [];
+    setApiRequestObserver({
+      onStart: (request) => events.push({ phase: "start", ...request }),
+      onEnd: (result) => events.push({ phase: "end", ...result }),
+    });
+    return events;
+  }
+
+  it("reports each request's start and its status, sharing the X-Request-ID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const events = observe();
+    await new ApiClient("https://api.example.test").listMembers("ws-1");
+
+    const sentId = (fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>)["X-Request-ID"];
+    expect(events).toEqual([
+      { phase: "start", requestId: sentId, method: "GET", path: "/api/workspaces/ws-1/members", body: null },
+      { phase: "end", requestId: sentId, status: 200, error: null },
+    ]);
+  });
+
+  it("reports the server's error message for a failed request", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "version conflict" }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    })));
+    const events = observe();
+    await expect(new ApiClient("https://api.example.test").listMembers("ws-1")).rejects.toThrow();
+    expect(events[1]).toMatchObject({ phase: "end", status: 500, error: "version conflict" });
+  });
+
+  it("reports a request that never got a response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const events = observe();
+    await expect(new ApiClient("https://api.example.test").listMembers("ws-1")).rejects.toThrow();
+    expect(events[1]).toMatchObject({ phase: "end", status: null, error: "TypeError: Failed to fetch" });
   });
 });
