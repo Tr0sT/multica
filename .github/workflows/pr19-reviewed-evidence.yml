@@ -1,0 +1,53 @@
+name: PR 19 reviewed evidence
+on:
+  push:
+    branches: [sync/upstream-2026-11-12-191e84be]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+jobs:
+  attach:
+    if: github.repository == 'Tr0sT/multica' && github.actor == 'Tr0sT'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 0a92a7aa6a9ef45b4d58ef0abee0a55ce82fc0c3
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Download and verify only the already-reviewed synthetic captures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh pr view 19 --repo Tr0sT/multica --json headRefName --jq .headRefName)" = sync/upstream-2026-11-12-191e84be
+          test "$(gh pr view 19 --repo Tr0sT/multica --json state --jq .state)" = OPEN
+          gh run download 43173215132 --repo Tr0sT/multica --name fork-browser-evidence-aaee2f94b4b8b1eee375b0f30ee2d11975068cfc --dir "$RUNNER_TEMP/reviewed-evidence"
+          mkdir "$RUNNER_TEMP/selected"
+          for name in mattermost-connect-desktop mattermost-connect-compact mattermost-connected admin-chat-compact; do
+            mapfile -t paths < <(find "$RUNNER_TEMP/reviewed-evidence" -type f -name "$name.png")
+            test "${#paths[@]}" = 1
+            cp "${paths[0]}" "$RUNNER_TEMP/selected/$name.png"
+          done
+          cd "$RUNNER_TEMP/selected"
+          sha256sum --check <<'CHECKSUMS'
+          dd12d285bcf8f92ab938d3b2db5e2f1309b3317032fe5d025ad2fd556f6a83d2  mattermost-connect-desktop.png
+          e622a66fe86074b48ce3c5c7343dd8300f1cdf1b3b8fd83f18008d4d92191993  mattermost-connect-compact.png
+          cbfee7ebf4dd94db99cf96f8a8c1ee239c40dd68e37bac00febd6f139a85698e  mattermost-connected.png
+          fa7b6044473c1f0ea0fb849e0f21b337ec68c6b614a7440ae817289530503126  admin-chat-compact.png
+          CHECKSUMS
+      - name: Attach through the repository's native upload helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh --version
+          scripts/pr-shots --repo Tr0sT/multica 19 \
+            "$RUNNER_TEMP/selected/mattermost-connect-desktop.png" \
+            "$RUNNER_TEMP/selected/mattermost-connect-compact.png" \
+            "$RUNNER_TEMP/selected/mattermost-connected.png" \
+            "$RUNNER_TEMP/selected/admin-chat-compact.png"
