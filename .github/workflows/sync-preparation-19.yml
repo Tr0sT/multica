@@ -1,4 +1,4 @@
-name: PR 19 isolated sync preparation
+name: PR 19 verified sync reconstruction
 
 on:
   push:
@@ -6,59 +6,78 @@ on:
       - sync/upstream-2026-11-12-191e84be
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: pr19-verified-reconstruction
+  cancel-in-progress: false
 
 jobs:
-  prepare:
-    if: github.repository == 'Tr0sT/multica'
+  reconstruct:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/sync/upstream-2026-11-12-191e84be' && github.actor == 'Tr0sT'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       FORK_SHA: 0a8b72e12cf56e6d3263504b2b173e2154c115b1
       UPSTREAM_SHA: c3a9d8fd1e460f9cf79be7160f19cd1a12624332
+      EXPECTED_TREE: 1ef5655a01e34b64ff933dbb3fc7e301bbc6428b
+      SYNC_BRANCH: sync/upstream-2026-11-12-191e84be
     steps:
-      - name: Checkout pinned fork history without stored credentials
+      - name: Checkout the exact staging revision
         uses: actions/checkout@v6
         with:
-          ref: 0a8b72e12cf56e6d3263504b2b173e2154c115b1
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false
-      - name: Bundle exact public Git objects for offline review
+      - name: Configure the declared Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          check-latest: true
+          cache: false
+      - name: Reconstruct the reviewed tree in an isolated worktree
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$FORK_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$FORK_SHA"
+          test "$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config core.hooksPath /dev/null
+          git config merge.conflictStyle merge
           git fetch --no-tags https://github.com/multica-ai/multica.git "$UPSTREAM_SHA"
           test "$(git rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
-          git update-ref refs/sync/upstream "$UPSTREAM_SHA"
-          git update-ref refs/sync/fork "$FORK_SHA"
-          git fetch --no-tags https://github.com/Tr0sT/multica.git "$GITHUB_SHA"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git update-ref refs/sync/pr "$GITHUB_SHA"
-          mkdir -p "$RUNNER_TEMP/sync-review"
-          git bundle create "$RUNNER_TEMP/sync-review/multica.bundle" refs/sync/fork refs/sync/upstream refs/sync/pr
-          git bundle verify "$RUNNER_TEMP/sync-review/multica.bundle"
-          {
-            printf 'fork=%s\nupstream=%s\npr=%s\n' "$FORK_SHA" "$UPSTREAM_SHA" "$GITHUB_SHA"
-            printf 'merge_base=%s\n' "$(git merge-base "$FORK_SHA" "$UPSTREAM_SHA")"
-            git log -1 --format='upstream_date=%cI' "$UPSTREAM_SHA"
-          } | tee "$RUNNER_TEMP/sync-review/revisions.txt"
-      - name: Report merge conflicts without modifying a remote branch
+          git update-ref refs/remotes/review/upstream "$UPSTREAM_SHA"
+          git worktree add --detach "$RUNNER_TEMP/combined" "$FORK_SHA"
+          status=0
+          git -C "$RUNNER_TEMP/combined" merge --no-ff --no-commit refs/remotes/review/upstream || status=$?
+          test "$status" -le 1
+          python3 "$GITHUB_WORKSPACE/.github/sync-resolution-19.py" "$RUNNER_TEMP/combined"
+          test "$(git -C "$RUNNER_TEMP/combined" write-tree)" = "$EXPECTED_TREE"
+          git -C "$RUNNER_TEMP/combined" commit -m "Merge upstream main c3a9d8fd into fork with reviewed conflict resolutions"
+          combined=$(git -C "$RUNNER_TEMP/combined" rev-parse HEAD)
+          git merge-base --is-ancestor "$FORK_SHA" "$combined"
+          git merge-base --is-ancestor "$UPSTREAM_SHA" "$combined"
+          git merge --no-ff --no-commit "$combined"
+          git rm .github/workflows/sync-preparation-19.yml .github/sync-resolution-19.py
+          git diff --cached --check
+          test -z "$(git ls-files -u)"
+          test "$(git write-tree)" = "$EXPECTED_TREE"
+          git commit -m "chore(sync): integrate verified fork and upstream history for PR 19"
+          git merge-base --is-ancestor "$FORK_SHA" HEAD
+          git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD
+          git merge-base --is-ancestor "$GITHUB_SHA" HEAD
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          test -z "$(git status --porcelain)"
+      - name: Publish only a fast-forward of the existing sync branch
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'Sync preparation'
-          git config user.email 'sync-preparation@users.noreply.github.com'
-          status=0
-          git merge --no-commit --no-ff "$UPSTREAM_SHA" || status=$?
-          test "$status" -le 1
-          git diff --name-only --diff-filter=U | tee "$RUNNER_TEMP/sync-review/conflicts.txt"
-          git diff --stat "$FORK_SHA" > "$RUNNER_TEMP/sync-review/merge-stat.txt"
-          printf 'merge_exit=%s\n' "$status" >> "$RUNNER_TEMP/sync-review/revisions.txt"
-      - name: Upload public history and merge diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: multica-pr19-sync-review
-          path: ${{ runner.temp }}/sync-review/
-          retention-days: 2
-          if-no-files-found: error
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$FORK_SHA"
+          test "$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          git push origin "HEAD:refs/heads/$SYNC_BRANCH"
+          {
+            printf 'fork=%s\nupstream=%s\nhead=%s\ntree=%s\n' "$FORK_SHA" "$UPSTREAM_SHA" "$(git rev-parse HEAD)" "$EXPECTED_TREE"
+            printf 'This is reconstruction only. Required CI must pass before main can be merged.\n'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
