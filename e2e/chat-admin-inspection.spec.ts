@@ -62,15 +62,18 @@ test("admins inspect another admin's Mattermost chat without changing it", async
     await filter.click();
     await page.getByRole("option", { name: "All members", exact: true }).click();
     await page.getByText(/@alice\.example/).first().click();
-    await expect(page.getByText("Verified response", { exact: true })).toBeVisible();
+    // The thread-list preview has the same text. Wait for the real transcript
+    // to be revealed after virtualized layout, not just its sidebar preview.
+    const transcript = page.locator('[data-mc="chat-message"][data-role="assistant"]');
+    await expect(transcript.getByText("Verified response", { exact: true })).toBeVisible();
     await expect(page.getByText("You are viewing another member’s chat. Only its owner can send messages or change it.")).toBeVisible();
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Rename chat" })).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath("admin-chat.png"), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath("admin-chat.png"), fullPage: true, animations: "disabled" });
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByText("Verified response", { exact: true })).toBeVisible();
+    await expect(transcript.getByText("Verified response", { exact: true })).toBeVisible();
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath("admin-chat-compact.png"), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath("admin-chat-compact.png"), fullPage: true, animations: "disabled" });
     await page.getByRole("button", { name: "Chat", exact: true }).click();
     await expect(filter).toBeVisible();
     await filter.click();
