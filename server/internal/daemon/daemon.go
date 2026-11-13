@@ -4786,7 +4786,7 @@ func (d *Daemon) handleModelList(ctx context.Context, rt Runtime, requestID stri
 	}
 	models := catalog.Models
 	if catalog.Fallback {
-		d.logger.Warn("model discovery fell back to a static catalog; reporting it as non-authoritative",
+		d.logger.Warn("model discovery incomplete; reporting the catalog as non-authoritative",
 			"runtime_id", rt.ID, "provider", rt.Provider, "path", execPath, "count", len(models))
 	}
 	if rt.Provider == "codearts" && len(models) == 0 {
@@ -9612,7 +9612,7 @@ func shouldRetryWithFreshSession(result agent.Result, priorSessionID string, too
 	if !agent.ResumeRejectionUndetectable(provider) {
 		return false
 	}
-	// antigravity, codearts, copilot, cursor, deveco and opencode scrape SessionID out
+	// antigravity, codearts, copilot, cursor, deveco, droid and opencode scrape SessionID out
 	// of stream output and have no rejection string captured anywhere, so an
 	// empty SessionID is the only thing they can offer. It proves no session
 	// was established this run, which is exactly what the gate relied on for
@@ -11271,6 +11271,10 @@ func defaultArgsForProvider(cfg Config, provider string) []string {
 		args = cfg.CodebuddyArgs
 	case "qwen":
 		args = cfg.QwenArgs
+	case "droid":
+		args = cfg.DroidArgs
+	case "amp":
+		args = cfg.AmpArgs
 	case "qwenpaw":
 		args = cfg.QwenpawArgs
 	default:
