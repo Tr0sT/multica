@@ -154,6 +154,16 @@ const EXPECTED = [
     ],
     source: "packages/ui/components/ui/switch.tsx",
   },
+  ...[
+    ["open", "git-pull-request-arrow"],
+    ["merged", "git-merge"],
+    ["closed", "git-pull-request-closed"],
+  ].map(([state, icon]) => ({
+    what: `the ${state} pull request chip icons`,
+    find: (els) => els.filter((el) => el.tag === "svg" && el.classes.has(`icon-${icon}`)),
+    classes: [`text-pr-${state}`, `dark:text-pr-${state}-dark`],
+    source: "packages/views/issues/components/pull-request-chips.tsx",
+  })),
   {
     what: "the small buttons",
     find: (els) => els.filter((el) => "data-variant" in el.attrs && ["sm", "icon-sm", "icon-xs"].includes(el.attrs["data-size"])),
@@ -199,6 +209,7 @@ const NOT_DRAWN = {
     "status-blocked": "no blocked issue is listed",
     "status-cancelled": "no cancelled issue is listed",
     "priority-none": "every listed issue has a priority",
+    "pr-merged-text": "the issue's pull request list is not shown",
   },
 };
 
@@ -288,7 +299,8 @@ test("anchors nest as they do in the app", () => {
   assert.ok(inside(sidebar, "page"), "the sidebar sits inside the page canvas");
   assert.ok(!inside(rail, "page"), "the rail sits outside the page canvas");
   for (const el of anchors(elements, "nav-item")) assert.ok(inside(el, "sidebar"), "nav items sit inside the sidebar");
-  for (const name of ["issue-group-header", "issue-row", "comment", "comment-composer"]) {
+  for (const el of anchors(elements, "panel-section")) assert.ok(inside(el, "sidebar"), "panel sections sit inside the sidebar");
+  for (const name of ["page-header", "issue-group-header", "issue-row", "comment", "comment-composer"]) {
     for (const el of anchors(elements, name)) assert.ok(inside(el, "page"), `${name} sits inside the page`);
   }
   for (const el of anchors(elements, "comment-reply")) assert.ok(inside(el, "comment"), "replies sit inside their comment");
