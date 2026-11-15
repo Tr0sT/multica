@@ -97,7 +97,7 @@ export function AgentMarketplacesDialog({
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <Globe className="size-4" />{t(($) => $.tab_body.plugins.marketplaces)}
       </DialogTrigger>
-      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col">
+      <DialogContent className="flex max-h-[85%] max-w-2xl flex-col">
         <DialogHeader><DialogTitle>{t(($) => $.tab_body.plugins.marketplaces)}</DialogTitle></DialogHeader>
         <div className="space-y-5 overflow-y-auto pr-1">
           <RuntimePicker runtimes={available} members={members} currentUserId={currentUserId}

@@ -52,7 +52,7 @@ export function ChannelConnectDialog({
       }}
     >
       <DialogContent
-        className="max-h-[85dvh] overflow-y-auto sm:max-w-lg"
+        className="max-h-[85%] overflow-y-auto sm:max-w-lg"
         showCloseButton={!busy}
       >
         <DialogHeader>

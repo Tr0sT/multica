@@ -543,7 +543,7 @@ export function MattermostAgentBindButton({
           {t(($) => $.mattermost.bind_button)}
         </DialogTrigger>
 
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-testid="mattermost-connect-dialog">
+        <DialogContent className="max-h-[85%] overflow-y-auto sm:max-w-lg" data-testid="mattermost-connect-dialog">
           {connectionFields}
         </DialogContent>
       </Dialog>
@@ -760,7 +760,7 @@ export function MattermostEditButton({
         <Pencil className="h-3 w-3" />
         {t(($) => $.mattermost.edit_button)}
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85%] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t(($) => $.mattermost.edit_dialog_title)}</DialogTitle>
           <DialogDescription className="break-words">
