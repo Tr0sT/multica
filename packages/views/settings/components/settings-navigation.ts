@@ -5,6 +5,7 @@ export const CHANNEL_INTEGRATIONS = [
   "dingtalk",
   "wecom",
   "telegram",
+  "weixin",
   "mattermost",
 ] as const;
 

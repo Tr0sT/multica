@@ -100,6 +100,9 @@ export function AgentChannelsSection({ agent }: { agent: Agent }) {
   const installed = connections.filter(
     (entry) => entry.installation.agent_id === agent.id,
   );
+  const weixinExpired = queries.weixin.data?.installations.some(
+    (entry) => entry.agent_id === agent.id && entry.status === "expired",
+  );
   const canAdd =
     !agent.archived_at &&
     CHANNEL_INTEGRATIONS.some(
@@ -109,7 +112,7 @@ export function AgentChannelsSection({ agent }: { agent: Agent }) {
         !installed.some((entry) => entry.channel === id),
     );
   const failed = CHANNEL_INTEGRATIONS.filter((id) => queries[id].isError);
-  const visible = installed.length > 0 || canAdd || failed.length > 0;
+  const visible = installed.length > 0 || canAdd || failed.length > 0 || weixinExpired;
   useEffect(() => {
     if (visible && (view === "channels" || view === "integrations"))
       sectionRef.current?.scrollIntoView({ block: "start" });
@@ -133,6 +136,11 @@ export function AgentChannelsSection({ agent }: { agent: Agent }) {
           ) : undefined
         }
       >
+        {weixinExpired && (
+          <p role="status" className="mb-2 text-caption text-destructive">
+            {t(($) => $.weixin.authorization_expired)}
+          </p>
+        )}
         {installed.length ? (
           <div className="divide-y rounded-lg border">
             {installed.map((connection) => (

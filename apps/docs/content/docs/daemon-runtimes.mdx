@@ -107,6 +107,8 @@ Once a limit is reached, new runs keep queueing. Adjust a single agent's concurr
 
 Token usage, cost, and failures across runs are summarized per workspace on the [Analytics](/analytics) page; `multica runtime usage <runtime-id>` shows token usage for a single runtime.
 
+For Claude Code and Codex runtimes, the runtime's page also shows **Limits**: how much of the plan's 5-hour session and weekly windows the CLI account has used, when each resets, and whether usage is running ahead of the time elapsed. The CLI reports these while it runs tasks, so the numbers are as of the runtime's latest run. API-key accounts have no plan limits to show.
+
 ## Local MCP configuration [#local-mcp]
 
 When an agent has no MCP configuration saved, Multica passes no MCP settings and the tool reads its own configuration on that computer as usual.
@@ -154,6 +156,8 @@ A run on a project's local directory works in your own directory, which the daem
 ### Shared repository cache
 
 The daemon keeps one bare-repository cache per workspace repository, under `.repos/<workspace-id>/` in the workspaces root. Runs of the same workspace on this computer share it: each checkout creates a git worktree from the cache and only fetches new commits instead of cloning again. Codex runs on Linux and Windows are the exception and get a standalone clone with `.git` inside the work directory, because Codex's workspace-write sandbox leaves Git metadata outside the work directory read-only.
+
+New cache directory names use up to 16 ASCII characters from the repository name plus a 12-character hash, keeping long remote URLs from lengthening Git's metadata paths on Windows. During sync or checkout, an existing cache moves to the short name if no registered worktrees remain after pruning stale entries and the destination does not exist. Its contents are preserved without cloning again. Caches with registered worktrees keep their original paths so linked checkouts continue working. If migration fails, the daemon logs a warning and continues using the existing cache; a later attempt can retry.
 
 A cache is removed only when all three hold: no workspace or project references the repository any more, no worktrees remain, and no run has checked out from it for 30 days. It is cloned again when needed. After removing stale agent branches, the daemon runs `git reflog expire --expire=30.days --all` and `git gc --prune=30.days` on the cache while no runs are executing.
 

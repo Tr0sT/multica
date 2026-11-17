@@ -35,6 +35,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
+	"github.com/multica-ai/multica/server/internal/integrations/weixin"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
@@ -404,6 +405,8 @@ type Handler struct {
 	// enqueues EventChatDone work.
 	TelegramOutbound *telegram.Outbound
 
+	WeixinInstall  *weixin.InstallService
+	WeixinOutbound *weixin.Outbound
 	// MattermostInstall owns the Mattermost bot install lifecycle (register a
 	// pasted server URL + bot access token / list / revoke) and the at-rest
 	// encryption of each token. Nil unless MULTICA_MATTERMOST_SECRET_KEY is set.

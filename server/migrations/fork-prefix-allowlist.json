@@ -86,5 +86,13 @@
       "602_wecom_install_session_request_idx"
     ],
     "reason": "Independently published fork marketplace/plugin indexes and upstream WeCom install-session objects. Distinct tables; preserve full identities and concurrent-index hooks. Upgrade coverage: TestForkMarketplaceAndUnreadPrefixCollisionsUpgrade (fresh, fork, upstream, repeated apply, rollback/reapply)."
+  },
+  {
+    "prefix": 665,
+    "versions": [
+      "665_runtime_rate_limit",
+      "665_weixin_state"
+    ],
+    "reason": "Independently published upstream runtime-rate-limit snapshot table and upstream Weixin login/account-state tables share a numeric prefix but define distinct relations without cross-dependencies. Preserve both complete schema_migrations identities and original SQL; isolated PostgreSQL fresh, Weixin-first, rate-limits-first, repeat, rollback/reapply coverage: TestForkRuntimeRateLimitAndWeixinPrefixCollisionUpgrade."
   }
 ]

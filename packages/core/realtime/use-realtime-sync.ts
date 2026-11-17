@@ -1,5 +1,8 @@
 "use client";
 
+import { weixinKeys } from "../weixin/queries";
+
+
 import { useEffect, useRef } from "react";
 import { forgetLocalSearchIndex } from "../search-index/instance";
 import { useQueryClient, type InfiniteData, type QueryClient, type QueryFilters } from "@tanstack/react-query";
@@ -1083,6 +1086,10 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: wecomKeys.installations(wsId) });
       },
+      weixin_installation: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
+      },
       telegram_installation: () => {
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
@@ -1280,6 +1287,11 @@ export function useRealtimeSync(
         qc.setQueriesData<AgentTask[]>(subtreeFilter, (tasks) => tasks?.map((task) =>
           task.issue_id === issue.id ? { ...task, issue_title: issue.title } : task,
         ));
+      }
+      // Whose issue it is decides each subscriber's delivery tier, and a
+      // reassignment can change that without any subscriber event (MUL-9360).
+      if (payload.assignee_changed) {
+        qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue.id) });
       }
       const wsId = getCurrentWsId();
       if (wsId) {

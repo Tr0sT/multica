@@ -140,7 +140,9 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"sys_cron_executions":                workspaceDeleteKeep,
 	"theme_store_download":               workspaceDeleteKeep, // per registry theme, not workspace-owned
 	"task_context_receipt":               workspaceDelete,
+	"runtime_rate_limit":                 workspaceDelete,
 	"task_message":                       workspaceDelete,
+	"chat_task_supplement":               workspaceDelete,
 	"task_supplement":                    workspaceDelete,
 	"task_supplement_capability":         workspaceDelete,
 	"task_token":                         workspaceDelete,
@@ -156,6 +158,8 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"verification_code":                  workspaceDeleteKeep,
 	"webhook_delivery":                   workspaceDelete,
 	"wecom_install_session":              workspaceDelete,
+	"weixin_login_session":               workspaceDelete,
+	"weixin_account_state":               workspaceDelete,
 	"workspace_composio_connection":      workspaceDelete,
 	"agent_app":                          workspaceDelete,
 	"app_action_rule":                    workspaceDelete,

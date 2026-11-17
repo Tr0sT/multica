@@ -11,7 +11,7 @@ import { IssueAppRequests } from "../../common/app-requests";
 import { useStatusLabel } from "../utils/status-label";
 import { priorityLabel } from "../utils/priority-label";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { useState, useEffect, useCallback, useMemo, useRef, useId, Fragment, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId, Fragment, type ComponentProps, type ReactNode } from "react";
 import { Virtuoso, type ListRange, type VirtuosoHandle } from "react-virtuoso";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink, useBackOrReplace } from "../../navigation";
@@ -1260,6 +1260,8 @@ interface IssueDetailProps {
   variant?: "page" | "peek";
   /** Peek only: host controls at the end of the header (open full page, close). */
   trailingActions?: ReactNode;
+  /** A bar the host shows under the header, above the scrolling body. */
+  notice?: ReactNode;
   /**
    * Read the viewer's inbox notifications on this issue while it is on screen
    * (MUL-8588). The inbox turns this off for the issue it has open: it reads
@@ -1479,7 +1481,7 @@ export function IssueDetailSkeleton({
 
 // IssueDetail
 
-export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, defaultSidebarOpen = true, layoutId = ISSUE_DETAIL_LAYOUT_ID, highlightCommentId: linkedCommentId, highlightRequestToken: linkedRequestToken, highlightAppRequestId, leadingAction, variant = "page", trailingActions, readsInbox = true, skipInitialRefetch = false, openDeliverable, onDeliverableLinkDone }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, defaultSidebarOpen = true, layoutId = ISSUE_DETAIL_LAYOUT_ID, highlightCommentId: linkedCommentId, highlightRequestToken: linkedRequestToken, highlightAppRequestId, leadingAction, variant = "page", trailingActions, notice, readsInbox = true, skipInitialRefetch = false, openDeliverable, onDeliverableLinkDone }: IssueDetailProps) {
   const isPeek = variant === "peek";
   const { t } = useT("issues");
   const { t: tCommon } = useT("common");
@@ -2422,7 +2424,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   } = useIssueReactions(id, user?.id);
 
   const {
-    subscribers, isSubscribed, subscriptionReason, subscriptionProjectCovered, subscriptionKnown,
+    subscribers, isSubscribed, subscriptionReason, subscriptionDelivery, subscriptionKnown,
     togglePending, subtreePending,
     toggleSubscribe: handleToggleSubscribe, toggleSubscriber, followAllActivity,
     unsubscribeFromSubtree: handleUnsubscribeSubtree,
@@ -2845,7 +2847,6 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   // Called before the `if (!issue)` early return so hook order stays stable.
   const actions = useIssueActions(issue);
   const handleUpdateField = actions.updateField;
-  const showInSidebar = useShowInSidebar(issue);
   // The inbox passes `onDone` and owns archive and restore there.
   const archivedInboxItemId = useArchivedInboxItemId(id, !onDone);
   const pageMenu = useIssuePageMenu();
@@ -3628,15 +3629,15 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             >
               {actions.isPinned ? <PinOff /> : <Pin />}
             </IconButton>
-            <IssueActionsDropdown
+            <IssueDetailActionsDropdown
               issue={issue}
+              locateInSidebar={!isPeek}
               align="end"
               // When a parent passes `onDelete`, we detect deletion via effect
               // above and skip navigation. Otherwise the modal takes us back
               // to the list we came from, falling back to all issues.
               onDeletedFallbackPath={onDelete ? undefined : paths.issues()}
               archivedInboxItemId={archivedInboxItemId}
-              onShowInSidebar={isPeek ? undefined : (showInSidebar ?? undefined)}
               rowMenu={pageMenu.rowMenu}
               trigger={
                 <IconButton
@@ -3665,6 +3666,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             </>
           }
         />
+        {notice}
 
         {/* scrollbar-gutter both-edges: with classic (space-taking) scrollbars —
             macOS with a mouse or "always show", Windows, Linux — the global
@@ -4082,8 +4084,10 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                 {/* A delegated subscription is one the user never opted into
                     by hand — their agent created this issue for them. Saying
                     so is what keeps it from reading as the product quietly
-                    adding them to things (MUL-5483). */}
-                {isSubscribed && subscriptionReason === "delegated" && (
+                    adding them to things (MUL-5483). The server's delivery
+                    tier decides it: a project watcher's delegated row still
+                    gets every event (MUL-9360). */}
+                {isSubscribed && subscriptionDelivery === "delegated" && (
                   <Tooltip>
                     {/* Quiet surface, not plain body text: this is metadata
                         explaining a state, and must not read as a second
@@ -4099,10 +4103,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                 )}
                 {isSubscribed && (
                   <KeyUpdatesSubscriptionBadge
-                    issue={issue}
-                    userId={user?.id}
-                    reason={subscriptionReason}
-                    projectCovered={subscriptionProjectCovered}
+                    delivery={subscriptionDelivery}
                     pending={togglePending}
                     onFollowAll={followAllActivity}
                   />
@@ -4461,6 +4462,20 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
       </ResizablePanel>
     </ResizablePanelGroup>,
   );
+}
+
+/**
+ * The ⋯ menu with "Show in sidebar". `useShowInSidebar` reads the shell and
+ * sidebar contexts, which change on every nav toggle; reading them here
+ * instead of in `IssueDetail` keeps a toggle from re-rendering the whole
+ * page (MUL-9426).
+ */
+function IssueDetailActionsDropdown({
+  locateInSidebar,
+  ...props
+}: Omit<ComponentProps<typeof IssueActionsDropdown>, "onShowInSidebar"> & { locateInSidebar: boolean }) {
+  const showInSidebar = useShowInSidebar(props.issue);
+  return <IssueActionsDropdown {...props} onShowInSidebar={locateInSidebar ? (showInSidebar ?? undefined) : undefined} />;
 }
 
 /** The workflow the issue follows through its project (MUL-7420). */

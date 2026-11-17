@@ -788,6 +788,12 @@ func main() {
 	if h.TelegramOutbound != nil {
 		h.TelegramOutbound.Start(sweepCtx)
 	}
+	if h.WeixinOutbound != nil {
+		h.WeixinOutbound.Start(sweepCtx)
+	}
+	if h.WeixinInstall != nil {
+		go h.WeixinInstall.RunCleanup(sweepCtx)
+	}
 	if h.MattermostOutbound != nil {
 		h.MattermostOutbound.Start(sweepCtx)
 	}
@@ -951,6 +957,9 @@ func main() {
 			}
 		},
 		JoinTelegram: func() {
+			if h.WeixinOutbound != nil && !h.WeixinOutbound.WaitWithTimeout(5*time.Second) {
+				slog.Warn("weixin outbound workers did not exit within shutdown timeout")
+			}
 			if h.TelegramOutbound != nil && !h.TelegramOutbound.WaitWithTimeout(5*time.Second) {
 				slog.Warn("telegram outbound workers did not exit within shutdown timeout")
 			}

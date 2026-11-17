@@ -54,6 +54,14 @@ Collision coverage:
   indexes and sidebar/unread/WeCom install-session objects remain independent; note that upstream's
   599 primary-key attachment renames its 598 index to `issue_unread_pkey`.
 
+- `server/cmd/migrate/fork_prefix_runtime_rate_limit_upgrade_test.go`: exact prefix 665,
+  `665_runtime_rate_limit` (a standalone runtime snapshot table) and
+  `665_weixin_state` (independent Weixin login/account-state tables). Their
+  original SQL and published full identities remain unchanged. The test runs
+  the real PostgreSQL migration runner on isolated fresh, Weixin-first and
+  rate-limits-first schemas, preserves existing rows/history, and checks
+  repeat application and rollback/reapply.
+
 Full clean installation remains covered by CI's normal migration step.
 These are targeted upgrade tests, not full production backup/restore tests.
 Rollback of Mattermost origins must continue to fail while rows using that

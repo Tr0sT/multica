@@ -449,6 +449,7 @@ export function ChatPage() {
         onStop={c.handleStop}
         isRunning={!!c.pendingTaskId}
         allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
+        canSteerWhileRunning={c.pendingTask?.can_supplement}
         disabled={
           c.isSessionArchived ||
           c.isAgentArchived ||

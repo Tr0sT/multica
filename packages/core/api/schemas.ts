@@ -2085,6 +2085,9 @@ const SubscriberSchema = z.object({
   user_id: z.string(),
   reason: z.string(),
   created_at: z.string(),
+  // An unknown or malformed tier shows no badge; it must not drop the row,
+  // which would read as "not subscribed".
+  delivery: z.enum(["all", "key_updates", "delegated"]).optional().catch(undefined),
 }).loose();
 
 export const SubscribersListSchema = z.array(SubscriberSchema);
@@ -2307,6 +2310,52 @@ const RuntimeUsageByHourSchema = z.object({
 }).loose();
 
 export const RuntimeUsageByHourListSchema = z.array(RuntimeUsageByHourSchema);
+
+// Runtime rate limits (`GET /api/runtimes/:id/rate-limits`). Unknown window
+// kinds and statuses from a newer server degrade to "other" / "" instead of
+// failing the whole response, and a malformed window is dropped on its own.
+const RuntimeRateLimitStatusSchema = z
+  .enum(["allowed", "warning", "rejected", ""])
+  .catch("");
+
+const RuntimeRateLimitWindowSchema = z.object({
+  kind: z
+    .enum(["session", "weekly", "weekly_opus", "weekly_sonnet", "other"])
+    .catch("other"),
+  used_percent: z.number().optional().catch(undefined),
+  window_minutes: z.number().default(0).catch(0),
+  resets_at: z.string().optional().catch(undefined),
+  status: RuntimeRateLimitStatusSchema.default(""),
+}).loose();
+
+const RuntimeRateLimitsSchema = z.object({
+  plan_type: z.string().default("").catch(""),
+  status: RuntimeRateLimitStatusSchema.default(""),
+  windows: z
+    .array(z.unknown())
+    .catch([])
+    .default([])
+    .transform((rows) =>
+      rows.flatMap((row) => {
+        const parsed = RuntimeRateLimitWindowSchema.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      }),
+    ),
+  credits: z
+    .object({
+      has_credits: z.boolean().default(false),
+      unlimited: z.boolean().default(false),
+      balance: z.string().default(""),
+    })
+    .loose()
+    .optional()
+    .catch(undefined),
+  observed_at: z.string(),
+}).loose();
+
+export const RuntimeRateLimitsResponseSchema = z.object({
+  rate_limits: RuntimeRateLimitsSchema.nullable().catch(null),
+}).loose();
 
 // Agent task responses. The base object stays loose so daemon/runtime fields
 // can drift while task-list consumers still validate the fields they render.
@@ -2622,12 +2671,16 @@ export const ChatPendingTaskSchema: z.ZodType<ChatPendingTask> = z.object({
   status: z.string().optional(),
   created_at: z.string().optional(),
   supports_queue: z.boolean().optional(),
+  can_supplement: z.boolean().optional().catch(undefined),
   queued_tasks: ChatQueuedTasksSchema.optional(),
 }).loose();
 
 export const EMPTY_CHAT_PENDING_TASK: ChatPendingTask = {};
 
 export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> = z.object({
+  steered: z.boolean().optional().catch(undefined),
+  message_created_at: z.string().optional().catch(undefined),
+  message_task_id: z.string().optional().catch(undefined),
   message_id: z.string().min(1),
   task_id: z.string().min(1),
   supports_queue: z.boolean().optional(),
