@@ -22,7 +22,12 @@ jobs:
           git fetch origin main
           if ! git merge --no-ff --no-edit -m 'sync: combine upstream 71683141 with fork main' origin/main; then
             echo 'Merge conflicts; changes must be reviewed semantically.'
-            git diff --name-only --diff-filter=U
+            for file in $(git diff --name-only --diff-filter=U); do
+              echo "::group::CONFLICT $file"
+              awk '/^<<<<<<< /,/^>>>>>>> /{print}' "$file" | head -c 25000
+              echo
+              echo "::endgroup::"
+            done
             exit 1
           fi
           git rm .github/workflows/sync-merge-pr24.yml
