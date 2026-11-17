@@ -81,6 +81,8 @@ export interface ChatChannelSource {
   channel_type: string;
   installation_id: string;
   route_revision: number;
+  sender_username?: string;
+  channel_name?: string;
 }
 
 export interface ChatSession {

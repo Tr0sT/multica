@@ -336,6 +336,19 @@ export type {
   RedeemTelegramBindingTokenResponse,
 } from "./telegram";
 export type {
+  MattermostContextMode,
+  MattermostAccessMode,
+  MattermostAttachmentMode,
+  MattermostDeniedReply,
+  MattermostContextSettings,
+  MattermostInstallation,
+  ListMattermostInstallationsResponse,
+  RegisterMattermostRequest,
+  UpdateMattermostInstallationRequest,
+  RedeemMattermostBindingTokenResponse,
+  MattermostBindingPreview,
+} from "./mattermost";
+export type {
   Autopilot,
   AutopilotStatus,
   AutopilotExecutionMode,

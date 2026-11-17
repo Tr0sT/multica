@@ -58,6 +58,10 @@ import type {
   TelegramInstallation,
   ListTelegramInstallationsResponse,
   RedeemTelegramBindingTokenResponse,
+  MattermostInstallation,
+  ListMattermostInstallationsResponse,
+  RedeemMattermostBindingTokenResponse,
+  MattermostBindingPreview,
   GroupedIssuesResponse,
   GitHubConnectResponse,
   IssuePullRequestsResponse,
@@ -2586,6 +2590,8 @@ const ChatChannelSourceSchema = z.object({
   channel_type: z.string().default(""),
   installation_id: z.string().default(""),
   route_revision: z.number().default(0),
+  sender_username: z.string().optional().catch(undefined),
+  channel_name: z.string().optional().catch(undefined),
 }).loose();
 
 export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
@@ -4132,6 +4138,113 @@ export const EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE: RedeemTelegramBinding
   workspace_id: "",
   installation_id: "",
   telegram_user_id: "",
+};
+
+export const MattermostInstallationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  server_url: z.string().default(""),
+  bot_user_id: z.string().default(""),
+  bot_username: z.string().default(""),
+  access_mode: z.enum(["members", "anyone", "allowlist", "unknown"]).catch("unknown").default("members"),
+  attachment_mode: z.enum(["none", "links", "unknown"]).catch("unknown").default("none"),
+  allowed_users: z.array(z.object({
+    id: z.string().min(1),
+    username: z.string().min(1),
+  })).default([]),
+  denied_reply: z.object({
+    mode: z.enum(["text", "image", "images", "unknown"]).catch("unknown").default("text"),
+    text: z.string().default(""),
+    image_attachment_id: z.string().default(""),
+    image_attachment_ids: z.array(z.uuid()).default([]),
+  }).refine((reply) => reply.mode !== "image" || (reply.text === "" && reply.image_attachment_ids.length === 0 && z.uuid().safeParse(reply.image_attachment_id).success))
+    .refine((reply) => reply.mode !== "images" || (reply.text === "" && reply.image_attachment_id === "" && reply.image_attachment_ids.length > 0 && new Set(reply.image_attachment_ids).size === reply.image_attachment_ids.length))
+    .refine((reply) => reply.mode !== "text" || (reply.image_attachment_id === "" && reply.image_attachment_ids.length === 0))
+    .transform((reply) => ({
+      mode: reply.mode === "image" ? "images" as const : reply.mode,
+      text: reply.text,
+      image_attachment_ids: reply.mode === "image" ? [reply.image_attachment_id] : reply.image_attachment_ids,
+    }))
+    .default({ mode: "text", text: "", image_attachment_ids: [] }),
+  context: z.object({
+    mode: z.enum(["message", "thread", "channel", "channel_extended", "unknown"]).catch("unknown"),
+    lookback_hours: z.number().int().min(0).max(720).default(0),
+    extended_lookback_hours: z.number().int().min(0).optional(),
+  }).refine((context) => context.mode !== "channel_extended" || context.extended_lookback_hours !== undefined)
+    .transform((context) => ({
+      mode: context.mode === "channel_extended" ? "channel" as const : context.mode,
+      lookback_hours: context.mode === "channel_extended"
+        ? context.extended_lookback_hours ?? 0
+        : context.lookback_hours,
+    })).default({ mode: "message", lookback_hours: 0 }),
+  installer_user_id: z.string().default(""),
+  status: z.string().default("revoked"),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_MATTERMOST_INSTALLATION: MattermostInstallation = {
+  id: "",
+  workspace_id: "",
+  agent_id: "",
+  server_url: "",
+  bot_user_id: "",
+  bot_username: "",
+  installer_user_id: "",
+  status: "revoked",
+  installed_at: "",
+  created_at: "",
+  updated_at: "",
+};
+
+export const ListMattermostInstallationsResponseSchema = z.object({
+  installations: z.array(MattermostInstallationSchema).default([]),
+  configured: z.boolean().default(false),
+  install_supported: z.boolean().optional(),
+}).loose();
+
+export const EMPTY_LIST_MATTERMOST_INSTALLATIONS_RESPONSE: ListMattermostInstallationsResponse = {
+  installations: [],
+  configured: false,
+};
+
+export const RedeemMattermostBindingTokenResponseSchema = z.object({
+  workspace_id: z.string().default(""),
+  installation_id: z.string().default(""),
+  mattermost_user_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_REDEEM_MATTERMOST_BINDING_TOKEN_RESPONSE: RedeemMattermostBindingTokenResponse = {
+  workspace_id: "",
+  installation_id: "",
+  mattermost_user_id: "",
+};
+
+export const MattermostBindingPreviewSchema = z.object({
+  workspace_id: z.string().min(1),
+  workspace_name: z.string().min(1),
+  installation_id: z.string().min(1),
+  mattermost_user_id: z.string().min(1),
+  username: z.string().min(1),
+  server_url: z.string().url().startsWith("https://"),
+}).transform((value) => ({
+  workspaceId: value.workspace_id,
+  workspaceName: value.workspace_name,
+  installationId: value.installation_id,
+  mattermostUserId: value.mattermost_user_id,
+  username: value.username,
+  serverUrl: value.server_url,
+}));
+
+export const EMPTY_MATTERMOST_BINDING_PREVIEW: MattermostBindingPreview = {
+  workspaceId: "",
+  workspaceName: "",
+  installationId: "",
+  mattermostUserId: "",
+  username: "",
+  serverUrl: "",
 };
 
 // Skills. Introduced for `POST /api/skills/:id/refresh` (update a skill from

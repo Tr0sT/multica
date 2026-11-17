@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -97,7 +98,8 @@ type ResolvedInstallation struct {
 	Platform        any
 }
 
-// ResolvedIdentity is the sender mapped to a Multica user.
+// ResolvedIdentity is the sender's Multica authorization principal. An adapter
+// may delegate an explicit public-access grant, but must verify its principal.
 type ResolvedIdentity struct {
 	UserID pgtype.UUID
 }
@@ -460,6 +462,8 @@ type ResolverSet struct {
 	Media        MediaResolver
 	Audit        Auditor
 	Replier      OutboundReplier
+	// ReplyTimeout overrides the router's detached reply budget for adapters that upload files.
+	ReplyTimeout time.Duration
 	Typing       TypingNotifier
 	OriginType   string
 }

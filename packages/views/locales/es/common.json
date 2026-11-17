@@ -135,5 +135,25 @@
     "unknown": "Este servidor no ha confirmado sus ajustes de conexión. Pide a tu administrador que actualice el servidor.",
     "incomplete": "Los ajustes de conexión están incompletos. Pide a tu administrador que configure las URL públicas de este servidor."
   },
-  "more_actions": "Más acciones"
+  "more_actions": "Más acciones",
+  "mattermost_bind": {
+    "page_title": "Vincula tu cuenta de Mattermost",
+    "redeeming": "Vinculando tu cuenta…",
+    "needs_auth_description": "Inicia sesión para revisar y confirmar la vinculación con Mattermost.",
+    "sign_in": "Iniciar sesión",
+    "done_title": "Tu cuenta está vinculada.",
+    "done_description": "Tu próximo mensaje al bot en Mattermost irá directamente al agente. Ya puedes cerrar esta pestaña.",
+    "error_title": "No se pudo completar la vinculación",
+    "error_admin_hint": "Si vuelve a ocurrir, escribe otra vez al bot en Mattermost para obtener un enlace nuevo.",
+    "error_missing_token": "Falta el token del enlace. Escribe de nuevo al bot en Mattermost para obtener otro.",
+    "error_expired": "Este enlace no es válido o ha caducado (los enlaces duran 15 minutos). Escribe otra vez al bot para obtener uno nuevo.",
+    "error_already_bound": "Esta cuenta de Mattermost ya está vinculada a otro usuario de Multica. Para transferirla, primero debes desvincularla explícitamente.",
+    "error_not_member": "Has iniciado sesión con una cuenta de Multica que no pertenece a este espacio de trabajo.",
+    "error_unknown": "Ha ocurrido un error. Inténtalo de nuevo y, si persiste, contacta con el administrador del espacio de trabajo.",
+    "loading": "Comprobando la cuenta…",
+    "confirm_description": "¿Vincular @{{username}} de {{server}} con {{account}} en el espacio de trabajo {{workspace}}?",
+    "confirm_warning": "Continúa solo si esta es tu cuenta de Mattermost y has solicitado la vinculación. Quien controle esa cuenta podrá actuar en tu nombre en este espacio de trabajo.",
+    "confirm": "Vincular cuenta",
+    "cancel": "Cancelar"
+  }
 }

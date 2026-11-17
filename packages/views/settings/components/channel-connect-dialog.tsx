@@ -28,6 +28,7 @@ import { useMessagingChannels } from "./use-messaging-channels";
 import { LarkChannelAuthorization } from "./lark-channel-authorization";
 import { WecomChannelAuthorization } from "./wecom-channel-authorization";
 import { WeixinAgentBindButton } from "./weixin-tab";
+import { MattermostAgentBindButton } from "./mattermost-tab";
 
 export function ChannelConnectDialog({
   agents,
@@ -51,7 +52,10 @@ export function ChannelConnectDialog({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
+      <DialogContent
+        className="max-h-[85%] overflow-y-auto sm:max-w-lg"
+        showCloseButton={!busy}
+      >
         <DialogHeader>
           <DialogTitle>{t(($) => $.channels.connect_title)}</DialogTitle>
         </DialogHeader>
@@ -225,17 +229,19 @@ function ChannelConnectSteps({
         </>
       ) : (
         <>
-          <Button
-            variant="link"
-            className="w-fit p-0"
-            onClick={() =>
-              openExternal(
-                `https://multica.ai/docs${docsLocalePrefix(i18n.language)}/${channel === "lark" ? "lark" : channel}-bot-integration`,
-              )
-            }
-          >
-            {t(($) => $.channels.setup_guide)}
-          </Button>
+          {channel !== "mattermost" ? (
+            <Button
+              variant="link"
+              className="w-fit p-0"
+              onClick={() =>
+                openExternal(
+                  `https://multica.ai/docs${docsLocalePrefix(i18n.language)}/${channel === "lark" ? "lark" : channel}-bot-integration`,
+                )
+              }
+            >
+              {t(($) => $.channels.setup_guide)}
+            </Button>
+          ) : null}
           {channel === "wecom" && queries.wecom.data?.scan_install_supported ? (
             <div className="space-y-1.5">
               <Label htmlFor="channel-method">
@@ -260,7 +266,15 @@ function ChannelConnectSteps({
               </select>
             </div>
           ) : null}
-          {channel === "lark" ? (
+          {channel === "mattermost" ? (
+            <MattermostAgentBindButton
+              agentId={agent.id}
+              agentName={agent.name}
+              inline
+              onClose={onClose}
+              onBusyChange={onBusyChange}
+            />
+          ) : channel === "lark" ? (
             <LarkChannelAuthorization
               wsId={wsId}
               agentId={agent.id}
@@ -299,7 +313,7 @@ function ChannelCredentials({
   onClose,
   onBusyChange,
 }: {
-  channel: Exclude<ChannelIntegration, "lark" | "weixin">;
+  channel: Exclude<ChannelIntegration, "lark" | "weixin" | "mattermost">;
   wsId: string;
   agentId: string;
   onClose: () => void;

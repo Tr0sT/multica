@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -203,6 +204,70 @@ func TestWebhookHandler_DedupeViaIdempotencyKey(t *testing.T) {
 	}
 	if int(deliveries[0]["attempt_count"].(float64)) != 2 {
 		t.Fatalf("attempt_count: %v", deliveries[0]["attempt_count"])
+	}
+}
+
+func TestWebhookHandler_DistinctEventsCreateSameTitleIssues(t *testing.T) {
+	type acknowledgement struct {
+		Status     string `json:"status"`
+		DeliveryID string `json:"delivery_id"`
+		RunID      string `json:"run_id"`
+	}
+	ctx := context.Background()
+	agentID := dbfx.Agent(t, "Same title webhook agent", testRuntimeID)
+	apID := dbfx.Insert(t, "autopilot", testutil.Cols{
+		"workspace_id":         testWorkspaceID,
+		"title":                "Jira coordination",
+		"issue_title_template": "Jira coordination — {{date}}",
+		"assignee_id":          agentID,
+		"status":               "active",
+		"execution_mode":       "create_issue",
+		"created_by_type":      "member",
+		"created_by_id":        testUserID,
+	})
+	dbfx.Cleanup(t, `DELETE FROM issue WHERE origin_id = $1`, apID)
+	dbfx.Cleanup(t, `DELETE FROM agent_task_queue WHERE issue_id IN (SELECT id FROM issue WHERE origin_id = $1)`, apID)
+	trig := createWebhookTriggerViaHandler(t, apID)
+	var firstIssue db.Issue
+	for _, key := range []string{"PRTTP-1040", "PRTTP-1039"} {
+		body := map[string]any{"webhookEvent": "jira:issue_updated", "issue": map[string]any{"key": key}}
+		request := testutil.JSONRequest(http.MethodPost, "/api/webhooks/autopilots/"+*trig.WebhookToken, body)
+		request = withURLParam(request, "token", *trig.WebhookToken)
+		request.Header.Set("Idempotency-Key", key)
+		var accepted acknowledgement
+		testutil.Call(t, testHandler.HandleAutopilotWebhook, request).Want(http.StatusOK).JSON(&accepted)
+		if accepted.Status != "accepted" || accepted.DeliveryID == "" || accepted.RunID == "" {
+			t.Fatalf("%s was not admitted: %+v", key, accepted)
+		}
+		delivery := processQueuedWebhookDelivery(t, accepted.DeliveryID)
+		run, err := testHandler.Queries.GetAutopilotRun(ctx, delivery.AutopilotRunID)
+		if err != nil || run.Status != "issue_created" || !run.IssueID.Valid {
+			t.Fatalf("%s did not create an issue: status=%s reason=%s err=%v", key, run.Status, run.FailureReason.String, err)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, run.IssueID)
+		if err != nil {
+			t.Fatalf("load %s issue: %v", key, err)
+		}
+		if firstIssue.ID.Valid && (issue.ID == firstIssue.ID || issue.Title != firstIssue.Title) {
+			t.Fatalf("distinct events must create separate same-title issues: first=%s/%q second=%s/%q", uuidToString(firstIssue.ID), firstIssue.Title, uuidToString(issue.ID), issue.Title)
+		}
+		firstIssue = issue
+
+		request = testutil.JSONRequest(http.MethodPost, request.URL.Path, body)
+		request = withURLParam(request, "token", *trig.WebhookToken)
+		request.Header.Set("Idempotency-Key", key)
+		var duplicate acknowledgement
+		testutil.Call(t, testHandler.HandleAutopilotWebhook, request).Want(http.StatusOK).JSON(&duplicate)
+		if duplicate.Status != "duplicate" || duplicate.DeliveryID != accepted.DeliveryID || duplicate.RunID != accepted.RunID {
+			t.Fatalf("%s redelivery must reuse its delivery and run: %+v", key, duplicate)
+		}
+	}
+
+	var issueCount, taskCount int
+	dbfx.QueryRow(t, `SELECT count(*) FROM issue WHERE origin_id = $1`, apID).Scan(&issueCount)
+	dbfx.QueryRow(t, `SELECT count(*) FROM agent_task_queue WHERE issue_id IN (SELECT id FROM issue WHERE origin_id = $1)`, apID).Scan(&taskCount)
+	if issueCount != 2 || taskCount != 2 {
+		t.Fatalf("two events and their retries must create two issues and tasks: issues=%d tasks=%d", issueCount, taskCount)
 	}
 }
 

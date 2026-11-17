@@ -31,7 +31,7 @@ import {
   useUpdateChatSession,
 } from "@multica/core/chat/mutations";
 import { useChatStore } from "@multica/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
+import type { Agent, ChatSession, MemberWithUser, PendingChatTasksResponse } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import {
@@ -45,6 +45,7 @@ import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
 import { createLogger } from "@multica/core/logger";
 import { removeChatMessageFromCaches } from "@multica/core/realtime";
 import { useLocale, useT } from "../../i18n";
+import { chatChannelLabel } from "../lib/channel-label";
 import { SessionHistoryList } from "./session-history-list";
 import { SessionRenameInput } from "./session-rename-input";
 
@@ -94,8 +95,14 @@ export function ChatThreadList({
   activeSessionId,
   onSelectSession,
   onArchive,
+  viewerId,
+  members = [],
+  creatorFilter,
 }: {
   sessions: ChatSession[];
+  viewerId?: string;
+  members?: MemberWithUser[];
+  creatorFilter?: string;
   agents: Agent[];
   activeSessionId: string | null;
   onSelectSession: (session: ChatSession) => void;
@@ -113,7 +120,7 @@ export function ChatThreadList({
   // affordance simply stays off.
   const slug = useWorkspaceSlug();
   const sessionHref = (sessionId: string) =>
-    slug ? `${paths.workspace(slug).chat()}?session=${sessionId}` : null;
+    slug ? `${paths.workspace(slug).chat()}?session=${sessionId}${creatorFilter ? `&creator=${encodeURIComponent(creatorFilter)}` : ""}` : null;
   // Optional: the list renders bare in tests; without an adapter the web
   // modifier-click affordance stays off (desktop keeps selection anyway).
   const navigation = useOptionalNavigation();
@@ -226,8 +233,10 @@ export function ChatThreadList({
   // the hover strip with it, and the right-click menu — so they cannot drift.
   // The archived view is the only place hard-delete lives; the history view
   // offers the reversible archive instead.
+  const isReadOnlySession = (session: ChatSession) =>
+    !!viewerId && session.creator_id !== viewerId;
   const rowActionsFor = (session: ChatSession): RowActionItem[] =>
-    view === "archived"
+    isReadOnlySession(session) ? [] : view === "archived"
       ? [
           {
             key: "unarchive",
@@ -277,7 +286,7 @@ export function ChatThreadList({
   // Menu-only entries: the touch and right-click menus have room for them,
   // the hover strip keeps its two quick actions.
   const menuActionsFor = (session: ChatSession): RowActionItem[] => {
-    if (view === "archived") return [];
+    if (isReadOnlySession(session) || view === "archived") return [];
     const href = sessionHref(session.id);
     return [
       {
@@ -306,12 +315,16 @@ export function ChatThreadList({
   const commitRename = (session: ChatSession, value: string) => {
     setRenamingId(null);
     const title = value.trim();
-    if (!title || title === (session.title ?? "")) return;
+    if (isReadOnlySession(session) || !title || title === (session.title ?? "")) return;
     updateSession.mutate({ sessionId: session.id, title });
   };
 
   const renderRow = (session: ChatSession) => {
     const isCurrent = session.id === activeSessionId;
+    const readOnly = !!viewerId && session.creator_id !== viewerId;
+    const ownerName = readOnly
+      ? members.find((member) => member.user_id === session.creator_id)?.name || t(($) => $.owner_filter.former_member)
+      : null;
     const agent = agentById.get(session.agent_id) ?? null;
     const agentName = agent?.name.trim() || null;
     const pendingTask = pendingTaskBySessionId.get(session.id);
@@ -326,8 +339,8 @@ export function ChatThreadList({
     const isConfirmingDelete = confirmingDeleteId === session.id;
     const isConfirmingStop = confirmingStopId === session.id && !!pendingTask;
     const isConfirmingAction = isConfirmingDelete || isConfirmingStop;
-    const isRenaming = renamingId === session.id;
-    const titleText = session.title?.trim() || t(($) => $.window.untitled);
+    const isRenaming = !readOnly && renamingId === session.id;
+    const titleText = [chatChannelLabel(session), ownerName, session.title?.trim() || t(($) => $.window.untitled)].filter(Boolean).join(" · ");
     const last = session.last_message ?? null;
     const timeText = last
       ? formatChatTime(last.created_at, locale)
@@ -365,7 +378,7 @@ export function ChatThreadList({
     } else if (last) {
       previewNode = (
         <span className={cn("block truncate", unread > 0 ? "text-foreground" : "text-muted-foreground")}>
-          {last.role === "user" ? t(($) => $.list.you_prefix) : ""}
+          {last.role === "user" && !readOnly && session.channel_source?.channel_type !== "mattermost" ? t(($) => $.list.you_prefix) : ""}
           {toPreview(last.content)}
         </span>
       );
@@ -417,7 +430,7 @@ export function ChatThreadList({
           handleRowActivationKey(e, () => onSelectSession(session));
         }}
         onContextMenu={(e) => {
-          if (isConfirmingAction || isRenaming || !shouldOpenRowMenu(e)) return;
+          if (readOnly || isConfirmingAction || isRenaming || !shouldOpenRowMenu(e)) return;
           e.preventDefault();
           setContextMenu({ open: true, point: { x: e.clientX, y: e.clientY }, sessionId: session.id });
         }}
@@ -455,7 +468,7 @@ export function ChatThreadList({
                 />
               </div>
             ) : (
-              <span className={cn("min-w-0 flex-1 truncate text-body", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
+              <span title={titleText} className={cn("min-w-0 flex-1 truncate text-body", unread > 0 ? "font-semibold text-foreground" : "font-medium")}>
                 {titleText}
               </span>
             )}
@@ -524,7 +537,7 @@ export function ChatThreadList({
             below, which a pointer without hover can never reach. It takes real
             layout space (rather than overlaying the preview) and gives way to
             the hover strip on a hover-capable pointer. */}
-        {!isConfirmingAction && !isRenaming && (
+        {!isConfirmingAction && !isRenaming && (rowActions.length > 0 || menuActions.length > 0) && (
           <RowActionsMenu
             label={t(($) => $.list.row_actions_aria)}
             groups={[rowActions, menuActions]}
@@ -534,7 +547,7 @@ export function ChatThreadList({
         {/* Hover actions — absolutely positioned so showing/hiding them never
             changes the row height (which was making the list jump). Keyboard
             focus reveals them too, so they are reachable without a mouse. */}
-        {!isConfirmingAction && !isRenaming && (
+        {!isConfirmingAction && !isRenaming && rowActions.length > 0 && (
           <div className="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-gradient-to-l from-accent from-40% to-transparent pl-10 pr-1 [@media(hover:hover)]:group-hover/row:flex [@media(hover:hover)]:group-focus-within/row:flex">
             {rowActions.map((action) => (
               <RowAction

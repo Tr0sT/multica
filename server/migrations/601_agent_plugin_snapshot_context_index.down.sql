@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS agent_plugin_snapshot_context_idx;

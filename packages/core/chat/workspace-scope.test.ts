@@ -143,6 +143,19 @@ describe("chat collection workspace ownership", () => {
     expect(requestedWorkspaces).toEqual([workspaceA]);
   });
 
+  it("retains the admin creator filter and explicit workspace scope after navigation", async () => {
+    const requestedWorkspaces = stubWorkspaceServer();
+    setCurrentWorkspace("workspace-b", workspaceB);
+
+    await queryClient.fetchQuery(chatSessionsOptions(workspaceA, "member-1"));
+
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.searchParams.get("creator_id")).toBe("member-1");
+    expect(requestUrl.searchParams.get("status")).toBe("all");
+    expect(requestedWorkspaces).toEqual([workspaceA]);
+  });
+
   it.each([
     { name: "an explicit slug", scope: "workspace-a", expected: workspaceA },
     { name: "the current workspace by default", scope: undefined, expected: workspaceB },

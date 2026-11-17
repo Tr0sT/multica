@@ -9,6 +9,7 @@ import { dingtalkInstallationsOptions } from "@multica/core/dingtalk";
 import { wecomInstallationsOptions } from "@multica/core/wecom";
 import { weixinInstallationsOptions } from "@multica/core/weixin";
 import { telegramInstallationsOptions } from "@multica/core/telegram";
+import { mattermostInstallationsOptions } from "@multica/core/mattermost";
 import type {
   Agent,
   LarkInstallation,
@@ -17,6 +18,7 @@ import type {
   WecomInstallation,
   TelegramInstallation,
   WeixinInstallation,
+  MattermostInstallation,
 } from "@multica/core/types";
 import type { ChannelIntegration } from "./settings-navigation";
 
@@ -26,7 +28,8 @@ export type ChannelConnection =
   | { channel: "dingtalk"; installation: DingTalkInstallation }
   | { channel: "wecom"; installation: WecomInstallation }
   | { channel: "telegram"; installation: TelegramInstallation }
-  | { channel: "weixin"; installation: WeixinInstallation };
+  | { channel: "weixin"; installation: WeixinInstallation }
+  | { channel: "mattermost"; installation: MattermostInstallation };
 
 export function channelChatLink(
   connection: ChannelConnection,
@@ -60,7 +63,8 @@ export function useMessagingChannels() {
   const wecom = useQuery({ ...wecomInstallationsOptions(wsId), enabled });
   const telegram = useQuery({ ...telegramInstallationsOptions(wsId), enabled });
   const weixin = useQuery({ ...weixinInstallationsOptions(wsId), enabled });
-  const queries = { lark, slack, dingtalk, wecom, telegram, weixin };
+  const mattermost = useQuery({ ...mattermostInstallationsOptions(wsId), enabled });
+  const queries = { lark, slack, dingtalk, wecom, telegram, weixin, mattermost };
   const connections: ChannelConnection[] = [
     ...(lark.data?.installations ?? []).map((installation) => ({
       channel: "lark" as const,
@@ -84,6 +88,10 @@ export function useMessagingChannels() {
     })),
     ...(telegram.data?.installations ?? []).map((installation) => ({
       channel: "telegram" as const,
+      installation,
+    })),
+    ...(mattermost.data?.installations ?? []).map((installation) => ({
+      channel: "mattermost" as const,
       installation,
     })),
   ].filter(({ installation }) => installation.status === "active");

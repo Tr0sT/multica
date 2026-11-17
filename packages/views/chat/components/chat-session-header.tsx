@@ -34,6 +34,7 @@ import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
+import { chatChannelLabel } from "../lib/channel-label";
 
 /**
  * Per-session header for the conversation pane, read as a breadcrumb: the
@@ -45,9 +46,13 @@ export function ChatSessionHeader({
   agent,
   onArchive,
   leading,
+  readOnly = false,
+  ownerName,
 }: {
   session: ChatSession;
   agent: Agent | null;
+  readOnly?: boolean;
+  ownerName?: string;
   // Archiving the open conversation must move the pane off it (advance to the
   // next chat on desktop, back to the list on mobile), so the parent owns it —
   // see ChatPage.handleArchive. Falls back to a plain status flip if unwired.
@@ -80,6 +85,7 @@ export function ChatSessionHeader({
   const blurCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const title = session.title?.trim() || t(($) => $.window.untitled);
+  const subtitle = [chatChannelLabel(session), ownerName].filter(Boolean).join(" · ");
 
   useEffect(() => {
     if (editing) {
@@ -133,7 +139,7 @@ export function ChatSessionHeader({
       : setArchived.mutate({ sessionId: session.id, archived: true });
   const doUnarchive = () => setArchived.mutate({ sessionId: session.id, archived: false });
 
-  const leaf = editing ? (
+  const leaf = editing && !readOnly ? (
     <input
       ref={inputRef}
       value={draft}
@@ -190,10 +196,11 @@ export function ChatSessionHeader({
       className="min-w-0 max-w-96 flex-1 rounded-sm bg-background px-1 py-0.5 text-body font-medium outline-none ring-1 ring-border focus-visible:ring-brand"
     />
   ) : (
-    <TooltipHint label={t(($) => $.header.rename)}>
+    <TooltipHint label={readOnly ? title : t(($) => $.header.rename)}>
       <button
         type="button"
         onClick={startRename}
+        disabled={readOnly}
         className="min-w-0 truncate text-left text-body font-medium text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
       >
         {title}
@@ -227,8 +234,8 @@ export function ChatSessionHeader({
               ]
             : []
         }
-        leaf={leaf}
-        actions={
+        leaf={<div className="min-w-0 flex flex-col">{leaf}{subtitle && <span className="truncate text-caption text-muted-foreground" title={subtitle}>{subtitle}</span>}</div>}
+        actions={readOnly ? null : (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -275,7 +282,7 @@ export function ChatSessionHeader({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-        }
+        )}
       />
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
