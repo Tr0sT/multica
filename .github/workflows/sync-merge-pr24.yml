@@ -188,15 +188,9 @@ jobs:
                   uploaded += 1
               changes.append({"path": path, "mode": new["mode"], "type": new["type"], "sha": sha})
           print("sync tree changed files:", len(changes), "uploaded merged blobs:", uploaded)
-          base_tree = git("rev-parse", upstream + "^{tree}").decode().strip()
-          resulting = api("/git/trees", {"base_tree": base_tree, "tree": changes})["sha"]
-          local_tree = git("rev-parse", "HEAD^{tree}").decode().strip()
-          assert resulting == local_tree, f"Tree mismatch: remote={resulting} local={local_tree}"
-          remote_commit = api("/git/commits", {
-              "message": "sync: preserve upstream and fork integration changes (Weixin + Mattermost)",
-              "tree": resulting,
-              "parents": [branch_before, fork],
-          })["sha"]
-          print("REMOTE_MERGE_SHA=" + remote_commit)
-          print("REMOTE_MERGE_TREE=" + resulting)
+          print("MERGE_FORK_PARENT=" + fork)
+          print("MERGE_BRANCH_PARENT=" + branch_before)
+          print("LOCAL_MERGE_TREE=" + git("rev-parse", "HEAD^{tree}").decode().strip())
+          for entry in changes:
+              print("MERGE_TREE_ELEMENT=" + json.dumps(entry, separators=(",", ":")))
           PY
