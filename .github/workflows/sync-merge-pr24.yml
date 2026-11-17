@@ -15,6 +15,8 @@ jobs:
           fetch-depth: 0
       - name: Merge upstream and fork, preserving both features
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -123,4 +125,78 @@ jobs:
           fi
           git rm .github/workflows/sync-merge-pr24.yml
           git commit -m 'chore(sync): remove temporary merge runner'
-          git push origin HEAD:refs/heads/sync/upstream-2026-11-17-71683141
+          python3 <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.request
+
+          repo = "Tr0sT/multica"
+          upstream = "71683141a764ed3b1620db4bc26a2d0a098f135c"
+          fork = "744eef805609232f7a6484ad77dc3c5b16a8066c"
+          branch_before = "46b6738bebb73909db17ffae0e605cb2be3b5a5e"
+          def git(*args):
+              return subprocess.check_output(["git", *args])
+          assert not git("ls-files", ".github/workflows/sync-merge-pr24.yml").strip()
+          assert subprocess.run(["git", "merge-base", "--is-ancestor", upstream, "HEAD"]).returncode == 0
+          assert subprocess.run(["git", "merge-base", "--is-ancestor", fork, "HEAD"]).returncode == 0
+          def manifest(ref):
+              raw = git("ls-tree", "-rz", ref)
+              result = {}
+              for record in raw.split(b"\0"):
+                  if not record: continue
+                  meta, rawpath = record.split(b"\t", 1)
+                  mode, typ, sha = meta.decode().split()
+                  result[rawpath.decode()] = {"mode": mode, "type": typ, "sha": sha}
+              return result
+          upstream_map = manifest(upstream)
+          fork_map = manifest(fork)
+          merged = manifest("HEAD")
+          known = {x["sha"] for x in upstream_map.values()} | {x["sha"] for x in fork_map.values()}
+          token = os.environ["GITHUB_TOKEN"]
+          def api(endpoint, payload):
+              body = json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}{endpoint}",
+                  data=body, method="POST",
+                  headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                           "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=40) as resp:
+                      return json.load(resp)
+              except urllib.error.HTTPError as exc:
+                  print("GitHub API failed at", endpoint, exc.code, exc.read().decode()[:2000])
+                  raise
+          changes = []
+          uploaded = 0
+          for path in sorted(set(upstream_map) | set(merged)):
+              old = upstream_map.get(path)
+              new = merged.get(path)
+              if old == new: continue
+              if new is None:
+                  changes.append({"path": path, "mode": old["mode"], "type": old["type"], "sha": None})
+                  continue
+              sha = new["sha"]
+              if sha not in known and new["type"] == "blob":
+                  blob = git("cat-file", "blob", sha)
+                  stored = api("/git/blobs", {"encoding": "base64", "content": base64.b64encode(blob).decode("ascii")})
+                  assert stored["sha"] == sha, f"Blob SHA mismatch: {path}"
+                  known.add(sha)
+                  uploaded += 1
+              changes.append({"path": path, "mode": new["mode"], "type": new["type"], "sha": sha})
+          print("sync tree changed files:", len(changes), "uploaded merged blobs:", uploaded)
+          base_tree = git("rev-parse", upstream + "^{tree}").decode().strip()
+          resulting = api("/git/trees", {"base_tree": base_tree, "tree": changes})["sha"]
+          local_tree = git("rev-parse", "HEAD^{tree}").decode().strip()
+          assert resulting == local_tree, f"Tree mismatch: remote={resulting} local={local_tree}"
+          remote_commit = api("/git/commits", {
+              "message": "sync: preserve upstream and fork integration changes (Weixin + Mattermost)",
+              "tree": resulting,
+              "parents": [branch_before, fork],
+          })["sha"]
+          print("REMOTE_MERGE_SHA=" + remote_commit)
+          print("REMOTE_MERGE_TREE=" + resulting)
+          PY
