@@ -1,0 +1,30 @@
+name: Temporary upstream sync merge (PR 24)
+on:
+  push:
+    branches: [sync/upstream-2026-11-17-71683141]
+permissions:
+  contents: write
+jobs:
+  merge-base-preserving:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge protected fork changes into upstream commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if ! git merge --no-ff --no-edit -m 'sync: combine upstream 71683141 with fork main' origin/main; then
+            echo 'Merge conflicts; changes must be reviewed semantically.'
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+          git rm .github/workflows/sync-merge-pr24.yml
+          git commit -m 'chore(sync): remove temporary merge runner'
+          git push origin HEAD:refs/heads/sync/upstream-2026-11-17-71683141
