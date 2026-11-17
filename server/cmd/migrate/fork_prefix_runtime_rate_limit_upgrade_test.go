@@ -96,10 +96,14 @@ func TestForkRuntimeRateLimitAndWeixinPrefixCollisionUpgrade(t *testing.T) {
 				apply(weixin, "up")
 				if _, err := pool.Exec(ctx, `
 					INSERT INTO weixin_account_state (installation_id, bot_id, user_id)
-					VALUES ($1, 'synthetic-bot', 'synthetic-user');
+					VALUES ($1, 'synthetic-bot', 'synthetic-user')
+				`, installationID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := pool.Exec(ctx, `
 					INSERT INTO weixin_login_session (id, workspace_id, agent_id, initiator_user_id, state_encrypted, expires_at)
-					VALUES ('00000000-0000-4000-8000-000000000104', $2, $1, $2, 'synthetic-ciphertext', now() + interval '1 day');
-				`, installationID, workspaceID); err != nil {
+					VALUES ('00000000-0000-4000-8000-000000000104', $1, $2, $1, 'synthetic-ciphertext', now() + interval '1 day')
+				`, workspaceID, installationID); err != nil {
 					t.Fatal(err)
 				}
 			case "limits":
