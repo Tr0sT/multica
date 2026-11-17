@@ -670,7 +670,7 @@ describe("workspace overview", () => {
     );
     expect(state.replace).toHaveBeenCalledWith("/acme/settings?tab=channels");
     expect(screen.getByText("Who can connect")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Connect" })).toHaveLength(6);
+    expect(screen.getAllByRole("button", { name: "Connect" })).toHaveLength(7);
   });
 
   it("reports failed reads as unavailable and keeps a retry control", async () => {
@@ -700,12 +700,12 @@ describe("fork Mattermost channel integration", () => {
     installed_at: "2026-11-01T00:00:00Z",
   };
 
-  it("keeps all six platform marks in the workspace overview", async () => {
+  it("keeps all seven platform marks in the workspace overview", async () => {
     show(<ChannelsTab />);
     await screen.findByTestId("integration-channel-icon-mattermost");
-    const marks = ["lark", "slack", "dingtalk", "wecom", "telegram", "mattermost"]
+    const marks = ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin", "mattermost"]
       .map((id) => screen.getByTestId(`integration-channel-icon-${id}`).innerHTML);
-    expect(new Set(marks).size).toBe(6);
+    expect(new Set(marks).size).toBe(7);
   });
 
   it("shows the bot and server to members without exposing edit or disconnect", async () => {
