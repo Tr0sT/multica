@@ -136,7 +136,7 @@ jobs:
           repo = "Tr0sT/multica"
           upstream = "71683141a764ed3b1620db4bc26a2d0a098f135c"
           fork = "744eef805609232f7a6484ad77dc3c5b16a8066c"
-          branch_before = "46b6738bebb73909db17ffae0e605cb2be3b5a5e"
+          branch_before = os.environ["GITHUB_SHA"]
           def git(*args):
               return subprocess.check_output(["git", *args])
           assert not git("ls-files", ".github/workflows/sync-merge-pr24.yml").strip()
