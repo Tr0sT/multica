@@ -4,40 +4,38 @@ on:
     branches:
       - sync/upstream-2026-11-18-d24caa8f
 permissions:
-  contents: read
+  contents: write
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Inspect fork-main to upstream merge conflicts (non-mutating)
+          persist-credentials: true
+      - name: Merge fork main, resolve reviewed conflicts and advance sync branch
         shell: bash
         run: |
           set -euo pipefail
-          echo "PR_HEAD=$(git rev-parse HEAD)"
+          expected_main=f99c40c56f588b05618a218de33db11016b315dc
+          expected_upstream=d24caa8fdcaed5ec4f442a57353a136649136ec2
           git fetch --no-tags origin main
-          echo "FORK_MAIN=$(git rev-parse origin/main)"
-          echo "MERGE_BASE=$(git merge-base HEAD origin/main)"
-          if git -c user.name=sync-diagnostics -c user.email=sync@example.invalid merge --no-commit --no-ff origin/main; then
-            echo "CLEAN_MERGE=true"
-          else
-            echo "CLEAN_MERGE=false"
-            echo "CONFLICT_FILE_LIST_START"
-            git diff --name-only --diff-filter=U
-            echo "CONFLICT_FILE_LIST_END"
-            echo "CONFLICT_DETAILS_START"
-            while IFS= read -r file; do
-              echo "::group::CONFLICT: $file"
-              git ls-files -u -- "$file"
-              if [ -f "$file" ]; then
-                grep -n -C 7 -E '^(<<<<<<<|=======|>>>>>>>)' "$file" | head -n 320 || true
-              fi
-              echo "::endgroup::"
-            done < <(git diff --name-only --diff-filter=U)
-            echo "CONFLICT_DETAILS_END"
-          fi
-          git merge --abort || true
+          test "$(git rev-parse origin/main)" = "$expected_main"
+          git merge-base --is-ancestor "$expected_upstream" HEAD
+          git -c user.name="multica-sync-bot" -c user.email="sync-bot@users.noreply.github.com" merge --no-commit --no-ff origin/main || true
+          python3 scripts/_sync_resolution_20261118.py
+          test -f flake.nix
+          test -f nix/modules/multica.nix
+          test -f server/migrations/FORK-MIGRATIONS.md
+          test -f packages/core/mattermost/queries.ts
+          test -f packages/core/agent-marketplaces/queries.ts
+          test -f deploy/nord/skills/mattermost-readonly/SKILL.md
+          git rm .github/workflows/sync-diagnostic-2026-11-18.yml scripts/_sync_resolution_20261118.py
+          git diff --cached --check
+          git diff --cached --stat | tail -n 10
+          git -c user.name="multica-sync-bot" -c user.email="sync-bot@users.noreply.github.com" commit -m "sync: merge fork main and upstream d24caa8f with retained integrations"
+          git merge-base --is-ancestor "$expected_main" HEAD
+          git merge-base --is-ancestor "$expected_upstream" HEAD
+          echo "Merged branch head $(git rev-parse HEAD)"
+          git push origin HEAD:refs/heads/sync/upstream-2026-11-18-d24caa8f
