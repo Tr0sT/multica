@@ -46,6 +46,14 @@ upstream policy; other unlisted prefixes remain unique.
 4. Run the migration lint/identity tests and relevant runner tests, then the full
    applicable CI. The allowlist is not a waiver for a failing SQL migration.
 
+Upstream later renumbered the unchanged `665_runtime_rate_limit` SQL to
+`673_runtime_rate_limit`. On this fork the original `665_runtime_rate_limit`
+version was already published and may be present in `schema_migrations`.
+Keep its exact existing SQL, filename and migration history; do **not** replay
+identical DDL under `673` or rewrite past versions. The fork retains the two
+independently published `665` identities, with their PostgreSQL-backed
+upgrade and rollback regression below.
+
 Collision coverage:
 - `server/cmd/migrate/fork_prefix_upgrade_test.go`: prefixes 585-587, six SQL
   files, real runner, isolated PostgreSQL schemas.

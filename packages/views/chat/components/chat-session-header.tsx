@@ -34,6 +34,7 @@ import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
+import { ChatWakeupHeaderButton, useChatWakeups } from "./chat-wakeups";
 import { chatChannelLabel } from "../lib/channel-label";
 
 /**
@@ -71,6 +72,7 @@ export function ChatSessionHeader({
   const deleteSession = useDeleteChatSession();
   const setArchived = useSetChatSessionArchived();
   const setActiveSession = useChatStore((s) => s.setActiveSession);
+  const wakeups = useChatWakeups(session.id);
 
   const isArchived = session.status === "archived";
 
@@ -236,6 +238,8 @@ export function ChatSessionHeader({
         }
         leaf={<div className="min-w-0 flex flex-col">{leaf}{subtitle && <span className="truncate text-caption text-muted-foreground" title={subtitle}>{subtitle}</span>}</div>}
         actions={readOnly ? null : (
+          <div className="flex items-center gap-0.5">
+            <ChatWakeupHeaderButton sessionId={session.id} wakeups={wakeups} />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -282,6 +286,7 @@ export function ChatSessionHeader({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         )}
       />
 
