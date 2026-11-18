@@ -28,7 +28,6 @@ import { useMessagingChannels } from "./use-messaging-channels";
 import { LarkChannelAuthorization } from "./lark-channel-authorization";
 import { WecomChannelAuthorization } from "./wecom-channel-authorization";
 import { WeixinChannelAuthorization } from "./weixin-channel-authorization";
-import { WeixinAgentBindButton } from "./weixin-tab";
 import { MattermostAgentBindButton } from "./mattermost-tab";
 
 export function ChannelConnectDialog({
