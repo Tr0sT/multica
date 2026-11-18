@@ -28,6 +28,7 @@ import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
+import { agentMarketplaceKeys } from "../agent-marketplaces/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
@@ -48,6 +49,7 @@ import { slackKeys } from "../slack/queries";
 import { dingtalkKeys } from "../dingtalk/queries";
 import { wecomKeys } from "../wecom/queries";
 import { telegramKeys } from "../telegram/queries";
+import { mattermostKeys } from "../mattermost/queries";
 import {
   onIssueCreated,
   onIssueUpdated,
@@ -921,6 +923,10 @@ export function useRealtimeSync(
           invalidateSquadMemberStatusQueries(qc, wsId);
         }
       },
+      agent_plugins: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: agentMarketplaceKeys.all(wsId) });
+      },
       member: () => {
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
@@ -1090,6 +1096,10 @@ export function useRealtimeSync(
       telegram_installation: () => {
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
+      },
+      mattermost_installation: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: mattermostKeys.installations(wsId) });
       },
       pull_request: () => {
         // PR list is keyed by issue id, not workspace, so we invalidate all

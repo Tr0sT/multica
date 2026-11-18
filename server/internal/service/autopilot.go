@@ -809,7 +809,7 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 			return errWebhookRunAlreadyDispatched
 		}
 	} else if duplicate, found, err := issueguard.LockAndFindRecentAutopilotDuplicate(
-		ctx, qtx, ap.WorkspaceID, ap.ID, projectID, title, autopilotRecentDuplicateWindow,
+		ctx, qtx, ap.WorkspaceID, ap.ID, projectID, run.WebhookDeliveryID, title, autopilotRecentDuplicateWindow,
 	); err != nil {
 		return fmt.Errorf("recent duplicate guard: %w", err)
 	} else if found {

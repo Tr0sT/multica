@@ -24,6 +24,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
+      registry_owner: ${{ steps.release_meta.outputs.registry_owner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,6 +46,7 @@ jobs:
             exit 1
           fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
+          echo "registry_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
@@ -82,12 +84,8 @@ jobs:
 
   release:
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `multica-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'multica-ai'
+    # The fork publishes its own CLI assets without writing to the upstream tap.
+    if: github.repository_owner == 'multica-ai' || github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -111,7 +109,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ github.repository == 'Tr0sT/multica' && '--skip=homebrew' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
@@ -144,7 +142,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/multica-backend
+          images: ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-backend
           labels: |
             org.opencontainers.image.title=Multica Backend
             org.opencontainers.image.description=Multica self-hosted backend
@@ -173,7 +171,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.verify.outputs.tag_name }}
             COMMIT=${{ github.sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/multica-backend,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -210,7 +208,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/multica-backend
+          images: ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-backend
           flavor: |
             latest=false
           tags: |
@@ -230,12 +228,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/multica-backend@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-backend@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/multica-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
     needs: verify
@@ -261,7 +259,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/multica-web
+          images: ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-web
           labels: |
             org.opencontainers.image.title=Multica Web
             org.opencontainers.image.description=Multica self-hosted web frontend
@@ -290,7 +288,7 @@ jobs:
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/multica-web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -327,7 +325,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/multica-web
+          images: ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-web
           flavor: |
             latest=false
           tags: |
@@ -347,12 +345,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/multica-web@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-web@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/multica-web:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ needs.verify.outputs.registry_owner }}/multica-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
@@ -363,7 +361,7 @@ jobs:
       cancel-in-progress: true
     env:
       CHART_DIR: deploy/helm/multica
-      OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
+      OCI_REGISTRY: oci://ghcr.io/${{ needs.verify.outputs.registry_owner }}/charts
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -402,6 +400,7 @@ jobs:
   # not (yet) wired into CI.
   desktop:
     needs: release
+    if: github.repository_owner == 'multica-ai'
     strategy:
       fail-fast: false
       matrix:
