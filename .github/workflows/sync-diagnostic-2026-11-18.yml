@@ -1,0 +1,43 @@
+name: Temporary upstream sync conflict diagnostics
+on:
+  push:
+    branches:
+      - sync/upstream-2026-11-18-d24caa8f
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inspect fork-main to upstream merge conflicts (non-mutating)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PR_HEAD=$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          echo "FORK_MAIN=$(git rev-parse origin/main)"
+          echo "MERGE_BASE=$(git merge-base HEAD origin/main)"
+          if git -c user.name=sync-diagnostics -c user.email=sync@example.invalid merge --no-commit --no-ff origin/main; then
+            echo "CLEAN_MERGE=true"
+          else
+            echo "CLEAN_MERGE=false"
+            echo "CONFLICT_FILE_LIST_START"
+            git diff --name-only --diff-filter=U
+            echo "CONFLICT_FILE_LIST_END"
+            echo "CONFLICT_DETAILS_START"
+            while IFS= read -r file; do
+              echo "::group::CONFLICT: $file"
+              git ls-files -u -- "$file"
+              if [ -f "$file" ]; then
+                grep -n -C 7 -E '^(<<<<<<<|=======|>>>>>>>)' "$file" | head -n 320 || true
+              fi
+              echo "::endgroup::"
+            done < <(git diff --name-only --diff-filter=U)
+            echo "CONFLICT_DETAILS_END"
+          fi
+          git merge --abort || true
