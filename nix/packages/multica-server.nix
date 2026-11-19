@@ -12,7 +12,7 @@
   inherit version;
   src = source;
   modRoot = "server";
-  vendorHash = "sha256-kFDWoj8uRzVyOePCl9tGVarsuYMe8gWHT162AXW7wmU=";
+  vendorHash = "sha256-ivrOEgNrH5Cw1ETXcpxy9CVVJuQohF2zm/9r8ED0bgk=";
 
   subPackages = [
     "cmd/server"
