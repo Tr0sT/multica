@@ -18,6 +18,7 @@ import { ChannelChatDemo } from "@/components/demos/channel-chat-demo";
 | 에이전트와 DM | 지원 | 지원 | 지원 | 지원 | 지원 | QR 코드를 스캔한 계정만 지원 | 지원 |
 | 그룹 채팅 또는 채널 | Bot을 @멘션하면 트리거 | Bot을 @멘션하면 트리거 | Bot을 @멘션하면 트리거 | Bot을 @멘션하면 트리거 | Bot을 @멘션하거나 Bot에 답장하면 트리거 | 지원하지 않음 | 봇을 @멘션하거나 봇이 시작한 스레드에서 답글을 달면 트리거 |
 | 태스크 만들기 | `/issue` 메시지 명령으로 입력 내용을 바로 생성 | `/issue` slash 명령으로 에이전트가 설명을 정리한 뒤 생성 | `/issue` 메시지 명령으로 입력 내용을 바로 생성 | `/issue` 메시지 명령으로 입력 내용을 바로 생성 | `/issue` 메시지 명령으로 입력 내용을 바로 생성 | `/issue` 메시지 명령으로 입력 내용을 바로 생성 | `@multica /issue` 메시지 명령으로 입력 내용을 바로 생성 |
+| 명령 확인 | `/help` | `@Multica /help` | `/help` | `/help` | `/help` | `/help` | `@multica /help` |
 | 새 Chat 시작 | `/new [메시지]` | DM: `/new [메시지]`, 채널/thread: `@Multica /new [메시지]` | `/new [메시지]` | `/new [메시지]` | `/new [메시지]` | `/new [메시지]` | `@multica /new [메시지]` |
 | 현재 Chat 컨텍스트 지우기 | `/clear [메시지]` | DM: `/clear [메시지]`, 채널/thread: `@Multica /clear [메시지]` | `/clear [메시지]` | `/clear [메시지]` | `/clear [메시지]` | `/clear [메시지]` | `@multica /clear [메시지]` |
 | 연결 방식 | 플랫폼 장기 연결 | Socket Mode | Stream 모드 | 플랫폼 장기 연결 | `getUpdates` long polling | iLink 롱 폴링 | WebSocket |

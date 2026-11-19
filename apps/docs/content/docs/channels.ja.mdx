@@ -18,6 +18,7 @@ import { ChannelChatDemo } from "@/components/demos/channel-chat-demo";
 | エージェントとの DM | 対応 | 対応 | 対応 | 対応 | 対応 | QR コードをスキャンしたアカウントのみ | 対応 |
 | グループまたはチャンネル | Bot を @メンションするとトリガー | Bot を @メンションするとトリガー | Bot を @メンションするとトリガー | Bot を @メンションするとトリガー | Bot を @メンション、または Bot に返信するとトリガー | 非対応 | ボットを @メンションするか、ボットが立てたスレッドで返信するとトリガー |
 | タスクの作成 | `/issue` メッセージコマンド。入力内容からそのまま作成 | `/issue` スラッシュコマンド。エージェントが説明を整理してから作成 | `/issue` メッセージコマンド。入力内容からそのまま作成 | `/issue` メッセージコマンド。入力内容からそのまま作成 | `/issue` メッセージコマンド。入力内容からそのまま作成 | `/issue` メッセージコマンド。入力内容からそのまま作成 | `@multica /issue` メッセージコマンド。入力内容からそのまま作成 |
+| コマンドの確認 | `/help` | `@Multica /help` | `/help` | `/help` | `/help` | `/help` | `@multica /help` |
 | 新しい Chat を開始 | `/new [メッセージ]` | DM: `/new [メッセージ]`、チャンネル/スレッド: `@Multica /new [メッセージ]` | `/new [メッセージ]` | `/new [メッセージ]` | `/new [メッセージ]` | `/new [メッセージ]` | `@multica /new [メッセージ]` |
 | 現在の Chat のコンテキストをクリア | `/clear [メッセージ]` | DM: `/clear [メッセージ]`、チャンネル/スレッド: `@Multica /clear [メッセージ]` | `/clear [メッセージ]` | `/clear [メッセージ]` | `/clear [メッセージ]` | `/clear [メッセージ]` | `@multica /clear [メッセージ]` |
 | 接続方式 | プラットフォームの常時接続 | Socket Mode | Stream モード | プラットフォームの常時接続 | `getUpdates` long polling | iLink ロングポーリング | WebSocket |

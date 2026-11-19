@@ -18,6 +18,7 @@ import { ChannelChatDemo } from "@/components/demos/channel-chat-demo";
 | 私聊智能体 | 支持 | 支持 | 支持 | 支持 | 支持 | 仅限扫码连接的账号 | 支持 |
 | 群聊或频道 | @ Bot 后触发 | @ Bot 后触发 | @ Bot 后触发 | @ Bot 后触发 | @ Bot 或回复 Bot 后触发 | 不支持 | @ 机器人，或在机器人发起的话题串中回复后触发 |
 | 创建任务 | `/issue` 消息命令，按输入直接创建 | `/issue` slash 命令，智能体整理描述后创建 | `/issue` 消息命令，按输入直接创建 | `/issue` 消息命令，按输入直接创建 | `/issue` 消息命令，按输入直接创建 | `/issue` 消息命令，按输入直接创建 | `@multica /issue` 消息命令，按输入直接创建 |
+| 查看命令 | `/help` | `@Multica /help` | `/help` | `/help` | `/help` | `/help` | `@multica /help` |
 | 新建 Chat | `/new [消息]` | 私聊：`/new [消息]`；频道/thread：`@Multica /new [消息]` | `/new [消息]` | `/new [消息]` | `/new [消息]` | `/new [消息]` | `@multica /new [消息]` |
 | 清空当前 Chat 上下文 | `/clear [消息]` | 私聊：`/clear [消息]`；频道/thread：`@Multica /clear [消息]` | `/clear [消息]` | `/clear [消息]` | `/clear [消息]` | `/clear [消息]` | `@multica /clear [消息]` |
 | 连接方式 | 平台长连接 | Socket Mode | Stream 模式 | 平台长连接 | `getUpdates` 长轮询 | iLink 长轮询 | WebSocket |

@@ -214,7 +214,8 @@
     "./skills/stores": "./skills/stores/index.ts",
     "./autopilots/stores": "./autopilots/stores/index.ts",
     "./runtimes/qoder": "./runtimes/qoder.ts",
-    "./agent-marketplaces": "./agent-marketplaces/index.ts"
+    "./agent-marketplaces": "./agent-marketplaces/index.ts",
+    "./docs": "./docs/index.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",
