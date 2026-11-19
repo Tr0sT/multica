@@ -81,6 +81,7 @@ func init() {
 
 	rootCmd.AddCommand(issueCmd)
 	rootCmd.AddCommand(inboxCmd)
+	rootCmd.AddCommand(docCmd)
 	rootCmd.AddCommand(issueStatusCatalogCmd)
 	rootCmd.AddCommand(projectCmd)
 	rootCmd.AddCommand(workflowCmd)

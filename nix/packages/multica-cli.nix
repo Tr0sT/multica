@@ -14,7 +14,7 @@
   src = source;
   modRoot = "server";
   subPackages = [ "cmd/multica" ];
-  vendorHash = "sha256-kFDWoj8uRzVyOePCl9tGVarsuYMe8gWHT162AXW7wmU=";
+  vendorHash = "sha256-ivrOEgNrH5Cw1ETXcpxy9CVVJuQohF2zm/9r8ED0bgk=";
 
   env.CGO_ENABLED = 0;
   ldflags = [

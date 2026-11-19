@@ -234,6 +234,25 @@ multica issue wakeup runs MUL-123 <wakeup-id>
 
 터미널에서 멤버로 만들 때는 `--agent-id`가 필요합니다. 에이전트가 자기 실행 안에서 만들면 기본적으로 자기 자신을 깨웁니다.
 
+## 채팅 웨이크업 [#chat-wakeups]
+
+`chat wakeup`은 채팅 실행 중인 에이전트만 사용할 수 있으며 현재 대화가 대상입니다. 세션 ID를 받지 않으며 일반 멤버 터미널이나 태스크 실행에서는 사용할 수 없습니다. 사용자 조작은 [나중에 결과 받기](/chat#follow-up-later)를 참고하세요.
+
+```bash
+multica chat wakeup create --title "Review ready" \
+  --until-issue MUL-123 --state in_review --expires-in 48h \
+  --instruction "Summarize the result in this conversation"
+multica chat wakeup create --title "Check back in two hours" \
+  --after 2h --instruction "Remind the user to review the result"
+multica chat wakeup list
+```
+
+하나의 `--until-*` 조건, `--at` / `--after`, `--every` 중 하나를 선택하세요. 생성과 업데이트에는 `--title`과 `--instruction`(또는 `--instruction-file`)이 필요합니다. `update`는 설정을 교체하고 상대 기한을 업데이트 시점부터 다시 계산합니다. 단, 조건·알림·주기적 확인 사이에서 종류를 바꿀 수는 없습니다. 조건 대기와 확인은 기본 24시간이며 `--expires-in` 또는 `--expires-at`으로 최대 7일까지 설정합니다. 일회성 알림은 최대 30일 뒤까지이며 만료 플래그를 받지 않습니다. 확인 간격은 최소 10분이며, 기한까지 확인 횟수는 최대 100회입니다. `--every 10m`에 기본 24시간을 쓰면 144회가 되어 거부되므로 간격을 늘리거나 `--expires-in 16h`처럼 기한을 앞당기세요.
+
+조건은 `--until-issue`와 `--state` 또는 `--status`, `--until-children-done`과 선택 사항인 `--stage`, `--until-pr`, `--until-run`, `--until-reply`와 선택 사항인 `--from <user-id>`를 지원합니다. PR 조건은 이 워크스페이스에 미러링된 GitHub PR을 `owner/repo#N[:merged|closed|checks]` 형식으로 지정합니다. `checks`는 현재 head의 검사가 성공 또는 실패로 끝날 때까지 기다립니다. `checks` 조건은 서버가 GitHub에서 CI 상태를 읽을 수 있을 때만 만들 수 있습니다. 자체 호스팅 서버에는 `GITHUB_APP_ID`와 `GITHUB_APP_PRIVATE_KEY`가 필요합니다([GitHub 연동](/github-integration) 참고). 생성 시 이미 끝난 검사 결과는 기준으로 기록되며 그 결과만으로 에이전트를 즉시 깨우지는 않습니다.
+
+`list`, `get <id>`로 조회하고 `cancel <id>`로 취소하세요. 주기적 확인 실행에서는 `checkin <id> --note "..."`으로 답변 없이 상황을 기록할 수 있습니다. 목표를 달성하면 `finish <id>`로 확인을 끝냅니다. 기한에 도달한 마지막 실행은 반드시 보고해야 하며 조용히 체크인할 수 없습니다.
+
 ## 에이전트와 스킬
 
 ```bash
@@ -385,7 +404,7 @@ multica autopilot trigger-update <autopilot-id> <trigger-id> --clear-event-filte
 | --- | --- |
 | `issue` | 태스크 생성, 업데이트, 할당, 검색. 댓글, 구독, 라벨, 속성, 깨우기, 타임라인, 실행 기록 관리 |
 | `project` | 프로젝트와 프로젝트 리소스 관리 |
-| `inbox` | 읽음 상태를 바꾸지 않고 내 알림 읽기 |
+| `inbox` | 내 알림 읽기와 관리: 목록, 읽음 표시, 보관, 다시 알림 |
 | `label`, `property` | 워크스페이스 라벨과 사용자 지정 속성 관리 |
 | `view` | 저장된 뷰를 읽고 뷰에 보이는 태스크 나열 |
 | `agent`, `skill`, `squad` | 에이전트, 스킬, 스쿼드 관리 |
@@ -507,7 +526,15 @@ CLI 설정 파일에는 사용자를 대신해 Multica에 접근할 수 있는 t
 | | `member list/add/set-role/remove` | 스쿼드 멤버 관리 | |
 | | `activity <issue-id> <outcome>` | 리더 평가 기록 | |
 | `chat` | `history`, `thread [id]` | 에이전트가 현재 처리 중인 외부 채팅 대화 읽기 | `--limit`, `--before` |
-| `inbox` | `list` | 읽음으로 표시하지 않고 [현재 알림 읽기](/inbox) | `--project`, `--type`, `--output` (`table` 또는 `json`); 필터는 로컬에서 적용 |
+| | `wakeup create/list/get/update/cancel/finish/checkin` | 현재 채팅 실행의 후속 작업 관리. [채팅 웨이크업](#chat-wakeups) 참고 | `--title`, `--instruction` / `--instruction-file`, `--until-*`, `--at` / `--after`, `--every`, `--expires-in` / `--expires-at`; `checkin`: `--note` |
+| `inbox` | `list` | 읽음으로 표시하지 않고 [알림 목록 보기](/inbox). `--archived` 또는 `--snoozed`는 해당 목록을 보여 줌 | `--unread`, `--issue`, `--since`, `--project`, `--type`, `--output` (`table` 또는 `json`); `--archived`는 모든 페이지를 읽음 |
+| | `count` | 이 워크스페이스와 소속된 각 워크스페이스의 읽지 않은 알림 수 | `--output` |
+| | `read [<id>...]` | 알림을 읽음으로 표시(각 알림의 태스크 전체에 적용). 또는 한 태스크의 모든 알림, 또는 전체 | `--issue`, `--all` (`--yes` 필요) |
+| | `unread <id>...` | 알림을 읽지 않음으로 표시 | |
+| | `archive [<id>...]` | 알림 보관(각 알림의 태스크 전체에 적용). 또는 일괄 보관 | `--all`, `--read`, `--completed` (모두 `--yes` 필요) |
+| | `unarchive <id>...` | 보관한 알림 복원 | |
+| | `snooze <id>...` | 알림의 태스크를 지정한 시간까지 인박스에서 빼기 | `--until` (RFC 3339, `30m`, `3h`, `1d`, `1w`, `tomorrow`) |
+| | `unsnooze <id>...` | 다시 알림 중인 태스크를 지금 되돌리기 | |
 
 ### Runtime
 
