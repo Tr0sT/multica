@@ -467,23 +467,17 @@
     "section_pull_requests": "Pull requests",
     "section_metadata": "Metadatos",
     "section_details": "Detalles",
-    "sidebar_add": "Añadir",
     "sidebar_settings": {
       "open": "Personalizar barra lateral",
       "title": "Barra lateral",
       "reset": "Restablecer",
-      "footer": "Se aplica a todas las tareas.",
+      "footer": "Arrastra para reordenar. Se aplica a todas las tareas.",
       "always_shown": "Siempre visible",
       "empty": "Nada en esta tarea",
       "customize": "Personalizar",
+      "drag_handle": "Reordenar {{section}}",
       "hidden_count_one": "{{count}} sección oculta",
       "hidden_count_other": "{{count}} secciones ocultas"
-    },
-    "next_step": {
-      "review_title": "Lista para revisar",
-      "review_action": "Revisar PR",
-      "reply_title": "{{name}} espera una respuesta",
-      "reply_action": "Responder"
     },
     "section_quick_actions": "Acciones rápidas",
     "quick_actions_more": "Mostrar {{count}} más",
@@ -599,7 +593,8 @@
     "thread_nav_hide_replies": "Ocultar respuestas",
     "load_failed": "No se pudo cargar la tarea.",
     "load_retry": "Reintentar",
-    "not_found_title": "Tarea no encontrada"
+    "not_found_title": "Tarea no encontrada",
+    "guest_readonly_note": "Los invitados pueden ver y comentar, pero no cambiar las propiedades de la tarea."
   },
   "timeline": {
     "loading": "Cargando...",
@@ -778,7 +773,9 @@
     "restart_failed": "No se ha podido detener la ejecución actual. Tu mensaje no se envió.",
     "reply_action": "Responder",
     "actions_label": "Acciones del comentario",
-    "create_issue_from_selection": "Crear subtarea a partir de la selección"
+    "create_issue_from_selection": "Crear subtarea a partir de la selección",
+    "guest_placeholder": "Responder… puedes mencionar a miembros con @",
+    "guest_hint": "Los invitados no pueden mencionar agentes ni asignarles tareas"
   },
   "reply": {
     "recipients_changed": "El destino de la respuesta ha cambiado. Revisa los destinatarios antes de volver a enviar.",
