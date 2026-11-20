@@ -17,7 +17,9 @@ import { issueStatusCategory } from "@multica/core/issues";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { projectKeys } from "@multica/core/projects/queries";
+import { configStore, featureFlagEnabled } from "@multica/core/config";
 import { docKeys, docTreeOptions } from "@multica/core/docs";
+import { DOCS_V1_FLAG } from "@multica/core/feature-flags";
 import { useAuthStore } from "@multica/core/auth";
 import { canAssignAgentToIssue } from "@multica/core/permissions";
 import { isAgentRuntimeBound } from "@multica/core/agents";
@@ -779,6 +781,11 @@ function projectToMention(p: {
   };
 }
 
+/** Whether the `@` menu offers docs: the server's docs_v1 flag. */
+function docsEnabled(): boolean {
+  return featureFlagEnabled(configStore.getState().featureFlags, DOCS_V1_FLAG);
+}
+
 /**
  * Docs a mention query offers: title matches (substring or pinyin), or the most
  * recently updated docs before anything is typed. Untitled docs are skipped —
@@ -864,11 +871,14 @@ export function createMentionSuggestion(
     const userId = useAuthStore.getState().user?.id ?? null;
     const myRole =
       members.find((m) => m.user_id === userId)?.role ?? null;
+    // A guest (MUL-9420) mentions people only: the server refuses agent and
+    // squad mentions from it, and it does not page the whole workspace.
+    const guest = myRole === "guest";
 
     const q = query.toLowerCase();
 
     const allItem: MentionItem[] =
-      "all members".includes(q) || "all".includes(q)
+      !guest && ("all members".includes(q) || "all".includes(q))
         ? [{ id: "all", label: "All members", type: "all" as const }]
         : [];
 
@@ -883,6 +893,7 @@ export function createMentionSuggestion(
     const agentItems: MentionItem[] = agents
       .filter(
         (a) =>
+          !guest &&
           !a.archived_at &&
           (a.name.toLowerCase().includes(q) || matchesPinyin(a.name, q)) &&
           canAssignAgentToIssue(a, { userId, role: myRole }).allowed,
@@ -904,6 +915,7 @@ export function createMentionSuggestion(
     const squadItems: MentionItem[] = squads
       .filter(
         (s) =>
+          !guest &&
           !s.archived_at &&
           (s.name.toLowerCase().includes(q) || matchesPinyin(s.name, q)),
       )
@@ -949,9 +961,13 @@ export function createMentionSuggestion(
 
     // Docs come from the workspace doc tree. A session that has not opened
     // Docs yet loads it on this first `@`; docs join from the next keystroke.
-    const docTree = qc.getQueryData<DocTree>(docKeys.tree(wsId));
-    if (!docTree) void qc.prefetchQuery(docTreeOptions(wsId));
-    const docItems = matchDocMentions(docTree?.docs ?? [], query);
+    // None while docs_v1 is off.
+    let docItems: MentionItem[] = [];
+    if (docsEnabled()) {
+      const docTree = qc.getQueryData<DocTree>(docKeys.tree(wsId));
+      if (!docTree) void qc.prefetchQuery(docTreeOptions(wsId));
+      docItems = matchDocMentions(docTree?.docs ?? [], query);
+    }
 
     return [...allItem, ...userItems, ...issueItems, ...projectItems, ...docItems];
   }
@@ -960,7 +976,7 @@ export function createMentionSuggestion(
   // keystroke) predates. Selection survives: MentionList pins it by identity.
   function withCachedDocs(items: MentionItem[], query: string): MentionItem[] {
     const wsId = getCurrentWsId();
-    const docTree = wsId ? qc.getQueryData<DocTree>(docKeys.tree(wsId)) : undefined;
+    const docTree = wsId && docsEnabled() ? qc.getQueryData<DocTree>(docKeys.tree(wsId)) : undefined;
     if (!docTree) return items;
     const listed = new Set(items.filter((item) => item.type === "doc").map((item) => item.id));
     const fresh = matchDocMentions(docTree.docs, query).filter((doc) => !listed.has(doc.id));

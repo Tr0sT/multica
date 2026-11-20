@@ -501,7 +501,14 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			if !h.requireProjectVisible(w, r, workspaceID, issue.ProjectID, http.StatusForbidden, "invalid issue_id") {
 				return
 			}
-			params.IssueID = issue.ID
+			// A guest's upload (MUL-9420) is a draft for its next comment, not
+			// a change to the issue: it stays unbound, visible only to the
+			// guest, until CreateComment links it with the comment
+			// (LinkAttachmentsToComment accepts unbound rows). A member's
+			// upload still attaches to the issue at once.
+			if uploaderType != "member" || !h.isGuest(r, workspaceID, userID) {
+				params.IssueID = issue.ID
+			}
 		}
 		if commentID := r.FormValue("comment_id"); commentID != "" {
 			commentUUID, ok := parseUUIDOrBadRequest(w, commentID, "comment_id")
@@ -515,6 +522,13 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !h.requireIssueIDVisible(w, r, workspaceID, comment.IssueID, http.StatusForbidden, "invalid comment_id") {
+				return
+			}
+			// A guest attaches files only to its own comments (MUL-9420);
+			// seeing a comment is not enough to add to it.
+			if uploaderType == "member" && h.isGuest(r, workspaceID, userID) &&
+				(comment.AuthorType != "member" || uuidToString(comment.AuthorID) != userID) {
+				writeError(w, http.StatusForbidden, "invalid comment_id")
 				return
 			}
 			params.CommentID = comment.ID
@@ -909,6 +923,13 @@ func (h *Handler) loadAttachmentForDownload(w http.ResponseWriter, r *http.Reque
 
 	workspaceID := uuidToString(att.WorkspaceID)
 	if workspaceID == "" {
+		writeError(w, http.StatusNotFound, "attachment not found")
+		return db.Attachment{}, false
+	}
+	// A task token acts only in the workspace it is bound to; Auth stamps
+	// that workspace into X-Workspace-ID. Membership alone is not enough:
+	// the task's user may belong to the attachment's other workspace too.
+	if r.Header.Get("X-Actor-Source") == "task_token" && r.Header.Get("X-Workspace-ID") != workspaceID {
 		writeError(w, http.StatusNotFound, "attachment not found")
 		return db.Attachment{}, false
 	}

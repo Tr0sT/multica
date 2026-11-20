@@ -28,6 +28,7 @@ import {
   CircleCheck,
   FileQuestion,
   Loader2,
+  Lock,
   Milestone,
   MoreHorizontal,
   PanelRight,
@@ -47,7 +48,7 @@ import { IconButton } from "@multica/ui/components/common/icon-button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
 import { useIsMobile } from "@multica/ui/hooks/use-mobile";
-import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
+import { ContentEditor, ReadonlyContent, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
 import {
   WAKEUP_ACTIVITY_ACTIONS,
   WakeupActivityIcon,
@@ -80,6 +81,7 @@ import { ActionShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { UnsubscribeArchiveButton } from "../../inbox/components/unsubscribe-archive-button";
 import type { InboxUnsubscribeScope } from "@multica/core/inbox/mutations";
 import { PropRow } from "../../common/prop-row";
+import { useIsGuest } from "@multica/core/permissions";
 import { TimelineHandoff } from "../../workflows/timeline-handoff";
 import { PropertyIcon } from "../../common/property-icon";
 import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@multica/core/types";
@@ -209,8 +211,7 @@ import { ProgressRing } from "./progress-ring";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { MetadataSection } from "./metadata-section";
 import { IssueSidebarSectionHeader, IssueSidebarPropertyGrid } from "./issue-sidebar-section";
-import { IssueSidebarSections } from "./issue-sidebar-settings";
-import { IssueNextStep } from "./issue-next-step";
+import { IssueSidebarSections, letSidebarSettingsDragKeysThrough } from "./issue-sidebar-settings";
 import { useT } from "../../i18n";
 import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-restore";
 import { useIssueTimelineAnchor } from "../hooks/use-issue-timeline-anchor";
@@ -568,6 +569,9 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // its row and add-property entry are gated on `issue.parent_issue_id` at the
 // render site below — it stays in this list so seeding/visibility flow through
 // the same machinery as the other optional props.
+/** The sidebar sections a guest gets: read-only facts about the issue itself. */
+const GUEST_SIDEBAR_SECTIONS = new Set<IssueSidebarSection>(["properties", "parent", "deliverables"]);
+
 const OPTIONAL_PROP_KEYS = ["priority", "stage", "start_date", "due_date", "labels"] as const;
 type OptionalPropKey = (typeof OPTIONAL_PROP_KEYS)[number];
 
@@ -1534,6 +1538,8 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  // A guest (MUL-9420) reads and comments; it edits nothing and sees no runs.
+  const guest = useIsGuest(wsId);
   // Workspace owners and admins moderate any comment authored by anyone
   // (mirrors backend `comment.go:507-512`). Computed here so per-comment
   // rendering doesn't have to re-derive it for every row.
@@ -1578,6 +1584,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   }, [isMobile]);
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
   const [propertiesOpen, setPropertiesOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [parentIssueOpen, setParentIssueOpen] = useState(true);
   const [sidebarSubIssuesOpen, setSidebarSubIssuesOpen] = useState(true);
   const [sidebarSubIssuesExpanded, setSidebarSubIssuesExpanded] = useState(false);
@@ -1913,7 +1920,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
     editComment, deleteComment, toggleResolveComment, toggleReaction: handleToggleReaction,
   } = useIssueTimeline(id, user?.id, activeDeliverableJump?.commentId);
 
-  const { data: commentTasks, isLoading: commentTasksLoading } = useQuery(issueTasksOptions(id));
+  const { data: commentTasks, isLoading: commentTasksLoading } = useQuery({ ...issueTasksOptions(id), enabled: !guest });
   // Only a landing on data already in hand is worth holding the chrome for;
   // while the timeline is still on its way, the chrome renders in the wait.
   useEffect(() => {
@@ -2900,29 +2907,23 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
     [deliverableSources],
   );
 
-  // In-page jumps use the deep-link landing path: load missing thread context,
+  // File origins use the deep-link landing path: load missing thread context,
   // unfold it and wait for virtual rows and their measured heights to settle.
-  const landOnComment = useCallback(
-    (commentId: string) => {
-      setDeliverableJump((previous) => ({
-        issueId: id,
-        linkedCommentId,
-        linkedRequestToken,
-        commentId,
-        token: Math.max(previous?.token ?? 0, linkedRequestToken ?? 0) + 1,
-      }));
-    },
-    [id, linkedCommentId, linkedRequestToken],
-  );
   const locateOrigin = useCallback(
     (origin: DeliverableOrigin) => {
       if (origin.kind === "description") {
         scrollContainerEl?.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
-      landOnComment(origin.commentId);
+      setDeliverableJump((previous) => ({
+        issueId: id,
+        linkedCommentId,
+        linkedRequestToken,
+        commentId: origin.commentId,
+        token: Math.max(previous?.token ?? 0, linkedRequestToken ?? 0) + 1,
+      }));
     },
-    [scrollContainerEl, landOnComment],
+    [scrollContainerEl, id, linkedCommentId, linkedRequestToken],
   );
 
   // Identifier form, like the issue's own copy link: a pasted link should say
@@ -3244,12 +3245,12 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   // that opens a Popover listing optional fields not yet displayed. Hidden
   // once every optional field is on screen.
   const addPropertyRow = canAddProperty && (
-    <div className="col-span-2">
+    <div className="col-span-2 mt-1">
       <Popover open={addPropPopoverOpen} onOpenChange={setAddPropPopoverOpen}>
         <PopoverTrigger
-          className="-mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-label text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+          className="-mx-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-label text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
         >
-          <span aria-hidden="true" className="flex size-3.5 shrink-0 items-center justify-center"><Plus className="size-3" /></span>
+          <Plus className="h-3 w-3 shrink-0" />
           <span>{t(($) => $.detail.add_property_action)}</span>
         </PopoverTrigger>
         {/* Each option leads with the icon the resulting picker uses, so the
@@ -3329,49 +3330,62 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
     </div>
   );
 
-  // A blocked issue waits on whoever wrote last; when that is an agent, the
-  // overview card offers to jump to that comment. The raw timeline, because the
-  // display one folds a run's comment into the run; the jump then lands where
-  // the comment renders — inside its run, wherever that run was regrouped —
-  // and unfolds whatever hides it.
-  const latestComment = issue.status === "blocked"
-    ? timeline.findLast((e) => e.type === "comment" && !isDeletedComment(e))
-    : undefined;
-  const nextStepReply = latestComment?.actor_type === "agent" ? {
-    authorName: getActorName("agent", latestComment.actor_id),
-    onReply: () => {
-      setMobileSidebarOpen(false);
-      landOnComment(latestComment.id);
-    },
-  } : null;
-
-  const sidebarOverview = (
+  const locked = (value: ReactNode) => (
+    <>
+      <div inert className="flex min-w-0 flex-1 items-center">{value}</div>
+      <Lock className="size-3 shrink-0 text-faint-foreground" aria-hidden="true" />
+    </>
+  );
+  const guestProperties = (
     <div>
-      <IssueSidebarPropertyGrid>
-        <PropRow label={t(($) => $.detail.prop_status)}>
-          <StatusPicker
-            status={issue.status}
-            onUpdate={handleUpdateField}
-            align="start"
-            projectId={issue.project_id}
-            issue={issue}
-            onMarkDuplicate={actions.openMarkDuplicate}
-            isDuplicate={isDuplicateIssue(issue)}
-          />
-        </PropRow>
-        <PropRow label={t(($) => $.detail.prop_assignee)}>
-          <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
-        </PropRow>
-      </IssueSidebarPropertyGrid>
-      <IssueNextStep issueId={id} status={issue.status} reply={nextStepReply} />
+      <IssueSidebarSectionHeader title={t(($) => $.detail.section_properties)} open={propertiesOpen} onOpenChange={setPropertiesOpen} />
+      {propertiesOpen && (
+        <>
+          <IssueSidebarPropertyGrid>
+            <PropRow interactive={false} label={t(($) => $.detail.prop_status)}>
+              {locked(<StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" projectId={issue.project_id} issue={issue} />)}
+            </PropRow>
+            <PropRow interactive={false} label={t(($) => $.detail.prop_assignee)}>
+              {locked(<AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />)}
+            </PropRow>
+            <PropRow interactive={false} label={t(($) => $.detail.prop_priority)}>
+              {locked(<PriorityPicker priority={issue.priority} onUpdate={handleUpdateField} align="start" />)}
+            </PropRow>
+            <PropRow interactive={false} label={t(($) => $.detail.prop_project)}>
+              {locked(<IssueProjectPicker projectId={issue.project_id} onUpdate={handleUpdateField} issue={issue} />)}
+            </PropRow>
+            {attachedLabels.length > 0 && (
+              <PropRow interactive={false} label={t(($) => $.detail.prop_labels)}>
+                {locked(<LabelPicker issueId={issue.id} align="start" />)}
+              </PropRow>
+            )}
+          </IssueSidebarPropertyGrid>
+          <p className="px-4 pt-2 text-caption text-muted-foreground">{t(($) => $.detail.guest_readonly_note)}</p>
+        </>
+      )}
     </div>
   );
 
   const sidebarSections: Record<IssueSidebarSection, ReactNode> = {
-    properties: (
+    properties: guest ? guestProperties : (
       <div>
         <IssueSidebarSectionHeader title={t(($) => $.detail.section_properties)} open={propertiesOpen} onOpenChange={setPropertiesOpen}  />
         {propertiesOpen && <IssueSidebarPropertyGrid>
+          {/* Core props — always rendered. */}
+          <PropRow label={t(($) => $.detail.prop_status)}>
+            <StatusPicker
+              status={issue.status}
+              onUpdate={handleUpdateField}
+              align="start"
+              projectId={issue.project_id}
+              issue={issue}
+              onMarkDuplicate={actions.openMarkDuplicate}
+              isDuplicate={isDuplicateIssue(issue)}
+            />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_assignee)}>
+            <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
+          </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
             <IssueProjectPicker
               projectId={issue.project_id}
@@ -3534,7 +3548,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                   href={paths.issueDetail(child.id)}
                   title={`${child.identifier} ${child.title}`}
                   aria-label={`${child.identifier} ${child.title}, ${resolveStatusLabel(child.status)}`}
-                  className="group flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-label transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-2 text-label transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span role="img" aria-label={resolveStatusLabel(child.status)} className="shrink-0">
                     <StatusIcon
@@ -3598,45 +3612,60 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
     apps: <IssueAppsSection issueId={id} />,
     // Execution summary owns its query, realtime updates and disclosure.
     execution_log: <ExecutionLogSection key={id} issueId={id} identifier={issue.identifier} issueTitle={issue.title} hasChildren={childIssues.length > 0} />,
-    // Details — creator and timestamps, as small print under the cards: the
-    // values never change once the issue exists, so they never need a card.
+    // Details — creator and timestamps. Defaults to below the execution
+    // log because it is the least-read block in the sidebar: the values
+    // never change once the issue exists, while the log above it is
+    // what people actually come here to check.
     details: (
-      <section aria-label={t(($) => $.detail.section_details)} className="flex flex-col gap-1 px-4 text-caption text-muted-foreground">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="shrink-0">{t(($) => $.detail.prop_created_by)}</span>
-          <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="xs" enableHoverCard />
-          <span className="truncate text-foreground">{getActorName(issue.creator_type, issue.creator_id)}</span>
-        </div>
-        {requesterName && issue.requester_id && (
-          <HoverCard>
-            <HoverCardTrigger
-              render={<AppLink href={paths.memberDetail(issue.requester_id)} />}
-              className="block truncate hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={t(($) => $.execution_log.attribution.on_behalf_of, { name: requesterName })}
-            >
-              {t(($) => $.execution_log.attribution.on_behalf_of, { name: requesterName })}
-            </HoverCardTrigger>
-            <HoverCardContent align="start" className="w-72">
-              <MemberProfileCard userId={issue.requester_id} />
-            </HoverCardContent>
-          </HoverCard>
-        )}
-        <p className="truncate">
-          {t(($) => $.detail.prop_created)} {shortDate(issue.created_at, locale)}
-          <span aria-hidden="true" className="px-1.5 text-faint-foreground">·</span>
-          {t(($) => $.detail.prop_updated)} {shortDate(issue.updated_at, locale)}
-        </p>
-      </section>
+      <div>
+        <IssueSidebarSectionHeader title={t(($) => $.detail.section_details)} open={detailsOpen} onOpenChange={setDetailsOpen} />
+        {detailsOpen && <IssueSidebarPropertyGrid>
+          <PropRow
+            interactive={false}
+            label={t(($) => $.detail.prop_created_by)}
+            className={requesterName ? "items-start py-1.5" : undefined}
+          >
+            <div className="flex min-w-0 flex-1 items-start gap-1.5">
+              <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="sm" enableHoverCard />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
+                {requesterName && issue.requester_id && (
+                  <HoverCard>
+                    <HoverCardTrigger
+                      render={<AppLink href={paths.memberDetail(issue.requester_id)} />}
+                      className="block truncate text-caption text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={t(($) => $.execution_log.attribution.on_behalf_of, { name: requesterName })}
+                    >
+                      {t(($) => $.execution_log.attribution.on_behalf_of, { name: requesterName })}
+                    </HoverCardTrigger>
+                    <HoverCardContent align="start" className="w-72">
+                      <MemberProfileCard userId={issue.requester_id} />
+                    </HoverCardContent>
+                  </HoverCard>
+                )}
+              </div>
+            </div>
+          </PropRow>
+          <PropRow interactive={false} label={t(($) => $.detail.prop_created)}>
+            <span className="text-muted-foreground">{shortDate(issue.created_at, locale)}</span>
+          </PropRow>
+          <PropRow interactive={false} label={t(($) => $.detail.prop_updated)}>
+            <span className="text-muted-foreground">{shortDate(issue.updated_at, locale)}</span>
+          </PropRow>
+        </IssueSidebarPropertyGrid>}
+      </div>
     ),
     metadata: <MetadataSection metadata={issue.metadata ?? {}} />,
   };
 
   const sidebarContent = landingChromeHeld ? null : (
     <IssueSidebarSections
-      overview={sidebarOverview}
       sections={sidebarSections}
       available={ISSUE_SIDEBAR_SECTIONS.filter(
-        (section) => (section !== "pull_requests" || githubSettings.prSidebar) && (section !== "plugins" || pluginsEnabled),
+        (section) =>
+          guest
+            ? GUEST_SIDEBAR_SECTIONS.has(section)
+            : (section !== "pull_requests" || githubSettings.prSidebar) && (section !== "plugins" || pluginsEnabled),
       )}
       revealed={revealedWakeupsFor === id ? REVEALED_WAKEUPS : undefined}
       onRevealEnd={() => setRevealedWakeupsFor(null)}
@@ -3659,7 +3688,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             issueId: id, replyScrollParent: scrollContainerEl, entry: reply, replies: timelineView.threadReplies.get(reply.id) ?? EMPTY_REPLIES,
             currentUserId: user?.id, canModerate: canModerateComments, onReply: submitReply,
             onReplyAccepted: scrollToTimelineBottom, onEdit: editComment, onDelete: deleteComment,
-            onToggleReaction: handleToggleReaction, onCreateSubIssue: openCommentSubIssue,
+            onToggleReaction: handleToggleReaction, onCreateSubIssue: guest ? undefined : openCommentSubIssue,
             onResolveToggle: handleResolveToggle,
             onCopyLink: actions.copyCommentLink, onJumpToComment: jumpToComment,
             onCollapseResolved: reply.resolved_at ? () => toggleResolvedExpand(reply.id, false) : undefined,
@@ -3698,7 +3727,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             onEdit={editComment}
             onDelete={deleteComment}
             onToggleReaction={handleToggleReaction}
-            onCreateSubIssue={openCommentSubIssue}
+            onCreateSubIssue={guest ? undefined : openCommentSubIssue}
             onResolveToggle={handleResolveToggle}
             onCopyLink={actions.copyCommentLink}
             onJumpToComment={jumpToComment}
@@ -3815,8 +3844,8 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             {/* Live "agent is working" chip, leftmost in the right cluster so
                 it never overlaps the title (which truncates to make room).
                 It self-hides when no agent is active. */}
-            <IssueAgentHeaderChip issueId={id} onJumpToRun={jumpToRun} />
-            <IssueWakeupHeaderChip issueId={id} onOpen={openWakeups} />
+            {!guest && <IssueAgentHeaderChip issueId={id} onJumpToRun={jumpToRun} />}
+            {!guest && <IssueWakeupHeaderChip issueId={id} onOpen={openWakeups} />}
             {!onDone && !isPeek && (
               <IssueInboxActions
                 issueId={id}
@@ -3858,7 +3887,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
             >
               {actions.isPinned ? <PinOff /> : <Pin />}
             </IconButton>
-            <IssueDetailActionsDropdown
+            {!guest && <IssueDetailActionsDropdown
               issue={issue}
               locateInSidebar={!isPeek}
               align="end"
@@ -3877,7 +3906,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                   <MoreHorizontal />
                 </IconButton>
               }
-            />
+            />}
             {isPeek ? (
               trailingActions
             ) : (
@@ -3935,7 +3964,8 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           />
           <div id={descriptionSectionId}>
           <div data-mc="issue-title">
-          {titleLazy.active && (
+          {guest && <div className={cn("w-full leading-snug", titleSizeClass)}>{issue.title}</div>}
+          {!guest && titleLazy.active && (
             <div className={titleLazy.ready ? undefined : "hidden"}>
               <TitleEditor
                 key={`title-${id}-${titleResetToken}`}
@@ -3966,7 +3996,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
               />
             </div>
           )}
-          {!titleLazy.ready && (
+          {!guest && !titleLazy.ready && (
             <div
               role="button"
               tabIndex={0}
@@ -4100,7 +4130,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           )}
 
           <div
-            {...descDropZoneProps}
+            {...(guest ? {} : descDropZoneProps)}
             {...descriptionAnnotations.captureProps}
             ref={descriptionAnnotations.cardRef}
             className="relative mt-5 rounded-lg"
@@ -4117,6 +4147,9 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           >
             {descriptionAnnotations.popup}
             <div data-comment-content={descriptionSourceId}>
+              {guest ? (
+                <ReadonlyContent content={issue.description ?? ""} attachments={descEditorAttachments} />
+              ) : (
               <ContentEditor
                 ref={descEditorRef}
                 key={id}
@@ -4159,6 +4192,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                 selectionAction={descriptionSelectionAction}
                 attachments={descEditorAttachments}
               />
+              )}
             </div>
 
             <div className="flex items-center gap-1 mt-3">
@@ -4168,11 +4202,13 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                 onToggle={handleToggleIssueReaction}
                 getActorName={getActorName}
               />
-              <FileUploadButton
-                size="sm"
-                multiple
-                onSelect={(file) => descEditorRef.current?.uploadFile(file)}
-              />
+              {!guest && (
+                <FileUploadButton
+                  size="sm"
+                  multiple
+                  onSelect={(file) => descEditorRef.current?.uploadFile(file)}
+                />
+              )}
             </div>
             {descDragOver && <FileDropOverlay />}
           </div>
@@ -4180,7 +4216,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           </div>
 
           {/* Sub-issues — Linear-style */}
-          {childIssues.length === 0 && (
+          {childIssues.length === 0 && !guest && (
             <div className="mt-6">
               <button
                 type="button"
@@ -4222,8 +4258,8 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                   </div>
                   {/* issue.id, not the route param — the endpoint takes a
                       UUID and the route may carry a human-readable id. */}
-                  <SubIssuesAgentWorkingChip parentIssueId={issue.id} />
-                  <input
+                  {!guest && <SubIssuesAgentWorkingChip parentIssueId={issue.id} />}
+                  {!guest && <input
                     type="checkbox"
                     checked={allChildrenSelected}
                     ref={(el) => {
@@ -4237,10 +4273,10 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                         ? "opacity-100"
                         : "opacity-0 group-hover/sub-issues:opacity-100 focus-visible:opacity-100",
                     )}
-                  />
+                  />}
                   <div className="ml-auto flex items-center gap-0.5">
                     <SubIssueDisplayPopover workspaceProperties={activeWorkspaceProperties} />
-                    <Tooltip>
+                    {!guest && <Tooltip>
                       <TooltipTrigger
                         render={
                           <button
@@ -4254,7 +4290,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
                         }
                       />
                       <TooltipContent side="bottom">{t(($) => $.detail.add_sub_issue_tooltip)}</TooltipContent>
-                    </Tooltip>
+                    </Tooltip>}
                   </div>
                 </div>
 
@@ -4645,7 +4681,8 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           <SheetContent
             side="right"
             showCloseButton={false}
-            className="w-[320px] overflow-y-auto [scrollbar-gutter:stable] pb-4"
+            className="w-[320px] overflow-y-auto [scrollbar-gutter:stable] px-2 py-4"
+            onKeyDown={letSidebarSettingsDragKeysThrough}
           >
             {sidebarContent}
           </SheetContent>
@@ -4672,9 +4709,10 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
         panelRef={sidebarRef}
         onResize={handleDesktopSidebarResize}
       >
-        {/* No divider: the cards sit on the same canvas as the reading
-            column, under a strip that carries the page header's rule across. */}
-        <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled} className="border-l-0" contentClassName="pb-4">
+        {/* Sections inset their own bodies and rows, so the panel itself only
+            needs a narrow gutter. pt-2.5 centres the first 28px section
+            header on the 48px page header beside it. */}
+        <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled} contentClassName="px-2 pt-2.5 pb-4">
           {sidebarContent}
         </AnimatedRightSidebar>
       </ResizablePanel>

@@ -26,6 +26,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/dbreader"
 	"github.com/multica-ai/multica/server/internal/entitlement"
 	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/inbox"
 	"github.com/multica-ai/multica/server/internal/inboxread"
 	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
 	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
@@ -40,6 +41,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/projectaccess"
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/seatcapacity"
 	"github.com/multica-ai/multica/server/internal/service"
@@ -222,6 +224,7 @@ type RuntimeRecoveryNotifier interface {
 
 type Handler struct {
 	InboxReads             *inboxread.Guard
+	InboxTrimmer           *inbox.Trimmer // nil leaves inboxes untrimmed
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
@@ -1049,6 +1052,10 @@ func (h *Handler) requireWorkspaceMember(w http.ResponseWriter, r *http.Request,
 			return db.Member{}, false
 		}
 		writeError(w, http.StatusNotFound, notFoundMsg)
+		return db.Member{}, false
+	}
+	if projectaccess.IsGuestRole(member.Role) && !middleware.GuestMayRequest(r) {
+		middleware.RefuseGuest(w, r)
 		return db.Member{}, false
 	}
 

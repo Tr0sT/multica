@@ -503,25 +503,19 @@
     "section_pull_requests": "Pull request'ы",
     "section_metadata": "Метаданные",
     "section_details": "Детали",
-    "sidebar_add": "Добавить",
     "sidebar_settings": {
       "open": "Настроить боковую панель",
       "title": "Боковая панель",
       "reset": "Сбросить",
-      "footer": "Применяется ко всем задачам.",
+      "footer": "Перетаскивайте, чтобы менять порядок. Применяется ко всем задачам.",
       "always_shown": "Показывается всегда",
       "empty": "В этой задаче нет",
       "customize": "Настроить",
+      "drag_handle": "Переместить «{{section}}»",
       "hidden_count_one": "Скрыт {{count}} раздел",
       "hidden_count_few": "Скрыто {{count}} раздела",
       "hidden_count_many": "Скрыто {{count}} разделов",
       "hidden_count_other": "Скрыто {{count}} раздела"
-    },
-    "next_step": {
-      "review_title": "Ждёт ревью",
-      "review_action": "Открыть PR",
-      "reply_title": "{{name}} ждёт ответа",
-      "reply_action": "Ответить"
     },
     "section_quick_actions": "Быстрые действия",
     "quick_actions_more": "Показать ещё: {{count}}",
@@ -635,7 +629,8 @@
     "thread_nav_show_replies_many": "Показать {{count}} ответов",
     "not_found_title": "Задача не найдена",
     "load_failed": "Не удалось загрузить задачу.",
-    "load_retry": "Повторить"
+    "load_retry": "Повторить",
+    "guest_readonly_note": "Гости могут просматривать и комментировать, но не могут менять свойства задачи."
   },
   "timeline": {
     "loading": "Загрузка...",
@@ -844,7 +839,9 @@
     "recipient_count_many": "{{count}} агентов получат это",
     "reply_action": "Ответить",
     "actions_label": "Действия с комментарием",
-    "create_issue_from_selection": "Создать подзадачу из выделенного"
+    "create_issue_from_selection": "Создать подзадачу из выделенного",
+    "guest_placeholder": "Ответить… можно упомянуть участников через @",
+    "guest_hint": "Гости не могут упоминать агентов и назначать им задачи"
   },
   "reply": {
     "recipients_changed": "Адресат ответа изменился. Проверьте получателей перед повторной отправкой.",
