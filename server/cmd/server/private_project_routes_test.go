@@ -96,6 +96,7 @@ var routeParamsOutsideProjects = map[string]outsideProjectParam{
 	"files/{fileId}":                 {why: "a skill file"},
 	"versions/{version}":             {why: "a skill version"},
 	"mcp-servers/{serverId}":         {why: "a workspace MCP server"},
+	"agent-marketplaces/{id}":          {why: "a workspace-wide plugin marketplace, never a project-scoped object"},
 	"squads/{id}":                    {why: "a workspace squad"},
 	"labels/{id}":                    {why: "a workspace label"},
 	"labels/{labelId}":               {why: "a workspace label", value: func(f *privateRouteFixture) string { return f.shared.labelID }},
