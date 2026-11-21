@@ -24,8 +24,11 @@ jobs:
           if ! git merge --no-commit --no-ff origin/main; then
             echo "::error::Automatic merge has conflicts; no changes pushed"
             git diff --name-only --diff-filter=U
-            echo "Conflict counts:"
-            git diff --name-only --diff-filter=U | wc -l
+            for p in packages/core/api/client.ts packages/views/runtimes/components/update-section.test.tsx server/internal/handler/daemon.go; do
+              echo "::group::Conflict excerpts for $p"
+              git diff --cc --unified=12 -- "$p" | head -n 500 || true
+              echo "::endgroup::"
+            done
             exit 1
           fi
           git rm .github/workflows/agent-sync-merge.yml
