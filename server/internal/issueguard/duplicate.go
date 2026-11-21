@@ -82,6 +82,7 @@ func LockAndFindRecentAutopilotDuplicate(
 	workspaceID pgtype.UUID,
 	autopilotID pgtype.UUID,
 	projectID pgtype.UUID,
+	webhookDeliveryID pgtype.UUID,
 	title string,
 	window time.Duration,
 ) (db.Issue, bool, error) {
@@ -104,6 +105,7 @@ func LockAndFindRecentAutopilotDuplicate(
 		ProjectID:          projectID,
 		NormalizedTitle:    normalizedTitle,
 		CreatedAfter:       pgtype.Timestamptz{Time: time.Now().UTC().Add(-window), Valid: true},
+		WebhookDeliveryID:  webhookDeliveryID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

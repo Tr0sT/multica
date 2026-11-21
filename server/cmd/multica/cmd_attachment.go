@@ -19,9 +19,9 @@ var attachmentCmd = &cobra.Command{
 }
 
 var attachmentDownloadCmd = &cobra.Command{
-	Use:   "download <attachment-id>",
+	Use:   "download <attachment-id-or-mattermost-link>",
 	Short: "Download an attachment to a local file",
-	Long:  "Download an attachment by its ID to a local file.",
+	Long:  "Download an attachment by its ID, or open a temporary Mattermost file link, to a local file.",
 	Example: `  # Download an image attachment to the current directory
   $ multica attachment download abc123
 
@@ -136,6 +136,9 @@ func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)
 	if err != nil {
 		return err
+	}
+	if isHTTPURL(args[0]) {
+		return downloadMattermostFileLink(cmd, client, args[0])
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cli.AtLeastAPITimeout(60*time.Second))

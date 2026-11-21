@@ -1,0 +1,24 @@
+# Overlay the existing Nord compose file so its ports, volumes and environment stay intact.
+services:
+  backend:
+    image: multica-fork-backend:${MULTICA_FORK_COMMIT:?}
+    build:
+      context: ${MULTICA_FORK_SOURCE:?}
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${MULTICA_FORK_VERSION:?}
+        COMMIT: ${MULTICA_FORK_COMMIT:?}
+    environment:
+      MULTICA_MATTERMOST_SECRET_KEY: ${MULTICA_MATTERMOST_SECRET_KEY:-}
+      MULTICA_MATTERMOST_ALLOWED_SERVERS: ${MULTICA_MATTERMOST_ALLOWED_SERVERS:-}
+    labels:
+      com.multica.fork.revision: ${MULTICA_FORK_COMMIT:?}
+  frontend:
+    image: multica-fork-web:${MULTICA_FORK_COMMIT:?}
+    build:
+      context: ${MULTICA_FORK_SOURCE:?}
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_APP_VERSION: ${MULTICA_FORK_VERSION:?}
+    labels:
+      com.multica.fork.revision: ${MULTICA_FORK_COMMIT:?}

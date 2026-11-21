@@ -9,17 +9,23 @@ import (
 	"time"
 )
 
-func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
+func TestRuntimeRateLimitPublishedIdentityPreservesExistingSnapshot(t *testing.T) {
 	t.Parallel()
-	const version = "673_runtime_rate_limit"
-	const legacyVersion = "665_runtime_rate_limit"
+	// The fork already published 665_runtime_rate_limit. Upstream's later
+	// 673 rename must not replay its identical DDL or replace persisted history.
+	const version = "665_runtime_rate_limit"
+	for _, direction := range []string{"up", "down"} {
+		if _, err := os.Stat("../../migrations/673_runtime_rate_limit." + direction + ".sql"); !os.IsNotExist(err) {
+			t.Fatalf("unexpected duplicate 673 migration (%s): %v", direction, err)
+		}
+	}
 	for _, previouslyApplied := range []bool{false, true} {
 		t.Run(fmt.Sprintf("previously_applied_%t", previouslyApplied), func(t *testing.T) {
 			t.Parallel()
 			admin := openTestPool(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			schema := createScratchSchema(t, ctx, admin, "runtime_limit_renumber_")
+			schema := createScratchSchema(t, ctx, admin, "runtime_limit_published_")
 			pool := openTestPoolWithSearchPath(t, schema)
 			if _, err := pool.Exec(ctx, `CREATE TABLE schema_migrations (
 				version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -29,7 +35,7 @@ func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
 			files := realMigrationFiles(t, []string{version}, "up")
 			var originalOID uint32
 			if previouslyApplied {
-				// The renamed SQL is identical to the previously numbered 665 migration.
+				// Reproduce a database that already ran the original published 665 migration.
 				sql, err := os.ReadFile(files[0])
 				if err != nil {
 					t.Fatal(err)
@@ -37,7 +43,7 @@ func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
 				if _, err := pool.Exec(ctx, string(sql)); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := pool.Exec(ctx, "INSERT INTO schema_migrations(version) VALUES ($1)", legacyVersion); err != nil {
+				if _, err := pool.Exec(ctx, "INSERT INTO schema_migrations(version) VALUES ($1)", version); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := pool.Exec(ctx, `INSERT INTO runtime_rate_limit
@@ -62,7 +68,7 @@ func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
 			}
 			var recorded bool
 			if err := pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", version).Scan(&recorded); err != nil || !recorded {
-				t.Fatalf("new version recorded=%t, error=%v", recorded, err)
+				t.Fatalf("published version recorded=%t, error=%v", recorded, err)
 			}
 			if previouslyApplied {
 				var currentOID uint32
@@ -78,9 +84,7 @@ func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
 					FROM runtime_rate_limit`).Scan(&retained); err != nil || !retained {
 					t.Fatalf("existing snapshot retained=%t, error=%v", retained, err)
 				}
-				if err := pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", legacyVersion).Scan(&recorded); err != nil || !recorded {
-					t.Fatalf("historical version retained=%t, error=%v", recorded, err)
-				}
+
 			}
 			options.Direction = "down"
 			options.Files = realMigrationFiles(t, []string{version}, "down")
@@ -92,7 +96,7 @@ func TestRuntimeRateLimitRenumberPreservesExistingSnapshot(t *testing.T) {
 				t.Fatalf("table exists after down=%t, error=%v", exists, err)
 			}
 			if err := pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)", version).Scan(&recorded); err != nil || recorded {
-				t.Fatalf("new version recorded after down=%t, error=%v", recorded, err)
+				t.Fatalf("published version recorded after down=%t, error=%v", recorded, err)
 			}
 			options.Direction, options.Files = "up", files
 			if err := runMigrations(ctx, pool, options); err != nil {

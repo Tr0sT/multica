@@ -43,6 +43,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("requests the fork release and sends its version to the runtime", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v0.4.0" }),
+    }),
+  );
+  vi.mocked(api.initiateUpdate).mockResolvedValue({
+    id: "update-1",
+    runtime_id: "runtime-1",
+    status: "pending",
+    target_version: "v0.4.0",
+    created_at: "2026-11-02T00:00:00Z",
+    updated_at: "2026-11-02T00:00:00Z",
+  });
+
+  renderSection({ runtimeId: "runtime-1", currentVersion: "v0.3.17" });
+  fireEvent.click(await screen.findByRole("button", { name: "Update" }));
+
+  expect(fetch).toHaveBeenCalledWith(
+    "https://api.github.com/repos/Tr0sT/multica/releases/latest",
+    expect.any(Object),
+  );
+  await waitFor(() => {
+    expect(api.initiateUpdate).toHaveBeenCalledWith("runtime-1", "v0.4.0");
+  });
+});
+
 describe("UpdateSection read-only status", () => {
   it("shows Latest without a redundant read-only label or update action", async () => {
     vi.stubGlobal(

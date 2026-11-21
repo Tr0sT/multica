@@ -28,6 +28,7 @@ import { useMessagingChannels } from "./use-messaging-channels";
 import { LarkChannelAuthorization } from "./lark-channel-authorization";
 import { WecomChannelAuthorization } from "./wecom-channel-authorization";
 import { WeixinChannelAuthorization } from "./weixin-channel-authorization";
+import { MattermostAgentBindButton } from "./mattermost-tab";
 
 export function ChannelConnectDialog({
   agents,
@@ -51,7 +52,10 @@ export function ChannelConnectDialog({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
+      <DialogContent
+        className="max-h-[85%] overflow-y-auto sm:max-w-lg"
+        showCloseButton={!busy}
+      >
         <DialogHeader>
           <DialogTitle>{t(($) => $.channels.connect_title)}</DialogTitle>
         </DialogHeader>
@@ -229,7 +233,7 @@ function ChannelConnectSteps({
         </>
       ) : (
         <>
-          {channel === "weixin" ? null : (
+          {channel === "weixin" || channel === "mattermost" ? null : (
             <Button variant="link" className="w-fit p-0" onClick={openGuide}>
               {t(($) => $.channels.setup_guide)}
             </Button>
@@ -258,7 +262,15 @@ function ChannelConnectSteps({
               </select>
             </div>
           ) : null}
-          {channel === "lark" ? (
+          {channel === "mattermost" ? (
+            <MattermostAgentBindButton
+              agentId={agent.id}
+              agentName={agent.name}
+              inline
+              onClose={onClose}
+              onBusyChange={onBusyChange}
+            />
+          ) : channel === "lark" ? (
             <LarkChannelAuthorization
               wsId={wsId}
               agentId={agent.id}
@@ -303,7 +315,7 @@ function ChannelCredentials({
   onClose,
   onBusyChange,
 }: {
-  channel: Exclude<ChannelIntegration, "lark" | "weixin">;
+  channel: Exclude<ChannelIntegration, "lark" | "weixin" | "mattermost">;
   wsId: string;
   agentId: string;
   onClose: () => void;
