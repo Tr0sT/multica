@@ -1,0 +1,33 @@
+name: Sync merge preparation (temporary)
+on:
+  push:
+    branches:
+      - sync/upstream-2026-11-21-03dfb8f
+permissions:
+  contents: write
+jobs:
+  prepare-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge fork main into upstream sync branch (never overwrite conflicts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "multica-sync"
+          git config user.email "noreply@github.com"
+          git fetch origin main
+          echo "Fork base: $(git rev-parse origin/main)"
+          echo "Upstream parent: 03dfb8f59b7b141fa25a5399807e9faa3210321c"
+          if ! git merge --no-commit --no-ff origin/main; then
+            echo "::error::Automatic merge has conflicts; no changes pushed"
+            git diff --name-only --diff-filter=U
+            echo "Conflict counts:"
+            git diff --name-only --diff-filter=U | wc -l
+            exit 1
+          fi
+          git rm .github/workflows/agent-sync-merge.yml
+          git commit -m "Merge fork main with upstream 03dfb8f (preserve fork changes)"
+          git push origin HEAD:sync/upstream-2026-11-21-03dfb8f
