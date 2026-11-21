@@ -55,6 +55,7 @@ it("requests the fork release and sends its version to the runtime", async () =>
     id: "update-1",
     runtime_id: "runtime-1",
     status: "pending",
+    cancellable: true,
     target_version: "v0.4.0",
     created_at: "2026-11-02T00:00:00Z",
     updated_at: "2026-11-02T00:00:00Z",
