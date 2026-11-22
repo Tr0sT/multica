@@ -24,7 +24,7 @@ stdenv.mkDerivation (finalAttrs: {
     pnpm = pnpm_10;
     fetcherVersion = 4;
     pnpmWorkspaces = [ "@multica/web..." ];
-    hash = "sha256-TjksX28eeRDnhj26mLaAOKxCEdG03Dkmyb4CrxvsE/g=";
+    hash = "sha256-d2FoLmnR9OanAXa6dwx24N20F7AQDSquQpEj/m17fL4=";
   };
 
   nativeBuildInputs = [
