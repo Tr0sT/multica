@@ -120,7 +120,7 @@
   },
   "mattermost_bind": {
     "page_title": "关联你的 Mattermost 账号",
-    "redeeming": "正在关联账号…",
+    "redeeming": "正在关联账号...",
     "needs_auth_description": "登录后，核实并确认要关联的 Mattermost 账号。",
     "sign_in": "登录",
     "done_title": "关联成功。",
@@ -132,7 +132,7 @@
     "error_already_bound": "该 Mattermost 账号已关联到另一个 Multica 用户。如需转移，必须先显式解绑。",
     "error_not_member": "你当前登录的 Multica 账号不是该工作区的成员。",
     "error_unknown": "出了点问题。请重试；若问题持续，请联系工作区管理员。",
-    "loading": "正在核实账号…",
+    "loading": "正在核实账号...",
     "confirm_description": "将 {{server}} 上的 @{{username}} 关联到工作区 {{workspace}} 中的 {{account}}？",
     "confirm_warning": "仅当这是你自己的 Mattermost 账号，且链接由你本人申请时才继续。控制该账号的人将能以你的身份在此工作区执行操作。",
     "confirm": "关联账号",
