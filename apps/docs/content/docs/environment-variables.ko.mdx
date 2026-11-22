@@ -196,9 +196,6 @@ reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 �
 | Telegram | `MULTICA_TELEGRAM_TOOL_PROGRESS` | 스트리밍 응답에 표시할 도구 단계. `auto`(기본값: 개인 채팅은 상세, 그룹은 작업 종류만), `off`, `summary`, `detail` |
 | Mattermost | `MULTICA_MATTERMOST_SECRET_KEY` | base64로 인코딩한 32바이트 봇 액세스 토큰 암호화 키 |
 | Mattermost | `MULTICA_MATTERMOST_ALLOWED_SERVERS` | 운영자가 승인한 정확한 HTTPS 기본 URL의 쉼표 구분 목록(필수) |
-| Composio | `COMPOSIO_API_KEY` | Composio 도구 연결 활성화 |
-| Composio | `COMPOSIO_CALLBACK_BASE_URL` | callback API 주소. `MULTICA_PUBLIC_URL`로 fallback 가능 |
-| Composio | `COMPOSIO_STATE_SECRET` | OAuth state 서명 키. `JWT_SECRET`에서 파생 가능 |
 | 자체 호스팅 Git | `MULTICA_VCS_INTEGRATION_ENABLED` | Forgejo/Gitea/GitLab 연동 스위치. compose에서는 기본 활성화 |
 | 자체 호스팅 Git | `MULTICA_VCS_SECRET_KEY` | base64로 인코딩한 32바이트 암호화 키(`openssl rand -base64 32`). 없으면 전체 기능을 사용할 수 없음 |
 | Plugins | `MULTICA_PLUGIN_SECRET_KEY` | 저장된 secret과 surface 실행 URL을 암호화하는 base64 인코딩 32바이트 키 |

@@ -340,6 +340,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "readyz",
   "healthz",
   "ws",
+  "collab",
   "metrics",
   "ping",
 
