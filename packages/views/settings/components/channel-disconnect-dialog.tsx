@@ -41,6 +41,7 @@ export function ChannelDisconnectDialog({
         wecom: api.deleteWecomInstallation.bind(api),
         telegram: api.deleteTelegramInstallation.bind(api),
         weixin: api.deleteWeixinInstallation.bind(api),
+        mattermost: api.deleteMattermostInstallation.bind(api),
       }[channel];
       await revoke(installation.workspace_id, installation.id);
       await qc.invalidateQueries({

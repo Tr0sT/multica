@@ -246,6 +246,7 @@ func Classify(rawError string) Reason {
 			"rate limit",
 			"overloaded",
 			"no capacity available",
+			"model is at capacity",
 			kiroThrottledWitness,
 		):
 		return ReasonAgentProviderCapacityOrRateLimit

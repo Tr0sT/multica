@@ -178,6 +178,8 @@
     "./weixin": "./weixin/index.ts",
     "./telegram": "./telegram/index.ts",
     "./telegram/queries": "./telegram/queries.ts",
+    "./mattermost": "./mattermost/index.ts",
+    "./mattermost/queries": "./mattermost/queries.ts",
     "./feedback": "./feedback/index.ts",
     "./feedback/mutations": "./feedback/mutations.ts",
     "./realtime": "./realtime/index.ts",
@@ -216,6 +218,7 @@
     "./skills/stores": "./skills/stores/index.ts",
     "./autopilots/stores": "./autopilots/stores/index.ts",
     "./runtimes/qoder": "./runtimes/qoder.ts",
+    "./agent-marketplaces": "./agent-marketplaces/index.ts",
     "./docs": "./docs/index.ts"
   },
   "dependencies": {
