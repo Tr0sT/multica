@@ -255,6 +255,8 @@ services:
       # Tool steps shown in the streamed reply: auto (default; details in
       # private chats, kind of work in groups), off, summary or detail.
       MULTICA_TELEGRAM_TOOL_PROGRESS: ${MULTICA_TELEGRAM_TOOL_PROGRESS:-}
+      MULTICA_MATTERMOST_SECRET_KEY: ${MULTICA_MATTERMOST_SECRET_KEY:-}
+      MULTICA_MATTERMOST_ALLOWED_SERVERS: ${MULTICA_MATTERMOST_ALLOWED_SERVERS:-}
       # Feature flags, documented in .env.example. Each is passed only when
       # set: an empty FF_ value would pin the flag off instead of leaving the
       # default. Workspace Docs is off until FF_DOCS_V1=true; the other two are
