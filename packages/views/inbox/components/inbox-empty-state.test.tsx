@@ -1,24 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { workspaceWorkingAgentsOptions } from "@multica/core/agents";
 import { inboxKeys, snoozedInboxOptions } from "@multica/core/inbox/queries";
 import { useInboxSelectionStore } from "@multica/core/inbox/selection-store";
-import type { SnoozedInboxIssue, WorkspaceWorkingAgent } from "@multica/core/types";
+import type { SnoozedInboxIssue } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { InboxEmptyState } from "./inbox-empty-state";
+import { hasInboxUndo, takeInboxUndo, toastInboxUndo } from "./inbox-undo-toast";
 
 const spies = vi.hoisted(() => ({
   restoreInbox: vi.fn((..._args: unknown[]) => Promise.resolve(true)),
   unsnoozeAsync: vi.fn(() => Promise.resolve()),
   undoUnsubscribe: vi.fn((..._args: unknown[]) => Promise.resolve()),
   undoBatch: vi.fn((..._args: unknown[]) => Promise.resolve()),
-  guest: false,
 }));
 
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws" }));
-vi.mock("@multica/core/permissions", () => ({ useIsGuest: () => spies.guest }));
 vi.mock("@multica/core/paths", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@multica/core/paths")>();
   return { ...actual, useWorkspacePaths: () => actual.paths.workspace("acme") };
@@ -32,6 +30,20 @@ vi.mock("@multica/core/inbox/mutations", async (importOriginal) => ({
 vi.mock("./use-leave-inbox-row", () => ({
   useRestoreInbox: () => spies.restoreInbox,
 }));
+vi.mock("sonner", () => {
+  let next = 0;
+  return { toast: { success: vi.fn(() => ++next), dismiss: vi.fn(), error: vi.fn() } };
+});
+
+const archivedEntry = {
+  kind: "archived" as const,
+  itemId: "n-1",
+  key: "issue-1",
+  label: "MUL-9790",
+  href: "/acme/issues/MUL-9790",
+  clearedAt: Date.now(),
+};
+const pressZ = (target: Element = document.body) => fireEvent.keyDown(target, { key: "z", code: "KeyZ" });
 
 function renderEmpty({
   isArchivedView = false,
@@ -41,9 +53,7 @@ function renderEmpty({
   inboxZeroRises = false,
   isCompact = false,
   snoozed = [],
-  workingAgents = [],
   onClearFiltersAndContinue = vi.fn(),
-  onViewArchived = vi.fn(),
 }: {
   isArchivedView?: boolean;
   visibleCount?: number;
@@ -52,9 +62,7 @@ function renderEmpty({
   inboxZeroRises?: boolean;
   isCompact?: boolean;
   snoozed?: SnoozedInboxIssue[];
-  workingAgents?: WorkspaceWorkingAgent[];
   onClearFiltersAndContinue?: () => void;
-  onViewArchived?: () => void;
 } = {}) {
   const nav: NavigationAdapter = {
     push: vi.fn(),
@@ -67,7 +75,6 @@ function renderEmpty({
   };
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   qc.setQueryData(snoozedInboxOptions("ws").queryKey, snoozed);
-  qc.setQueryData(workspaceWorkingAgentsOptions("ws", "issue").queryKey, workingAgents);
   const view = renderWithI18n(
     <QueryClientProvider client={qc}>
       <NavigationProvider value={nav}>
@@ -80,47 +87,44 @@ function renderEmpty({
           inboxZeroRises={inboxZeroRises}
           isCompact={isCompact}
           onClearFiltersAndContinue={onClearFiltersAndContinue}
-          onViewArchived={onViewArchived}
         />
       </NavigationProvider>
     </QueryClientProvider>,
   );
-  return { ...view, nav, qc, onClearFiltersAndContinue, onViewArchived };
+  return { ...view, nav, qc, onClearFiltersAndContinue };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  spies.guest = false;
   useInboxSelectionStore.setState({
     lastClearedByWorkspace: {},
     leftRowKeyByWorkspace: {},
     sidebarIssueByWorkspace: {},
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  takeInboxUndo();
+});
 
 describe("InboxEmptyState", () => {
-  it("shows calm Inbox Zero with My work, working agents, snoozed summary, and View archived", () => {
+  it("shows minimal Inbox Zero with snoozed summary and no redundant navigation controls", () => {
     const until = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    const { nav, onViewArchived } = renderEmpty({
+    const { nav } = renderEmpty({
       snoozed: [
         { issue_id: "issue-9", item_id: "n-9", snoozed_until: until, snoozed_at: new Date().toISOString(), updates: 0 },
-      ],
-      workingAgents: [
-        { id: "a-1", name: "Emacs", avatar_url: null, running_task_count: 1, issue_ids: ["issue-1"] },
-        { id: "a-2", name: "Codex", avatar_url: null, running_task_count: 1, issue_ids: ["issue-2"] },
       ],
     });
 
     expect(screen.getByRole("heading", { name: "Inbox cleared" })).toBeInTheDocument();
-    expect(screen.getByText(/1 snoozed/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 agents working" })).toBeInTheDocument();
+    expect(screen.queryByText("Your inbox is empty")).toBeNull();
+    expect(screen.queryByRole("button", { name: "My work" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View archived" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Quick jump/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /New issue/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "My work" }));
-    expect(nav.push).toHaveBeenCalledWith(expect.stringContaining("/acme/issues"));
-
-    fireEvent.click(screen.getByRole("button", { name: "View archived" }));
-    expect(onViewArchived).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /1 snoozed/ }));
+    expect(nav.push).toHaveBeenCalledWith(expect.stringContaining("/acme/issues?view=snoozed"));
   });
 
   it("offers inline undo for the just-archived notification and navigates back on click", async () => {
@@ -207,6 +211,80 @@ describe("InboxEmptyState", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
   });
 
+  it("undoes with Z once the toast is gone, and shows the shortcut beside the undo", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    const { nav } = renderEmpty();
+    expect(
+      screen.getByRole("button", { name: "Undo" }).querySelector('[data-slot="shortcut-keycaps"]'),
+    ).not.toBeNull();
+
+    await act(async () => pressZ());
+    expect(spies.restoreInbox).toHaveBeenCalledWith("n-1", { quiet: true });
+    expect(nav.push).toHaveBeenCalledWith("/acme/issues/MUL-9790");
+    expect(useInboxSelectionStore.getState().lastClearedByWorkspace.ws).toBeUndefined();
+  });
+
+  it("leaves Z to a showing undo toast", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    const { nav } = renderEmpty();
+    const toastUndo = vi.fn();
+    toastInboxUndo("Notification archived", { label: "Undo", undo: toastUndo });
+
+    await act(async () => pressZ());
+    expect(toastUndo).toHaveBeenCalledOnce();
+    expect(spies.restoreInbox).not.toHaveBeenCalled();
+    expect(nav.push).not.toHaveBeenCalled();
+    expect(hasInboxUndo()).toBe(false);
+  });
+
+  it("sends one undo when Z is pressed again while it is in flight", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    let finish!: (ok: boolean) => void;
+    spies.restoreInbox.mockReturnValueOnce(new Promise<boolean>((resolve) => (finish = resolve)));
+    const { nav } = renderEmpty();
+
+    pressZ();
+    pressZ();
+    expect(spies.restoreInbox).toHaveBeenCalledTimes(1);
+    expect(nav.push).not.toHaveBeenCalled();
+
+    await act(async () => finish(true));
+    expect(nav.push).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores Z typed into a text field or held down", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    renderEmpty();
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+
+    await act(async () => {
+      pressZ(input);
+      fireEvent.keyDown(document.body, { key: "z", code: "KeyZ", repeat: true });
+    });
+    input.remove();
+    expect(spies.restoreInbox).not.toHaveBeenCalled();
+  });
+
+  it("undoes with Z from the filtered-empty state", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    const { nav } = renderEmpty({ totalActiveCount: 3, hasActiveFilters: true });
+    expect(
+      screen.getByRole("button", { name: "Undo MUL-9790" }).querySelector('[data-slot="shortcut-keycaps"]'),
+    ).not.toBeNull();
+
+    await act(async () => pressZ());
+    expect(spies.restoreInbox).toHaveBeenCalledWith("n-1", { quiet: true });
+    expect(nav.push).toHaveBeenCalledWith("/acme/issues/MUL-9790");
+  });
+
+  it("does not answer Z in the archived view", async () => {
+    useInboxSelectionStore.setState({ lastClearedByWorkspace: { ws: archivedEntry } });
+    renderEmpty({ isArchivedView: true });
+    await act(async () => pressZ());
+    expect(spies.restoreInbox).not.toHaveBeenCalled();
+  });
+
   it("shows filtered-empty state with remaining count and Clear filters CTA instead of Inbox Zero", () => {
     const { container, onClearFiltersAndContinue } = renderEmpty({
       visibleCount: 0,
@@ -222,19 +300,6 @@ describe("InboxEmptyState", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Clear filters and continue/ }));
     expect(onClearFiltersAndContinue).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides member-only shortcuts and working agents for guests", () => {
-    spies.guest = true;
-    renderEmpty({
-      workingAgents: [
-        { id: "a-1", name: "Emacs", avatar_url: null, running_task_count: 1, issue_ids: ["issue-1"] },
-      ],
-    });
-
-    expect(screen.queryByRole("button", { name: "My work" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /agent/i })).toBeNull();
-    expect(screen.getByRole("button", { name: "View archived" })).toBeInTheDocument();
   });
 
   it("keeps the archived empty state quiet and separate from Inbox Zero", () => {

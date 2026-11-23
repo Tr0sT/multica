@@ -14,13 +14,6 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { ApiError, errorCode } from "@multica/core/api";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useModalStore } from "@multica/core/modals";
-import {
-  getShortcut,
-  isEditableShortcutTarget,
-  isPortalLayerShortcutTarget,
-  shortcutMatchesEvent,
-} from "@multica/core/shortcuts";
-import { isImeComposing } from "@multica/core/utils";
 import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
 import { cachedIssueRouteRef } from "@multica/core/issues/canonical-id";
 import { useInboxSelectionStore, type LastInboxCleared } from "@multica/core/inbox/selection-store";
@@ -133,6 +126,8 @@ import {
   useRestoreInbox,
 } from "./use-leave-inbox-row";
 import { useInboxSnooze } from "./use-inbox-snooze";
+import { useInboxIssuePrefetch } from "./use-inbox-issue-prefetch";
+import { useInboxShortcut } from "./use-inbox-shortcut";
 import { InboxAppRequest } from "../../common/app-requests";
 import { useT } from "../../i18n";
 import { useLimitRecoveryPrompt } from "../../modals/use-limit-recovery-prompt";
@@ -601,8 +596,17 @@ export function InboxPage() {
   // The rows in the order the user sees them: on desktop the Work panel
   // section's, which applies the same filters.
   const listedItems = opensAnyLiveRow ? sectionList.rows : selectionItems;
+  // Warm the next two rows around the active selection on Archived & compact
+  // lists so unarchive/archive auto-advance renders from cache without flashing.
+  useInboxIssuePrefetch(
+    wsId,
+    isArchivedView || isCompact ? listedItems : [],
+    (item) => inboxRowHref(wsPaths, item),
+    selectedKey || null,
+  );
   const leaveRow = useInboxSelectionStore((s) => s.leaveRow);
   const recordLastCleared = useInboxSelectionStore((s) => s.recordLastCleared);
+  const recordTransition = useInboxSelectionStore((s) => s.recordTransition);
   // Moving the selection off a row (an Inbox action on it) lets it go rather
   // than keep it in place.
   const advanceSelectionPast = (id: string, list: InboxItem[], cleared?: LastInboxCleared) => {
@@ -613,7 +617,9 @@ export function InboxPage() {
     // Only clear the selection when nothing else is left.
     const next = nextInboxRow(list, selectedKey);
     if (!next && cleared) recordLastCleared(wsId, cleared);
-    setSelectedKey(next ? inboxRowKey(next) : "");
+    const nextKey = next ? inboxRowKey(next) : "";
+    recordTransition(wsId, nextKey, "next");
+    setSelectedKey(nextKey);
   };
   // A batch archive that takes the open row moves on to the next one it leaves.
   const archiveBatch = (
@@ -706,29 +712,10 @@ export function InboxPage() {
     unsubscribeArchive({ id, issueId: item.issue_id }, scope);
   };
 
-  // Keep the listener stable while using the latest selected-item action.
-  const actionOnSelectedRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    actionOnSelectedRef.current = selected
-      ? () => (isArchivedView ? handleUnarchive(selected.id) : handleArchive(selected.id))
-      : null;
-  });
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || isImeComposing(event)) return;
-      if (isEditableShortcutTarget(event.target)) return;
-      if (isPortalLayerShortcutTarget(event.target)) return;
-      if (useModalStore.getState().modal) return;
-      if (!shortcutMatchesEvent(getShortcut("archiveInboxItem"), event)) return;
-      const run = actionOnSelectedRef.current;
-      if (!run) return;
-      event.preventDefault();
-      run();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useInboxShortcut(
+    "archiveInboxItem",
+    selected ? () => (isArchivedView ? handleUnarchive(selected.id) : handleArchive(selected.id)) : null,
+  );
 
   // Batch operations
   const handleMarkAllRead = () => {
@@ -795,41 +782,45 @@ export function InboxPage() {
 
   // -- Shared sub-components --------------------------------------------------
 
+  // The archive is a second list of the same page, so the title doubles as
+  // the switch between the two instead of costing a row of its own. Reused in
+  // the desktop empty-detail header so collapsed-list layouts keep the same
+  // switcher.
+  const viewSwitcher = (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="-ml-1.5 mr-1.5 flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 outline-none transition-colors hover:bg-accent/60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-expanded:bg-accent/60">
+        <span className="min-w-0 truncate">
+          {isArchivedView ? t(($) => $.list.archived_title) : t(($) => $.page.title)}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto min-w-44">
+        <DropdownMenuRadioGroup
+          value={view}
+          onValueChange={(value) => setView(value as InboxView)}
+        >
+          <DropdownMenuRadioItem value="inbox">
+            <Inbox className="h-4 w-4" />
+            <span className="flex-1">{t(($) => $.page.title)}</span>
+            {unreadCount > 0 && (
+              <span className="text-caption tabular-nums text-muted-foreground">
+                {unreadCount}
+              </span>
+            )}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="archived">
+            <Archive className="h-4 w-4" />
+            {t(($) => $.list.archived_title)}
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const listHeader = (
     <PanelHeader
       as="h1"
-      title={
-        // The archive is a second list of the same page, so the title doubles
-        // as the switch between the two instead of costing a row of its own.
-        <DropdownMenu>
-          <DropdownMenuTrigger className="-ml-1.5 mr-1.5 flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 outline-none transition-colors hover:bg-accent/60 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-expanded:bg-accent/60">
-            <span className="min-w-0 truncate">
-              {isArchivedView ? t(($) => $.list.archived_title) : t(($) => $.page.title)}
-            </span>
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-auto min-w-44">
-            <DropdownMenuRadioGroup
-              value={view}
-              onValueChange={(value) => setView(value as InboxView)}
-            >
-              <DropdownMenuRadioItem value="inbox">
-                <Inbox className="h-4 w-4" />
-                <span className="flex-1">{t(($) => $.page.title)}</span>
-                {unreadCount > 0 && (
-                  <span className="text-caption tabular-nums text-muted-foreground">
-                    {unreadCount}
-                  </span>
-                )}
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="archived">
-                <Archive className="h-4 w-4" />
-                {t(($) => $.list.archived_title)}
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      }
+      title={viewSwitcher}
       leading={<CollapsedNavTrigger />}
       meta={
         !isArchivedView && unreadCount > 0 && (
@@ -1315,9 +1306,7 @@ export function InboxPage() {
     <>
       {(!archiveSplit || listCollapsed) && (
         <PageHeader>
-          <h1 className="text-body font-semibold">
-            {isArchivedView ? t(($) => $.list.archived_title) : t(($) => $.page.title)}
-          </h1>
+          <h1 className="text-body font-semibold">{viewSwitcher}</h1>
         </PageHeader>
       )}
       {liveFailed ? (
@@ -1332,7 +1321,6 @@ export function InboxPage() {
           inboxZeroRises={inboxZeroRises}
           isCompact={isCompact}
           onClearFiltersAndContinue={handleClearFiltersAndContinue}
-          onViewArchived={() => setView("archived")}
         />
       )}
     </>
