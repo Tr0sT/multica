@@ -90,6 +90,16 @@ export function ChatSessionHeader({
   const subtitle = [chatChannelLabel(session), ownerName].filter(Boolean).join(" · ");
 
   useEffect(() => {
+    clearPendingBlurCommit();
+    isComposingRef.current = false;
+    commitAfterCompositionRef.current = false;
+    setEditing(false);
+    setConfirmDelete(false);
+    setDraft(session.title ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset transient header UI only when switching sessions
+  }, [session.id]);
+
+  useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
       inputRef.current?.select();
