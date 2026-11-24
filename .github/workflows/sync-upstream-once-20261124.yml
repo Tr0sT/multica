@@ -57,7 +57,7 @@ jobs:
            else:
             assert not ours.strip() and not base.strip() and b in theirs,file
             new=theirs
-           p.write_text(s[:m.start()]+new+s[m.end():])
+           p.write_text((s[:m.start()]+new+s[m.end():]).rstrip('\n')+'\n')
            subprocess.run(['git','add','--',file],check=True)
           PY
           test -z "$(git diff --name-only --diff-filter=U)"
