@@ -1,0 +1,40 @@
+name: Temporary upstream integration diagnostics (2026-11-24)
+on:
+  push:
+    branches: [sync-worker/upstream-20261124-6368504e]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inspect exact three-way merge in disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Multica Sync'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config merge.conflictStyle diff3
+          git remote add upstream https://github.com/multica-ai/multica.git
+          git fetch --no-tags upstream 6368504e1181a0365013ca5796ec453bf9535f11
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "ac08637c3aef6dc6649dfae934b4c9eb5b8c9999"
+          git switch --detach ac08637c3aef6dc6649dfae934b4c9eb5b8c9999
+          echo "MERGE_BASE=$(git merge-base HEAD 6368504e1181a0365013ca5796ec453bf9535f11)"
+          git diff --name-status HEAD $(git merge-base HEAD 6368504e1181a0365013ca5796ec453bf9535f11) -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock
+          git diff --name-status $(git merge-base HEAD 6368504e1181a0365013ca5796ec453bf9535f11) 6368504e1181a0365013ca5796ec453bf9535f11 -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock
+          if git merge --no-commit --no-ff 6368504e1181a0365013ca5796ec453bf9535f11; then
+            echo 'MERGE_CLEAN'
+          else
+            echo 'MERGE_CONFLICTS'
+            git diff --name-only --diff-filter=U
+            git diff --cc -- $(git diff --name-only --diff-filter=U)
+          fi
+          echo 'MIGRATION_PREFIXES'
+          git ls-files server/migrations | sed -n 's@^server/migrations/\([0-9][0-9]*\)_.*\.up\.sql$@\1@p' | sort | uniq -d
+          echo 'END_DIAGNOSTICS'
