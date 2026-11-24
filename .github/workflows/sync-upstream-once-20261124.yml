@@ -1,88 +1,48 @@
-name: Temporary upstream integration worker (2026-11-24)
+name: Temporary websocket security update
 on:
   push:
     branches: [sync-worker/upstream-20261124-6368504e]
 permissions:
-  contents: write
+  contents: read
 jobs:
-  integrate:
+  fix:
     if: github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-          persist-credentials: true
-      - name: Integrate only the pinned revisions and reviewed conflicts
+          ref: 5af0a8bc31c42d711d01687d508251e7933aa63a
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          cache: false
+      - uses: cachix/install-nix-action@v31
+      - name: Update affected websocket dependency and calculate vendor hashes
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'Multica Sync'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git config merge.conflictStyle diff3
-          git remote add upstream https://github.com/multica-ai/multica.git
-          git fetch --no-tags upstream 6368504e1181a0365013ca5796ec453bf9535f11
-          git fetch --no-tags origin main sync/upstream-20261124-6368504e sync-staging/upstream-20261124-6368504e
-          test "$(git rev-parse origin/main)" = "ac08637c3aef6dc6649dfae934b4c9eb5b8c9999"
-          test "$(git rev-parse origin/sync/upstream-20261124-6368504e)" = "ac08637c3aef6dc6649dfae934b4c9eb5b8c9999"
-          test "$(git rev-parse origin/sync-staging/upstream-20261124-6368504e)" = "ac08637c3aef6dc6649dfae934b4c9eb5b8c9999"
-          git switch --detach ac08637c3aef6dc6649dfae934b4c9eb5b8c9999
-          test "$(git merge-base HEAD 6368504e1181a0365013ca5796ec453bf9535f11)" = "1bf341d7512a1900b871c024fd878fd33de2558c"
-          if git merge --no-commit --no-ff 6368504e1181a0365013ca5796ec453bf9535f11; then
-            echo 'Unexpected clean merge: re-review required'; exit 1
-          fi
-          python3 - <<'PY'
-          from pathlib import Path
-          import re, subprocess
-          expected={
-          '.github/workflows/ci.yml': ('Test Desktop window capture','Test fake Composio against the OpenAPI snapshot','both'),
-          'packages/core/api/client.ts': ('async getAgentMarketplaceCatalog','async getDashboardUsageBySquad','both'),
-          'packages/core/api/schemas.ts': ('MattermostInstallation,','', 'mattermost'),
-          'packages/views/issues/components/issue-environments-section.tsx': ('','function environmentExpiry','expiry'),
-          }
-          actual=set(subprocess.check_output(['git','diff','--name-only','--diff-filter=U'],text=True).splitlines())
-          assert actual==set(expected), actual
-          rx=re.compile(r'^<<<<<<< HEAD\n(.*?)^\|\|\|\|\|\|\| [^\n]+\n(.*?)^=======\n(.*?)^>>>>>>> [^\n]+\n',re.M|re.S)
-          for file,(a,b,mode) in expected.items():
-           p=Path(file); s=p.read_text(); matches=list(rx.finditer(s)); assert len(matches)==1,(file,len(matches))
-           m=matches[0]; ours,base,theirs=m.groups()
-           if mode=='both':
-            assert a in ours and b in theirs and not base.strip(),file
-            new=ours+theirs
-           elif mode=='mattermost':
-            assert a in ours and not theirs.strip() and base.strip()=='GroupedIssuesResponse,',file
-            new=ours.replace('  GroupedIssuesResponse,\n','')
-            assert 'GroupedIssuesResponse' not in new
-           else:
-            assert not ours.strip() and not base.strip() and b in theirs,file
-            new=theirs
-           p.write_text((s[:m.start()]+new+s[m.end():]).rstrip('\n')+'\n')
-           subprocess.run(['git','add','--',file],check=True)
-          PY
-          test -z "$(git diff --name-only --diff-filter=U)"
-          git diff --cached --check -- .github/workflows/ci.yml packages/core/api/client.ts packages/core/api/schemas.ts packages/views/issues/components/issue-environments-section.tsx
-          git diff --cached --name-status -- .github/workflows/
-          test "$(git diff --cached --name-only -- .github/workflows/ | sort)" = "$(printf '%s\n' .github/workflows/ci.yml .github/workflows/composio-spec-drift.yml | sort)"
-          git diff --cached --exit-code -- server/go.mod server/go.sum pnpm-lock.yaml pnpm-workspace.yaml flake.lock
-          git diff --cached --exit-code -- flake.nix nix/
-          if git grep -n 'GroupedIssuesResponse' -- packages/core/api/schemas.ts; then
-            echo 'Obsolete group API still referenced; review required'; exit 1
-          fi
-          # Transport the exact candidate tree through an inert staging branch.
-          # GitHub's connector will create the final two-parent merge from its
-          # tree and put back both workflow blobs; the helper is NOT a parent.
-          mkdir -p .sync-upstream-pending
-          cp .github/workflows/ci.yml .sync-upstream-pending/ci.yml
-          cp .github/workflows/composio-spec-drift.yml .sync-upstream-pending/composio-spec-drift.yml
-          git add .sync-upstream-pending
-          git commit -m 'sync: prepare locally merged candidate tree'
-          candidate_tree="$(git rev-parse HEAD^{tree})"
-          git switch --detach ac08637c3aef6dc6649dfae934b4c9eb5b8c9999
-          git read-tree --reset -u "$candidate_tree"
-          git restore --source=ac08637c3aef6dc6649dfae934b4c9eb5b8c9999 --staged --worktree -- .github/workflows/
-          git commit -m 'sync: transport candidate code and inert workflow blobs'
-          test "$(git rev-parse HEAD^)" = "ac08637c3aef6dc6649dfae934b4c9eb5b8c9999"
-          git push origin HEAD:refs/heads/sync-staging/upstream-20261124-6368504e
-          echo "STAGED_HELPER_SHA=$(git rev-parse HEAD)"
-          echo "STAGED_HELPER_TREE=$(git rev-parse HEAD^{tree})"
+          test "$(git rev-parse HEAD)" = "5af0a8bc31c42d711d01687d508251e7933aa63a"
+          (cd server && go get github.com/gorilla/websocket@v1.5.4-0.20240701034025-d67f41855da4 && go mod tidy)
+          git diff -- server/go.mod server/go.sum
+          sed -i 's@vendorHash = "sha256-[^"]*";@vendorHash = lib.fakeHash;@' nix/packages/multica-{cli,server}.nix
+          for pkg in cli server; do
+            log="$(mktemp)"
+            if nix build ".#multica-$pkg" --no-link --print-build-logs >"$log" 2>&1; then
+              echo "Unexpected fake hash success"; exit 1
+            fi
+            tail -n 40 "$log"
+            hash="$(sed -n 's/.*got:[[:space:]]*\(sha256-[A-Za-z0-9+/=]*\).*/\1/p' "$log" | sort -u)"
+            test "$(printf '%s\n' "$hash" | wc -l)" -eq 1
+            [[ "$hash" =~ ^sha256-[A-Za-z0-9+/]{43}=$ ]]
+            sed -i "s@vendorHash = lib.fakeHash;@vendorHash = \"$hash\";@" "nix/packages/multica-$pkg.nix"
+          done
+          git diff --check
+          git diff -- server/go.mod server/go.sum nix/packages/multica-cli.nix nix/packages/multica-server.nix
+          echo FIX_DIFF_COMPLETE
+      - name: Verify updated dependency and native packages
+        run: |
+          set -euo pipefail
+          (cd server && go tool govulncheck ./...)
+          nix build .#multica-cli .#multica-server --no-link --print-build-logs
