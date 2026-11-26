@@ -1,93 +1,68 @@
-name: Temporary reviewed upstream merge preparation
+name: Temporary exact-revision desktop smoke
+
 on:
   push:
     branches: [sync-worker/upstream-20261126-aa1fa4ba]
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  prepare:
-    if: github.repository == 'Tr0sT/multica'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: win
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
+          ref: 0070c2c9f0e4e958b3cc6195e5aeca4731a9a91b
           fetch-depth: 0
-      - name: Prepare reviewed merge and transport its tree without publishing to PR or main
+          persist-credentials: false
+      - name: Verify exact candidate
         shell: bash
-        run: |
-          set -euo pipefail
-          base=700d2958e8313a25a919d0d6a623c96773362da7
-          target=aa1fa4ba08bb45d462d4b97b51345a930ac1168a
-          worker=refs/heads/sync-worker/upstream-20261126-aa1fa4ba
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$GITHUB_REF" = "$worker"
-          git checkout --detach "$base"
-          git fetch --no-tags https://github.com/multica-ai/multica.git "$target"
-          test "$(git merge-base HEAD "$target")" = 6368504e1181a0365013ca5796ec453bf9535f11
-          git config user.name "Sync worker"
-          git config user.email "sync-worker@users.noreply.github.com"
-          git config core.hooksPath /dev/null
-          if ! git -c rerere.enabled=false merge --no-commit --no-ff "$target"; then
-            test "$(git rev-parse MERGE_HEAD)" = "$target"
-          fi
-          python3 - <<'PY'
-          import json, pathlib, subprocess
-          def git(*args):
-              return subprocess.check_output(["git", *args]).decode()
-          def read(stage, path):
-              return git("show", f":{stage}:{path}")
-          docs = ["apps/docs/content/docs/community-maintained" + suffix + ".mdx" for suffix in ("", ".ja", ".ko", ".zh")]
-          channel = "apps/docs/content/docs/channels.mdx"
-          locales = [f"packages/views/locales/{lang}/settings.json" for lang in ("en","es","fr","ja","ko","ru","zh-Hans","zh-Hant")]
-          expected = set(docs + [channel] + locales)
-          actual = set(git("diff", "--name-only", "--diff-filter=U").splitlines())
-          assert actual == expected, (actual-expected, expected-actual)
-          for path in docs:
-              base, ours, upstream = (read(i,path) for i in (1,2,3))
-              mattermost = [line for line in ours.splitlines() if "server/internal/integrations/mattermost" in line]
-              assert len(mattermost) == 1 and mattermost[0] not in upstream
-              assert ours.replace(mattermost[0]+"\n","",1) == base
-              lines = upstream.splitlines(keepends=True)
-              index = [i for i,line in enumerate(lines) if "server/internal/integrations/weixin" in line]
-              assert len(index)==1
-              lines.insert(index[0]+1, mattermost[0]+"\n")
-              pathlib.Path(path).write_text("".join(lines))
-          base, ours, upstream = (read(i,channel) for i in (1,2,3))
-          before = "DingTalk, WeCom, and Telegram are [community-maintained]"
-          new = "DingTalk, WeCom, Telegram, and WeChat are [community-maintained]"
-          local = "DingTalk, WeCom, Telegram, and Mattermost are [community-maintained]"
-          both = "DingTalk, WeCom, Telegram, WeChat, and Mattermost are [community-maintained]"
-          assert base.count(before)==1 and base.replace(before,new,1)==upstream
-          assert ours.count(local)==1
-          pathlib.Path(channel).write_text(ours.replace(local,both,1))
-          for path in locales:
-              base, ours, upstream = (json.loads(read(i,path)) for i in (1,2,3))
-              assert "mattermost" not in base and "mattermost" not in upstream and "mattermost" in ours
-              mm = ours.pop("mattermost")
-              assert ours == base, f"unexpected other semantic fork edits in {path}"
-              upstream["mattermost"]=mm
-              pathlib.Path(path).write_text(json.dumps(upstream,ensure_ascii=False,indent=2)+"\n")
-          subprocess.check_call(["git","add","--",*sorted(expected)])
-          print("RESOLVED_REVIEWED_CONFLICTS", len(expected))
-          PY
-          test -z "$(git diff --name-only --diff-filter=U)"
-          git diff --cached --check
-          git diff --cached --stat HEAD -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
-          git diff --cached --name-status HEAD -- server/migrations/
-          final_tree="$(git write-tree)"
-          echo FINAL_TREE="$final_tree"
-          echo FINAL_WORKFLOWS="$(git rev-parse "$final_tree:.github/workflows")"
-          # Preserve merged workflow blobs in a separate transport directory, so the
-          # temporary push does not change the worker's actual workflow files.
-          test ! -e .sync-transport-workflows
-          cp -a .github/workflows .sync-transport-workflows
-          git add -f .sync-transport-workflows
-          git restore --source="$GITHUB_SHA" --staged --worktree -- .github/workflows
-          transport_tree="$(git write-tree)"
-          test "$(git rev-parse "$transport_tree:.github/workflows")" = "$(git rev-parse "$GITHUB_SHA:.github/workflows")"
-          test "$(git rev-parse "$transport_tree:.sync-transport-workflows")" = "$(git rev-parse "$final_tree:.github/workflows")"
-          transport="$(printf 'Temporary reviewed merge tree transport (not a merge ancestor)\n' | git commit-tree "$transport_tree" -p "$GITHUB_SHA")"
-          test "$(git ls-remote origin "$worker" | cut -f1)" = "$GITHUB_SHA"
-          git push origin "$transport:$worker"
-          echo TRANSPORT_COMMIT="$transport"
+        run: test "$(git rev-parse HEAD)" = "0070c2c9f0e4e958b3cc6195e5aeca4731a9a91b"
+
+      - name: Install rpmbuild (Linux)
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Keep the security floor even when the setup-go manifest lags;
+          # continue accepting newer patches within Go 1.27.
+          go-version: "~1.27.4"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package Desktop installers (${{ matrix.target }})
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
+
+      - name: Upload Desktop artifacts (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: apps/desktop/dist
+          if-no-files-found: error
