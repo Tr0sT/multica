@@ -1,0 +1,45 @@
+name: Temporary upstream merge diagnostic
+on:
+  push:
+    branches: [sync-worker/upstream-20261126-aa1fa4ba]
+permissions:
+  contents: read
+jobs:
+  merge-diagnostic:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 700d2958e8313a25a919d0d6a623c96773362da7
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Diagnose real three-way merge without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "700d2958e8313a25a919d0d6a623c96773362da7"
+          git fetch --no-tags https://github.com/multica-ai/multica.git aa1fa4ba08bb45d462d4b97b51345a930ac1168a
+          target=aa1fa4ba08bb45d462d4b97b51345a930ac1168a
+          git merge-base HEAD "$target"
+          git config user.name "Sync diagnostic"
+          git config user.email "sync-diagnostic@users.noreply.github.com"
+          git config core.hooksPath /dev/null
+          if git -c rerere.enabled=false merge --no-commit --no-ff "$target"; then
+            echo MERGE_CLEAN
+          else
+            git rev-parse --verify MERGE_HEAD
+            echo MERGE_NEEDS_REVIEW
+          fi
+          echo CONFLICT_PATHS_BEGIN
+          git diff --name-only --diff-filter=U
+          echo CONFLICT_PATHS_END
+          git ls-files -u
+          echo LOCKFILE_DIFF_BEGIN
+          git diff HEAD --stat -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
+          echo LOCKFILE_DIFF_END
+          echo NEW_MIGRATIONS_BEGIN
+          git diff HEAD --name-status -- server/migrations/
+          echo NEW_MIGRATIONS_END
+          echo DIAGNOSTIC_COMPLETE
