@@ -9,7 +9,7 @@ import {
 import { IssueFlowCard } from "../../workflows/issue-flow-card";
 import { IssueAppRequests } from "../../common/app-requests";
 import { useStatusLabel } from "../utils/status-label";
-import { formatActivity, type ActivityT } from "./activity-text";
+import { formatActivity, latestSquadHandoffRound, squadHandoffNote, type ActivityT } from "./activity-text";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, useId, Fragment, type ComponentProps, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
@@ -17,7 +17,8 @@ import { UI_MOTION_DURATION } from "@multica/ui/lib/motion";
 import { Virtuoso, type ListRange, type VirtuosoHandle } from "react-virtuoso";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink, useBackOrReplace } from "../../navigation";
-import { IssueDuplicateBanner, IssueDuplicatesSection, isDuplicateIssue } from "./issue-duplicates";
+import { IssueRelationsSection } from "./issue-blockers";
+import { IssueDuplicateBanner, isDuplicateIssue } from "./issue-duplicates";
 import {
   AlertTriangle,
   Calendar,
@@ -78,7 +79,7 @@ import { AvatarGroup, AvatarGroupCount } from "@multica/ui/components/ui/avatar"
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ActionShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { COMPOSER_DOCK_GAP, ComposerDock, JumpToLatestButton } from "./composer-dock";
-import { InboxIssueActions } from "./inbox-issue-actions";
+import { InboxIssueActions, IssueBarActions } from "./inbox-issue-actions";
 import { useInboxSelectionStore, type InboxTransitionDirection } from "@multica/core/inbox/selection-store";
 import { useReducedMotion } from "@multica/core/appearance";
 import { PropRow } from "../../common/prop-row";
@@ -702,7 +703,11 @@ function ActivityBlock({
         const isDueDateChange = entry.action === "due_date_changed";
 
         const isWakeup = WAKEUP_ACTIVITY_ACTIONS.has(entry.action ?? "");
-        const chip = isWakeup ? wakeupActivityChip(entry, t, wakeupText, getActorName) : null;
+        const chip = isWakeup
+          ? wakeupActivityChip(entry, t, wakeupText, getActorName)
+          : entry.action === "squad_handoff"
+            ? squadHandoffNote(entry, t)
+            : null;
         let leadIcon: React.ReactNode;
         if (isWakeup) {
           leadIcon = <WakeupActivityIcon entry={entry} />;
@@ -1136,11 +1141,11 @@ interface IssueDetailProps {
    * into view and flashes, replayed by `highlightRequestToken`. */
   highlightAppRequestId?: string;
   /**
-   * Far-left header slot, replacing the mobile sidebar trigger. A host that
-   * embeds this detail one level deep (the inbox, on a phone) passes its own
-   * "back" control here instead of stacking a second 48px bar above us — the
-   * breadcrumb this header already renders names the issue's container, not
-   * the surface the reader arrived from, so only the host can spell that trip.
+   * Far-left header slot, replacing the mobile sidebar trigger. Only the
+   * loaded header falls back to that trigger; the loading and not-found states
+   * draw just this slot, so a host that hands its whole screen to this detail
+   * (the inbox, on a phone) passes the trigger here to keep the nav reachable
+   * in every state.
    */
   leadingAction?: ReactNode;
   /**
@@ -1204,10 +1209,10 @@ export function IssueNotFound({
 }: {
   showBackLink?: boolean;
   /**
-   * Host-supplied way back, mirrored from `IssueDetailProps.leadingAction`. A
-   * host that hands its whole screen to this component (the inbox, on a phone)
-   * has no bar of its own left, so this state has to carry the trip back or
-   * there is none.
+   * Host-supplied leading control, mirrored from `IssueDetailProps.leadingAction`.
+   * A host that hands its whole screen to this component (the inbox, on a
+   * phone) has no bar of its own left, so this state has to carry the nav
+   * trigger or there is none.
    */
   leading?: ReactNode;
   /** Host controls at the end of the bar — the side peek's close button. */
@@ -1333,9 +1338,9 @@ export function IssueDetailSkeleton({
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      {/* The way back is real from the first frame, not once the issue lands:
-          a host that gave up its own bar for `leadingAction` has nothing else
-          to offer while this skeleton owns the screen. */}
+      {/* The host's leading control is real from the first frame, not once
+          the issue lands: a host that gave up its own bar for `leadingAction`
+          has nothing else to offer while this skeleton owns the screen. */}
       <DetailStateBar trailing={trailing}>
         {leading ?? (
           inboxItem?.issue_identifier ? (
@@ -1824,6 +1829,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
   } = useIssueTimeline(id, user?.id, activeDeliverableJump?.commentId);
 
   const { data: commentTasks, isLoading: commentTasksLoading } = useQuery({ ...issueTasksOptions(id), enabled: !guest });
+  const handoffRound = useMemo(() => latestSquadHandoffRound(timeline), [timeline]);
   // Only a landing on data already in hand is worth holding the chrome for;
   // while the timeline is still on its way, the chrome renders in the wait.
   useEffect(() => {
@@ -1933,6 +1939,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
     // Duplicate marks name a different issue on every row.
     const NEVER_COALESCE_ACTIONS = new Set([
       "squad_leader_evaluated",
+      "squad_handoff",
       "wakeup_created",
       "wakeup_triggered",
       "wakeup_timed_out",
@@ -2041,6 +2048,15 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
       if (g.type === "activities") return g.entries[0]!.id;
     }
     return null;
+  }, [timelineView.groups]);
+  // Squad handoffs say who holds the issue between comments, so their blocks
+  // open by default like the trailing one.
+  const handoffActivityGroupIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const g of timelineView.groups) {
+      if (g.type === "activities" && g.entries.some((e) => e.action === "squad_handoff")) ids.add(g.entries[0]!.id);
+    }
+    return ids;
   }, [timelineView.groups]);
 
   // Map of reply-comment id → root-comment id, so a deep-link to a reply
@@ -2152,7 +2168,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
         // Mirrors renderItem: only the trailing block opens by default, and it
         // shows its latest entries until the reader asks for older ones.
         activityLines: (itemId) => {
-          const expanded = expandedActivityIds.has(itemId) || (!collapsedActivityIds.has(itemId) && itemId === lastActivityGroupId);
+          const expanded = expandedActivityIds.has(itemId) || (!collapsedActivityIds.has(itemId) && (itemId === lastActivityGroupId || handoffActivityGroupIds.has(itemId)));
           if (!expanded) return 0;
           const count = activityCounts.get(itemId) ?? 0;
           return itemId === lastActivityGroupId && !showOlderActivityIds.has(itemId)
@@ -2161,7 +2177,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
       },
     );
   }, [timelineMeasured, scrollContainerWidth, items, timelineView.threadReplies, commentRuns, expandedResolved,
-    collapsedThreadIds, expandedActivityIds, collapsedActivityIds, showOlderActivityIds, lastActivityGroupId]);
+    collapsedThreadIds, expandedActivityIds, collapsedActivityIds, showOlderActivityIds, lastActivityGroupId, handoffActivityGroupIds]);
   // Whether Virtuoso can place a row by index. Without estimates it needs one
   // measured row first: the timeline is scrolled into view to get it. With
   // estimates it already can, and that detour would mount the top of the
@@ -3555,7 +3571,8 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
           </div></IssueSidebarCollapsible>
         </div>
     ),
-    duplicates: <IssueDuplicatesSection issueId={issue.id} />,
+    // Blockers, the issues this one blocks, and duplicates (MUL-10050).
+    relations: <IssueRelationsSection issue={issue} />,
     // Pull requests — unavailable when the workspace disables the PR sidebar
     // (or the GitHub master switch is off). Backend data is kept either
     // way so re-enabling restores the section instantly.
@@ -3606,7 +3623,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
             ? GUEST_SIDEBAR_SECTIONS.has(section)
             : (section !== "pull_requests" || githubSettings.prSidebar) && (section !== "plugins" || pluginsEnabled),
       )}
-      addRow={<IssueSidebarAddRow items={sidebarAddables.filter((item) => item !== sidebarReveal)} onPick={setSidebarReveal} />}
+      addRow={<IssueSidebarAddRow items={sidebarAddables.filter((item) => item !== sidebarReveal)} onPick={setSidebarReveal} issue={issue} />}
       footer={guest ? undefined : <IssueSidebarFooter issue={issue} />}
     />
   );
@@ -3684,7 +3701,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
       ? true
       : collapsedActivityIds.has(item.id)
         ? false
-        : item.id === lastActivityGroupId;
+        : item.id === lastActivityGroupId || handoffActivityGroupIds.has(item.id);
     const truncateOlder = item.id === lastActivityGroupId;
     const showOlder = showOlderActivityIds.has(item.id);
     return (
@@ -3758,6 +3775,8 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
     />
   ) : null;
 
+  const showHeaderIssueActions = !guest && !inbox && !isPeek && !isMobile && !sidebarOpen;
+
   const detailContent = (
     <CurrentIssueRenderContextProvider value={currentIssueRenderContext}>
     <div
@@ -3820,7 +3839,27 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
                     onJump={jumpToCollaborator}
                   />
                 )}
-                <IssueAgentHeaderChip issueId={id} onJumpToRun={jumpToRun} />
+                <IssueAgentHeaderChip issueId={id} onJumpToRun={jumpToRun} handoffRound={handoffRound} />
+              </div>
+            )}
+            {/* With the properties sidebar closed, its most used controls
+                move into the header so status, assignee and quick actions
+                stay one click away. The Inbox's floating group already
+                carries them, and the peek shows them as pills under the
+                title. */}
+            {showHeaderIssueActions && (
+              <div
+                data-testid="issue-header-actions"
+                className="flex min-w-0 items-center gap-0.5 after:ml-1 after:h-4 after:w-px after:bg-border"
+              >
+                <IssueBarActions
+                  issue={issue}
+                  onUpdate={handleUpdateField}
+                  onMarkDuplicate={actions.openMarkDuplicate}
+                  isDuplicate={isDuplicateIssue(issue)}
+                  container="issue-header"
+                  side="bottom"
+                />
               </div>
             )}
             {inbox && (
@@ -4535,8 +4574,11 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
               corners would otherwise leak scrolled text), a 16px gradient
               fade above (exactly the mt-4 gap, so at rest it sits over the
               page background and is invisible), and pb-4 so the card floats
-              off the viewport edge — with -mb-4 giving the padding back to
-              the column's py-8 so the at-rest layout doesn't shift. */}
+              off the viewport edge. The negative bottom margin swallows the
+              column's whole bottom padding, so pb-4 is the only gap below the
+              card at the end of the scroll too — any padding left under a
+              sticky box lifts it off its pinned spot over the last stretch
+              of scroll. */}
           {/* The composer dock: the Inbox's group and "Jump to latest"
               (MUL-8324, MUL-8951) float just above the composer's top edge.
               With the sticky composer the dock rides the composer itself;
@@ -4558,7 +4600,9 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
             className={cn(
               !inboxBar ? "mt-4" : stickyComposer ? "mt-18" : "mt-3",
               stickyComposer &&
-                "sticky bottom-0 z-10 -mb-4 bg-background pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-gradient-to-t before:from-background before:to-transparent",
+                "sticky bottom-0 z-10 bg-background pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-gradient-to-t before:from-background before:to-transparent",
+              // Mirrors the column's bottom padding; the composer is never sticky below `md`.
+              stickyComposer && (isPeek ? "-mb-5" : "-mb-[var(--space-xl,2rem)]"),
             )}
           >
             {/* key={id}: web's /issues/[id] route doesn't remount on

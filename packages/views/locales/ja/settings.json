@@ -380,17 +380,23 @@
     "record_aria": "{{action}}のショートカットを変更",
     "recording": "キーを入力",
     "record_hint": "Esc でキャンセル · Delete でクリア",
+    "record_sequence_hint": "キーを押すか、G → I のように 2 つ続けて押すとシーケンスになります · Esc でキャンセル",
+    "record_then_hint": "2 つ目のキーを押す · ↵ で 1 キーのまま · Backspace でやり直し",
+    "then": "→",
     "unassigned": "未設定",
     "no_results": "一致するショートカット操作はありません。",
     "conflict_error": "すでに{{action}}で使用されています。",
     "reserved_error": "ブラウザまたはデスクトップウィンドウで予約されています。",
     "send_error": "送信には Enter または Cmd/Ctrl+Enter のみ使用できます。",
     "unsafe_error": "このキーは文字入力や基本的なキーボード操作と競合します。",
+    "unrecognized_error": "このキーの組み合わせは記録できません。別の組み合わせをお試しください。",
     "send_enter_hint": "Shift+Enterで段落の挿入、リストの継続、コードブロック内の改行ができます。",
     "categories": {
       "general": "一般",
+      "issue": "タスク",
       "navigation": "ナビゲーション"
     },
+    "issue_scope": "目の前のタスクに作用します：プレビュー中のタスク、リストで選択したタスク、または開いているタスク。",
     "actions": {
       "openSearch": {
         "label": "検索を開く",
@@ -447,6 +453,42 @@
       "undoInboxAction": {
         "label": "インボックスの操作を取り消す",
         "description": "トーストが表示されている間は直前のアーカイブ・スヌーズ・購読解除を取り消します。トーストが消えた後は、開いている通知がアーカイブ済みならインボックスに戻し、「インボックスは空です」画面ではそこに表示された操作を取り消します。"
+      },
+      "setIssueStatus": {
+        "label": "ステータスを変更",
+        "description": "ステータスの選択を開きます。"
+      },
+      "assignIssue": {
+        "label": "担当者を設定",
+        "description": "担当者の選択を開きます。"
+      },
+      "setIssuePriority": {
+        "label": "優先度を設定",
+        "description": "優先度の選択を開きます。"
+      },
+      "setIssueLabels": {
+        "label": "ラベルを編集",
+        "description": "ラベルの選択を開きます。"
+      },
+      "setIssueDueDate": {
+        "label": "期限を設定",
+        "description": "期限の選択を開きます。"
+      },
+      "moveIssueToProject": {
+        "label": "プロジェクトに移動",
+        "description": "プロジェクトの選択を開きます。"
+      },
+      "runIssueQuickAction": {
+        "label": "クイックアクションを実行",
+        "description": "有効なクイックアクションがある単一のタスクで使えます。"
+      },
+      "replyToIssue": {
+        "label": "返信",
+        "description": "開いているタスクのコメント欄にフォーカスします。"
+      },
+      "showShortcuts": {
+        "label": "キーボードショートカットを表示",
+        "description": "ショートカットの一覧を開きます。今のページのものが先頭です。"
       },
       "send": {
         "label": "送信",
@@ -525,7 +567,32 @@
       "reset_zoom": "ズームをリセット",
       "close_dialog": "ダイアログまたはメニューを閉じる"
     },
-    "unrecognized_error": "このキーの組み合わせは記録できません。別の組み合わせをお試しください。"
+    "cheatsheet": {
+      "title": "キーボードショートカット",
+      "current_page": "現在のページ",
+      "footer_prefix": "ショートカットはこのデバイスに保存されます。変更は ",
+      "footer_link": "設定 › ショートカット",
+      "footer_suffix": " から。",
+      "groups": {
+        "inbox": "受信箱",
+        "issue": "タスク",
+        "navigation": "ナビゲーション",
+        "general": "一般",
+        "list": "リストとボード",
+        "editor": "エディター"
+      },
+      "rows": {
+        "list_move": "下 / 上へ移動",
+        "list_columns": "ボードの列を移動",
+        "list_open": "開く",
+        "list_peek": "プレビュー",
+        "list_select": "選択",
+        "list_extend": "選択を広げる",
+        "list_select_all": "すべて選択",
+        "list_clear": "選択を解除",
+        "editor_leave": "入力欄から出る"
+      }
+    }
   },
   "chat": {
     "floating_label": "フローティングチャット",
@@ -910,7 +977,7 @@
       },
       "squad_handoffs": {
         "label": "スクワッド内の引き継ぎを含める",
-        "description": "スクワッドのリーダーとエージェントが作業を受け渡すコメントです。@メンション、エージェントの実行失敗、確認が必要なステータスは引き続き通知されます。"
+        "description": "スクワッドのリーダーとエージェントが作業を受け渡すコメントです。@メンション、エージェントの実行失敗、スクワッドが作業を終えたときの最終報告は引き続き通知されます。"
       },
       "mentions": {
         "label": "メンション",
@@ -1437,108 +1504,6 @@
     "connect_success_toast": "Telegram ボットを接続しました",
     "connect_failed_toast": "Telegram ボットを接続できませんでした"
   },
-  "mattermost": {
-    "edit_button": "編集",
-    "edit_dialog_title": "Mattermost 連携を編集",
-    "edit_success_toast": "Mattermost の設定を保存しました",
-    "edit_failed_toast": "Mattermost の設定を更新できませんでした",
-    "context": {
-      "label": "エージェントに送信する履歴",
-      "message": "現在のメッセージのみ",
-      "thread": "スレッド全体",
-      "channel": "チャット履歴",
-      "unknown": "不明な履歴設定",
-      "period": "履歴の期間",
-      "hour": "過去1時間",
-      "six_hours": "過去6時間",
-      "day": "過去24時間",
-      "three_days": "過去3日間",
-      "week": "過去7日間",
-      "month": "過去30日間",
-      "sixty_days": "過去60日間",
-      "ninety_days": "過去90日間",
-      "year": "過去1年間",
-      "unlimited": "無制限",
-      "channel_unlimited_summary": "期間を制限しないチャット履歴",
-      "help": "Mattermost から読み込む履歴を指定します。既存の Multica の会話は保持されます。",
-      "notice": "他の参加者のメッセージは Multica に保存され、エージェントのモデルに送信されます。最大1,000件 / 128 KiB。履歴が不完全な場合は明示されます。",
-      "summary": "コンテキスト：{{selection}}",
-      "channel_summary": "過去{{hours}}時間のチャット履歴"
-    },
-    "section_title": "Mattermost",
-    "page_description": "各 Multica エージェントを自社サーバー上の Mattermost ボットに接続します。メンバーはボットに DM を送ったり、チャンネルで @メンションしたり、/issue と入力して Multica タスクを作成したり、同じスレッドでエージェントの返信を受け取れます。",
-    "not_enabled_title": "Mattermost 連携が有効になっていません",
-    "not_enabled_description_prefix": "サーバーで",
-    "not_enabled_description_suffix": "を設定すると Mattermost ボットのインストールが有効になります。",
-    "not_enabled_self_host_hint": "セルフホストの場合はプロジェクトの README をご覧ください。",
-    "preview_title": "Mattermost インストールは近日公開",
-    "preview_description": "暗号化キーは設定済みですが、このデプロイではまだインストールできません。利用可能になると接続ボタンがここに表示されます。",
-    "connected_bots": "接続済みのボット",
-    "loading": "読み込み中…",
-    "load_failed": "Mattermost のインストールを読み込めませんでした",
-    "empty_title": "接続済みのボットはまだありません",
-    "empty_description_prefix": "このワークスペースのエージェントを開き、",
-    "empty_description_cta": "Mattermost に接続",
-    "empty_description_suffix": "をクリックしてボットをインストールします。",
-    "revoked_badge": "無効化済み",
-    "installed_at_label": "インストール日時 {{when}}",
-    "disconnect": "切断",
-    "disconnecting": "切断中…",
-    "disconnect_confirm_title": "この Mattermost ボットを切断しますか？",
-    "disconnect_confirm_description": "ボットはこのワークスペースの Mattermost メッセージを受信しなくなります。Multica 内のチャット履歴は保持され、同じエージェントから再接続できます。",
-    "disconnect_confirm_cancel": "キャンセル",
-    "toast_disconnected": "Mattermost ボットを切断しました",
-    "toast_disconnect_failed": "切断に失敗しました",
-    "bind_button": "Mattermost に接続",
-    "bind_button_title": "{{agent}} を Mattermost ボットに接続",
-    "agent_bot_connected_label": "Mattermost に接続済み",
-    "agent_bot_disconnect_tooltip": "このエージェントと Mattermost ボットのバインドを解除します。ボットはメッセージを受信しなくなります。",
-    "agent_bot_manage_link": "Mattermost を開く",
-    "agent_bot_manage_tooltip": "この Mattermost サーバーをブラウザーで開きます。",
-    "connect_dialog_title": "Mattermost ボットを接続",
-    "connect_dialog_description": "Mattermost のシステムコンソールでボットアカウントを作成してアクセストークンを発行し、サーバー URL とそのトークンを以下に貼り付けてください。どちらも即時検証され、トークンは暗号化して保存されます。",
-    "connect_docs_link": "手順ガイド：Multica エージェントを Mattermost に接続する",
-    "server_url_label": "サーバー URL",
-    "access_token_label": "ボットアクセストークン",
-    "connect_submit": "接続",
-    "connect_submitting": "接続中…",
-    "connect_cancel": "キャンセル",
-    "connect_success_toast": "Mattermost ボットを接続しました",
-    "connect_failed_toast": "Mattermost ボットを接続できませんでした",
-    "not_enabled_description": "Multica の運用担当者に Mattermost の有効化とサーバーの HTTPS URL の許可を依頼してください。",
-    "denied_reply": {
-      "label": "リスト外のアカウントへの返信",
-      "text": "テキスト",
-      "image": "ランダムな画像",
-      "help": "エージェントを起動せず、エージェントのトークンを消費せずに自動送信します。",
-      "text_label": "返信テキスト",
-      "text_help": "最大 4000 文字。空欄の場合は標準のアクセス拒否メッセージを送信します。",
-      "image_label": "返信画像セット",
-      "image_help": "PNG、JPEG、GIF、WebP に対応。1 枚につき最大 5 MiB。返信ごとにランダムに 1 枚選び、同じ画像が続く場合もあります。",
-      "preview": "自動返信画像のプレビュー",
-      "preview_failed": "保存した画像を読み込めません。再度アップロードしてください。",
-      "unknown": "不明な返信形式",
-      "remove_image": "{{name}} を削除"
-    },
-    "access": {
-      "label": "このボットを利用できるユーザー",
-      "members": "アカウント連携済みの Multica ワークスペースメンバー",
-      "anyone": "すべての Mattermost ユーザー",
-      "allowlist": "指定した Mattermost アカウント",
-      "users_label": "許可する Mattermost ユーザー名",
-      "users_help": "@ユーザー名をカンマまたは改行で区切って最大 100 件入力してください。空のリストは全員のアクセスを拒否します。ユーザー名を変更しても、アクセス権は同じアカウントに保持されます。",
-      "unknown": "不明なアクセスモード",
-      "notice": "Multica アカウントは不要です。リクエストはボットを接続したユーザーに代わって実行され、エージェントのツールと接続済みアプリを利用できます。",
-      "summary": "アクセス：{{selection}}"
-    },
-    "attachments": {
-      "label": "エージェントに送る添付ファイル",
-      "links": "リンクを送信",
-      "none": "送信しない",
-      "unknown": "不明な添付ファイル設定",
-      "help": "現在のメッセージと選択した履歴から、名前・種類・サイズ・リンクのみ送信します。ファイルは必要なときに取得します。リンクは24時間アクセス可能です。公開しないでください。"
-    }
-  },
   "repositories": {
     "section_title": "リポジトリ",
     "description": "エージェントはこれらのリポジトリでコードを扱えます。",
@@ -2008,7 +1973,8 @@
       "pending": "確認待ち",
       "approved": "承認済み",
       "rejected": "却下",
-      "rate_limited": "レート制限"
+      "rate_limited": "レート制限",
+      "quota_exceeded": "月間上限に到達"
     },
     "scopes": {
       "team": "チームアカウント",
@@ -2145,10 +2111,10 @@
       "no_matches": "検索に一致するアプリはありません。",
       "unavailable": "このサーバーではアプリを利用できません。",
       "retry": "再試行",
-      "category_all": "すべて",
+      "catalog": "カタログ",
+      "catalog_failed": "アプリカタログを読み込めませんでした。",
       "category_curated": "おすすめ",
       "categories_label": "カテゴリ",
-      "categories_nav": "アプリのカテゴリ",
       "connect_oauth": "OAuth でログイン",
       "connect_key": "API キーを入力",
       "show_more": "さらに表示",
@@ -2395,5 +2361,107 @@
     "cancel": "キャンセル",
     "toast_joined": "{{title}} に参加しました",
     "toast_failed": "プロジェクトに参加できませんでした。"
+  },
+  "mattermost": {
+    "edit_button": "編集",
+    "edit_dialog_title": "Mattermost 連携を編集",
+    "edit_success_toast": "Mattermost の設定を保存しました",
+    "edit_failed_toast": "Mattermost の設定を更新できませんでした",
+    "context": {
+      "label": "エージェントに送信する履歴",
+      "message": "現在のメッセージのみ",
+      "thread": "スレッド全体",
+      "channel": "チャット履歴",
+      "unknown": "不明な履歴設定",
+      "period": "履歴の期間",
+      "hour": "過去1時間",
+      "six_hours": "過去6時間",
+      "day": "過去24時間",
+      "three_days": "過去3日間",
+      "week": "過去7日間",
+      "month": "過去30日間",
+      "sixty_days": "過去60日間",
+      "ninety_days": "過去90日間",
+      "year": "過去1年間",
+      "unlimited": "無制限",
+      "channel_unlimited_summary": "期間を制限しないチャット履歴",
+      "help": "Mattermost から読み込む履歴を指定します。既存の Multica の会話は保持されます。",
+      "notice": "他の参加者のメッセージは Multica に保存され、エージェントのモデルに送信されます。最大1,000件 / 128 KiB。履歴が不完全な場合は明示されます。",
+      "summary": "コンテキスト：{{selection}}",
+      "channel_summary": "過去{{hours}}時間のチャット履歴"
+    },
+    "section_title": "Mattermost",
+    "page_description": "各 Multica エージェントを自社サーバー上の Mattermost ボットに接続します。メンバーはボットに DM を送ったり、チャンネルで @メンションしたり、/issue と入力して Multica タスクを作成したり、同じスレッドでエージェントの返信を受け取れます。",
+    "not_enabled_title": "Mattermost 連携が有効になっていません",
+    "not_enabled_description_prefix": "サーバーで",
+    "not_enabled_description_suffix": "を設定すると Mattermost ボットのインストールが有効になります。",
+    "not_enabled_self_host_hint": "セルフホストの場合はプロジェクトの README をご覧ください。",
+    "preview_title": "Mattermost インストールは近日公開",
+    "preview_description": "暗号化キーは設定済みですが、このデプロイではまだインストールできません。利用可能になると接続ボタンがここに表示されます。",
+    "connected_bots": "接続済みのボット",
+    "loading": "読み込み中…",
+    "load_failed": "Mattermost のインストールを読み込めませんでした",
+    "empty_title": "接続済みのボットはまだありません",
+    "empty_description_prefix": "このワークスペースのエージェントを開き、",
+    "empty_description_cta": "Mattermost に接続",
+    "empty_description_suffix": "をクリックしてボットをインストールします。",
+    "revoked_badge": "無効化済み",
+    "installed_at_label": "インストール日時 {{when}}",
+    "disconnect": "切断",
+    "disconnecting": "切断中…",
+    "disconnect_confirm_title": "この Mattermost ボットを切断しますか？",
+    "disconnect_confirm_description": "ボットはこのワークスペースの Mattermost メッセージを受信しなくなります。Multica 内のチャット履歴は保持され、同じエージェントから再接続できます。",
+    "disconnect_confirm_cancel": "キャンセル",
+    "toast_disconnected": "Mattermost ボットを切断しました",
+    "toast_disconnect_failed": "切断に失敗しました",
+    "bind_button": "Mattermost に接続",
+    "bind_button_title": "{{agent}} を Mattermost ボットに接続",
+    "agent_bot_connected_label": "Mattermost に接続済み",
+    "agent_bot_disconnect_tooltip": "このエージェントと Mattermost ボットのバインドを解除します。ボットはメッセージを受信しなくなります。",
+    "agent_bot_manage_link": "Mattermost を開く",
+    "agent_bot_manage_tooltip": "この Mattermost サーバーをブラウザーで開きます。",
+    "connect_dialog_title": "Mattermost ボットを接続",
+    "connect_dialog_description": "Mattermost のシステムコンソールでボットアカウントを作成してアクセストークンを発行し、サーバー URL とそのトークンを以下に貼り付けてください。どちらも即時検証され、トークンは暗号化して保存されます。",
+    "connect_docs_link": "手順ガイド：Multica エージェントを Mattermost に接続する",
+    "server_url_label": "サーバー URL",
+    "access_token_label": "ボットアクセストークン",
+    "connect_submit": "接続",
+    "connect_submitting": "接続中…",
+    "connect_cancel": "キャンセル",
+    "connect_success_toast": "Mattermost ボットを接続しました",
+    "connect_failed_toast": "Mattermost ボットを接続できませんでした",
+    "not_enabled_description": "Multica の運用担当者に Mattermost の有効化とサーバーの HTTPS URL の許可を依頼してください。",
+    "denied_reply": {
+      "label": "リスト外のアカウントへの返信",
+      "text": "テキスト",
+      "image": "ランダムな画像",
+      "help": "エージェントを起動せず、エージェントのトークンを消費せずに自動送信します。",
+      "text_label": "返信テキスト",
+      "text_help": "最大 4000 文字。空欄の場合は標準のアクセス拒否メッセージを送信します。",
+      "image_label": "返信画像セット",
+      "image_help": "PNG、JPEG、GIF、WebP に対応。1 枚につき最大 5 MiB。返信ごとにランダムに 1 枚選び、同じ画像が続く場合もあります。",
+      "preview": "自動返信画像のプレビュー",
+      "preview_failed": "保存した画像を読み込めません。再度アップロードしてください。",
+      "unknown": "不明な返信形式",
+      "remove_image": "{{name}} を削除"
+    },
+    "access": {
+      "label": "このボットを利用できるユーザー",
+      "members": "アカウント連携済みの Multica ワークスペースメンバー",
+      "anyone": "すべての Mattermost ユーザー",
+      "allowlist": "指定した Mattermost アカウント",
+      "users_label": "許可する Mattermost ユーザー名",
+      "users_help": "@ユーザー名をカンマまたは改行で区切って最大 100 件入力してください。空のリストは全員のアクセスを拒否します。ユーザー名を変更しても、アクセス権は同じアカウントに保持されます。",
+      "unknown": "不明なアクセスモード",
+      "notice": "Multica アカウントは不要です。リクエストはボットを接続したユーザーに代わって実行され、エージェントのツールと接続済みアプリを利用できます。",
+      "summary": "アクセス：{{selection}}"
+    },
+    "attachments": {
+      "label": "エージェントに送る添付ファイル",
+      "links": "リンクを送信",
+      "none": "送信しない",
+      "unknown": "不明な添付ファイル設定",
+      "help": "現在のメッセージと選択した履歴から、名前・種類・サイズ・リンクのみ送信します。ファイルは必要なときに取得します。リンクは24時間アクセス可能です。公開しないでください。"
+    }
   }
 }
