@@ -1,45 +1,93 @@
-name: Temporary upstream merge diagnostic
+name: Temporary reviewed upstream merge preparation
 on:
   push:
     branches: [sync-worker/upstream-20261126-aa1fa4ba]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  merge-diagnostic:
+  prepare:
     if: github.repository == 'Tr0sT/multica'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 700d2958e8313a25a919d0d6a623c96773362da7
           fetch-depth: 0
-          persist-credentials: false
-      - name: Diagnose real three-way merge without publishing
+      - name: Prepare reviewed merge and transport its tree without publishing to PR or main
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "700d2958e8313a25a919d0d6a623c96773362da7"
-          git fetch --no-tags https://github.com/multica-ai/multica.git aa1fa4ba08bb45d462d4b97b51345a930ac1168a
+          base=700d2958e8313a25a919d0d6a623c96773362da7
           target=aa1fa4ba08bb45d462d4b97b51345a930ac1168a
-          git merge-base HEAD "$target"
-          git config user.name "Sync diagnostic"
-          git config user.email "sync-diagnostic@users.noreply.github.com"
+          worker=refs/heads/sync-worker/upstream-20261126-aa1fa4ba
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = "$worker"
+          git checkout --detach "$base"
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$target"
+          test "$(git merge-base HEAD "$target")" = 6368504e1181a0365013ca5796ec453bf9535f11
+          git config user.name "Sync worker"
+          git config user.email "sync-worker@users.noreply.github.com"
           git config core.hooksPath /dev/null
-          if git -c rerere.enabled=false merge --no-commit --no-ff "$target"; then
-            echo MERGE_CLEAN
-          else
-            git rev-parse --verify MERGE_HEAD
-            echo MERGE_NEEDS_REVIEW
+          if ! git -c rerere.enabled=false merge --no-commit --no-ff "$target"; then
+            test "$(git rev-parse MERGE_HEAD)" = "$target"
           fi
-          echo CONFLICT_PATHS_BEGIN
-          git diff --name-only --diff-filter=U
-          echo CONFLICT_PATHS_END
-          git ls-files -u
-          echo LOCKFILE_DIFF_BEGIN
-          git diff HEAD --stat -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
-          echo LOCKFILE_DIFF_END
-          echo NEW_MIGRATIONS_BEGIN
-          git diff HEAD --name-status -- server/migrations/
-          echo NEW_MIGRATIONS_END
-          echo DIAGNOSTIC_COMPLETE
+          python3 - <<'PY'
+          import json, pathlib, subprocess
+          def git(*args):
+              return subprocess.check_output(["git", *args]).decode()
+          def read(stage, path):
+              return git("show", f":{stage}:{path}")
+          docs = ["apps/docs/content/docs/community-maintained" + suffix + ".mdx" for suffix in ("", ".ja", ".ko", ".zh")]
+          channel = "apps/docs/content/docs/channels.mdx"
+          locales = [f"packages/views/locales/{lang}/settings.json" for lang in ("en","es","fr","ja","ko","ru","zh-Hans","zh-Hant")]
+          expected = set(docs + [channel] + locales)
+          actual = set(git("diff", "--name-only", "--diff-filter=U").splitlines())
+          assert actual == expected, (actual-expected, expected-actual)
+          for path in docs:
+              base, ours, upstream = (read(i,path) for i in (1,2,3))
+              mattermost = [line for line in ours.splitlines() if "server/internal/integrations/mattermost" in line]
+              assert len(mattermost) == 1 and mattermost[0] not in upstream
+              assert ours.replace(mattermost[0]+"\n","",1) == base
+              lines = upstream.splitlines(keepends=True)
+              index = [i for i,line in enumerate(lines) if "server/internal/integrations/weixin" in line]
+              assert len(index)==1
+              lines.insert(index[0]+1, mattermost[0]+"\n")
+              pathlib.Path(path).write_text("".join(lines))
+          base, ours, upstream = (read(i,channel) for i in (1,2,3))
+          before = "DingTalk, WeCom, and Telegram are [community-maintained]"
+          new = "DingTalk, WeCom, Telegram, and WeChat are [community-maintained]"
+          local = "DingTalk, WeCom, Telegram, and Mattermost are [community-maintained]"
+          both = "DingTalk, WeCom, Telegram, WeChat, and Mattermost are [community-maintained]"
+          assert base.count(before)==1 and base.replace(before,new,1)==upstream
+          assert ours.count(local)==1
+          pathlib.Path(channel).write_text(ours.replace(local,both,1))
+          for path in locales:
+              base, ours, upstream = (json.loads(read(i,path)) for i in (1,2,3))
+              assert "mattermost" not in base and "mattermost" not in upstream and "mattermost" in ours
+              mm = ours.pop("mattermost")
+              assert ours == base, f"unexpected other semantic fork edits in {path}"
+              upstream["mattermost"]=mm
+              pathlib.Path(path).write_text(json.dumps(upstream,ensure_ascii=False,indent=2)+"\n")
+          subprocess.check_call(["git","add","--",*sorted(expected)])
+          print("RESOLVED_REVIEWED_CONFLICTS", len(expected))
+          PY
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+          git diff --cached --stat HEAD -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
+          git diff --cached --name-status HEAD -- server/migrations/
+          final_tree="$(git write-tree)"
+          echo FINAL_TREE="$final_tree"
+          echo FINAL_WORKFLOWS="$(git rev-parse "$final_tree:.github/workflows")"
+          # Preserve merged workflow blobs in a separate transport directory, so the
+          # temporary push does not change the worker's actual workflow files.
+          test ! -e .sync-transport-workflows
+          cp -a .github/workflows .sync-transport-workflows
+          git add -f .sync-transport-workflows
+          git restore --source="$GITHUB_SHA" --staged --worktree -- .github/workflows
+          transport_tree="$(git write-tree)"
+          test "$(git rev-parse "$transport_tree:.github/workflows")" = "$(git rev-parse "$GITHUB_SHA:.github/workflows")"
+          test "$(git rev-parse "$transport_tree:.sync-transport-workflows")" = "$(git rev-parse "$final_tree:.github/workflows")"
+          transport="$(printf 'Temporary reviewed merge tree transport (not a merge ancestor)\n' | git commit-tree "$transport_tree" -p "$GITHUB_SHA")"
+          test "$(git ls-remote origin "$worker" | cut -f1)" = "$GITHUB_SHA"
+          git push origin "$transport:$worker"
+          echo TRANSPORT_COMMIT="$transport"
