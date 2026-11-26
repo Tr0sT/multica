@@ -380,17 +380,23 @@
     "record_aria": "修改\"{{action}}\"的快捷鍵",
     "recording": "請按鍵",
     "record_hint": "Esc 取消 · Delete 清除",
+    "record_sequence_hint": "按一個鍵；連按兩個鍵可設為序列，如 G 然後 I · Esc 取消",
+    "record_then_hint": "按第二個鍵 · ↵ 只用一個鍵 · Backspace 重來",
+    "then": "然後",
     "unassigned": "未設定",
     "no_results": "沒有匹配的快捷鍵操作。",
     "conflict_error": "已被\"{{action}}\"使用。",
     "reserved_error": "該快捷鍵已被瀏覽器或桌面視窗占用。",
     "send_error": "傳送只能使用 Enter 或 Cmd/Ctrl+Enter。",
     "unsafe_error": "這個按鍵會干擾文字輸入或基礎鍵盤導航。",
+    "unrecognized_error": "無法錄製這個組合鍵，請換一個試試。",
     "send_enter_hint": "Shift+Enter 可插入段落、繼續列表，或在程式碼塊中換行。",
     "categories": {
       "general": "常規",
+      "issue": "任務",
       "navigation": "導航"
     },
+    "issue_scope": "作用於眼前的任務：預覽中的任務、列表中選取的任務，或目前開啟的任務。",
     "actions": {
       "openSearch": {
         "label": "開啟搜尋",
@@ -447,6 +453,42 @@
       "undoInboxAction": {
         "label": "復原收件箱操作",
         "description": "提示還在時，復原上一次歸檔、延後或取消訂閱；提示消失後，開啟的通知已歸檔時把它放回收件箱，在「收件箱已清空」頁復原頁面上寫明的操作。"
+      },
+      "setIssueStatus": {
+        "label": "變更狀態",
+        "description": "開啟狀態選擇。"
+      },
+      "assignIssue": {
+        "label": "指派負責人",
+        "description": "開啟負責人選擇。"
+      },
+      "setIssuePriority": {
+        "label": "設定優先級",
+        "description": "開啟優先級選擇。"
+      },
+      "setIssueLabels": {
+        "label": "編輯標籤",
+        "description": "開啟標籤選擇。"
+      },
+      "setIssueDueDate": {
+        "label": "設定截止日期",
+        "description": "開啟截止日期選擇。"
+      },
+      "moveIssueToProject": {
+        "label": "移動到專案",
+        "description": "開啟專案選擇。"
+      },
+      "runIssueQuickAction": {
+        "label": "執行快捷操作",
+        "description": "僅在單一任務且有可用的快捷操作時可用。"
+      },
+      "replyToIssue": {
+        "label": "回覆",
+        "description": "聚焦目前任務的留言框。"
+      },
+      "showShortcuts": {
+        "label": "顯示快捷鍵",
+        "description": "開啟快捷鍵列表，目前頁面相關的排在前面。"
       },
       "send": {
         "label": "傳送",
@@ -525,7 +567,32 @@
       "reset_zoom": "重置縮放",
       "close_dialog": "關閉對話方塊或選單"
     },
-    "unrecognized_error": "無法錄製這個組合鍵，請換一個試試。"
+    "cheatsheet": {
+      "title": "快捷鍵",
+      "current_page": "目前頁面",
+      "footer_prefix": "快捷鍵僅儲存在本裝置，可在 ",
+      "footer_link": "設定 › 快捷鍵",
+      "footer_suffix": " 中修改。",
+      "groups": {
+        "inbox": "收件匣",
+        "issue": "任務",
+        "navigation": "導航",
+        "general": "常規",
+        "list": "列表與看板",
+        "editor": "編輯器"
+      },
+      "rows": {
+        "list_move": "下移 / 上移",
+        "list_columns": "在看板欄之間移動",
+        "list_open": "開啟",
+        "list_peek": "預覽",
+        "list_select": "選取",
+        "list_extend": "擴展選取",
+        "list_select_all": "全選",
+        "list_clear": "取消選取",
+        "editor_leave": "離開輸入框"
+      }
+    }
   },
   "chat": {
     "floating_label": "懸浮聊天窗",
@@ -910,7 +977,7 @@
       },
       "squad_handoffs": {
         "label": "包含小隊內部交接",
-        "description": "小隊隊長指派工作給成員、成員向隊長回報的評論。@ 提及、AI 代理執行失敗和需要關注的狀態照常通知。"
+        "description": "小隊隊長指派工作給成員、成員向隊長回報的評論。@ 提及、AI 代理執行失敗和小隊收尾時的最終回報照常通知。"
       },
       "mentions": {
         "label": "提及",
@@ -1906,7 +1973,8 @@
       "pending": "等待確認",
       "approved": "已核准",
       "rejected": "已拒絕",
-      "rate_limited": "已限流"
+      "rate_limited": "已限流",
+      "quota_exceeded": "已達每月上限"
     },
     "scopes": {
       "team": "團隊帳號",
@@ -2043,10 +2111,10 @@
       "no_matches": "沒有符合的應用。",
       "unavailable": "此伺服器未提供應用功能。",
       "retry": "重試",
-      "category_all": "全部",
+      "catalog": "目錄",
+      "catalog_failed": "無法載入應用目錄。",
       "category_curated": "精選",
       "categories_label": "分類",
-      "categories_nav": "應用程式分類",
       "connect_oauth": "OAuth 登入",
       "connect_key": "填寫 API key",
       "show_more": "顯示更多",
@@ -2174,108 +2242,6 @@
       "open_app": "開啟應用程式"
     }
   },
-  "mattermost": {
-    "edit_button": "編輯",
-    "edit_dialog_title": "編輯 Mattermost 整合",
-    "edit_success_toast": "已儲存 Mattermost 設定",
-    "edit_failed_toast": "無法更新 Mattermost 設定",
-    "context": {
-      "label": "傳送給智慧體的歷史訊息",
-      "message": "僅目前訊息",
-      "thread": "完整討論串",
-      "channel": "對話歷史",
-      "unknown": "未知的歷史訊息設定",
-      "period": "歷史訊息範圍",
-      "hour": "最近 1 小時",
-      "six_hours": "最近 6 小時",
-      "day": "最近 24 小時",
-      "three_days": "最近 3 天",
-      "week": "最近 7 天",
-      "month": "最近 30 天",
-      "sixty_days": "最近 60 天",
-      "ninety_days": "最近 90 天",
-      "year": "最近 1 年",
-      "unlimited": "不限",
-      "channel_unlimited_summary": "對話歷史，不限日期",
-      "help": "控制從 Mattermost 載入的歷史訊息。現有的 Multica 對話會保留。",
-      "notice": "其他參與者的訊息會儲存在 Multica，並傳送給智慧體使用的模型。上限為 1,000 則訊息／128 KiB；歷史訊息不完整時會標示。",
-      "summary": "上下文：{{selection}}",
-      "channel_summary": "最近 {{hours}} 小時的對話歷史"
-    },
-    "section_title": "Mattermost",
-    "page_description": "將每個 Multica 智慧體連接至自架伺服器上的獨立 Mattermost 機器人。成員可以私訊機器人、在頻道中 @提及它，或輸入 /issue 建立 Multica 任務，並在同一討論串收到智慧體的回覆。",
-    "not_enabled_title": "尚未啟用 Mattermost 整合",
-    "not_enabled_description_prefix": "在伺服器設定",
-    "not_enabled_description_suffix": "即可啟用 Mattermost 機器人安裝。",
-    "not_enabled_self_host_hint": "自架部署詳情請參閱專案 README。",
-    "preview_title": "Mattermost 安裝功能即將開放",
-    "preview_description": "已設定靜態加密金鑰，但此部署尚未開放安裝。開放後，這裡會顯示連接按鈕。",
-    "connected_bots": "已連接的機器人",
-    "loading": "載入中...",
-    "load_failed": "無法載入 Mattermost 安裝項目",
-    "empty_title": "尚未連接機器人",
-    "empty_description_prefix": "開啟此工作區的智慧體，然後點選",
-    "empty_description_cta": "連接 Mattermost",
-    "empty_description_suffix": "，為它安裝機器人。",
-    "revoked_badge": "已撤銷",
-    "installed_at_label": "安裝於 {{when}}",
-    "disconnect": "中斷連接",
-    "disconnecting": "正在中斷連接...",
-    "disconnect_confirm_title": "中斷此 Mattermost 機器人的連接？",
-    "disconnect_confirm_description": "機器人將停止接收此工作區的 Mattermost 訊息。Multica 中的對話歷史會保留；之後可以從同一個智慧體重新連接。",
-    "disconnect_confirm_cancel": "取消",
-    "toast_disconnected": "已中斷 Mattermost 機器人的連接",
-    "toast_disconnect_failed": "無法中斷連接",
-    "bind_button": "連接 Mattermost",
-    "bind_button_title": "將 {{agent}} 連接至 Mattermost 機器人",
-    "agent_bot_connected_label": "已連接 Mattermost",
-    "agent_bot_disconnect_tooltip": "解除此 Mattermost 機器人與智慧體的關聯。機器人將停止接收 Mattermost 訊息。",
-    "agent_bot_manage_link": "開啟 Mattermost",
-    "agent_bot_manage_tooltip": "在瀏覽器中開啟此 Mattermost 伺服器。",
-    "connect_dialog_title": "連接 Mattermost 機器人",
-    "connect_dialog_description": "在 Mattermost 系統控制台建立機器人帳號並產生存取 token，然後在下方貼上伺服器 URL 和 token。兩者都會即時驗證，token 會加密儲存。",
-    "connect_docs_link": "逐步教學：將 Multica 智慧體連接至 Mattermost",
-    "server_url_label": "伺服器 URL",
-    "access_token_label": "機器人存取 token",
-    "connect_submit": "連接",
-    "connect_submitting": "連接中...",
-    "connect_cancel": "取消",
-    "connect_success_toast": "已連接 Mattermost 機器人",
-    "connect_failed_toast": "無法連接 Mattermost 機器人",
-    "not_enabled_description": "請 Multica 管理員啟用 Mattermost，並核准伺服器的 HTTPS URL。",
-    "denied_reply": {
-      "label": "回覆名單外的帳號",
-      "text": "文字",
-      "image": "隨機圖片",
-      "help": "自動傳送，不啟動智慧體，也不消耗智慧體的 token 用量。",
-      "text_label": "回覆文字",
-      "text_help": "最多 4000 個字元。留空則使用預設的存取遭拒訊息。",
-      "image_label": "回覆圖片",
-      "image_help": "支援 PNG、JPEG、GIF 或 WebP，每張最多 5 MiB。每次回覆會隨機選一張圖片，可能重複。",
-      "preview": "自動回覆圖片預覽",
-      "preview_failed": "無法載入已儲存的圖片，請重新上傳。",
-      "unknown": "未知的回覆類型",
-      "remove_image": "移除 {{name}}"
-    },
-    "access": {
-      "label": "誰可以使用此機器人",
-      "members": "已關聯的 Multica 工作區成員",
-      "anyone": "任何 Mattermost 使用者",
-      "allowlist": "指定的 Mattermost 帳號",
-      "users_label": "允許的 Mattermost 使用者名稱",
-      "users_help": "最多輸入 100 個 @使用者名稱，以逗號或換行分隔。名單為空時，所有人都無法存取。帳號變更使用者名稱後仍保有存取權。",
-      "unknown": "未知的存取模式",
-      "notice": "不需要 Multica 帳號。請求會以機器人安裝者的身分執行，並可使用智慧體的工具和已連接的應用程式。",
-      "summary": "存取權：{{selection}}"
-    },
-    "attachments": {
-      "label": "傳送給智慧體的附件",
-      "links": "傳送連結",
-      "none": "不傳送",
-      "unknown": "未知的附件設定",
-      "help": "目前訊息和所選歷史訊息只會傳送檔名、類型、大小和連結。檔案會在需要時下載。連結有效期為 24 小時，請勿公開。"
-    }
-  },
   "voice_input": {
     "description": "在對話、留言和回覆中口述輸入。語音在這台電腦上轉寫，不會離開本機。",
     "model_title": "語音模型",
@@ -2395,5 +2361,107 @@
     "cancel": "取消",
     "toast_joined": "已加入 {{title}}",
     "toast_failed": "加入專案失敗。"
+  },
+  "mattermost": {
+    "edit_button": "編輯",
+    "edit_dialog_title": "編輯 Mattermost 整合",
+    "edit_success_toast": "已儲存 Mattermost 設定",
+    "edit_failed_toast": "無法更新 Mattermost 設定",
+    "context": {
+      "label": "傳送給智慧體的歷史訊息",
+      "message": "僅目前訊息",
+      "thread": "完整討論串",
+      "channel": "對話歷史",
+      "unknown": "未知的歷史訊息設定",
+      "period": "歷史訊息範圍",
+      "hour": "最近 1 小時",
+      "six_hours": "最近 6 小時",
+      "day": "最近 24 小時",
+      "three_days": "最近 3 天",
+      "week": "最近 7 天",
+      "month": "最近 30 天",
+      "sixty_days": "最近 60 天",
+      "ninety_days": "最近 90 天",
+      "year": "最近 1 年",
+      "unlimited": "不限",
+      "channel_unlimited_summary": "對話歷史，不限日期",
+      "help": "控制從 Mattermost 載入的歷史訊息。現有的 Multica 對話會保留。",
+      "notice": "其他參與者的訊息會儲存在 Multica，並傳送給智慧體使用的模型。上限為 1,000 則訊息／128 KiB；歷史訊息不完整時會標示。",
+      "summary": "上下文：{{selection}}",
+      "channel_summary": "最近 {{hours}} 小時的對話歷史"
+    },
+    "section_title": "Mattermost",
+    "page_description": "將每個 Multica 智慧體連接至自架伺服器上的獨立 Mattermost 機器人。成員可以私訊機器人、在頻道中 @提及它，或輸入 /issue 建立 Multica 任務，並在同一討論串收到智慧體的回覆。",
+    "not_enabled_title": "尚未啟用 Mattermost 整合",
+    "not_enabled_description_prefix": "在伺服器設定",
+    "not_enabled_description_suffix": "即可啟用 Mattermost 機器人安裝。",
+    "not_enabled_self_host_hint": "自架部署詳情請參閱專案 README。",
+    "preview_title": "Mattermost 安裝功能即將開放",
+    "preview_description": "已設定靜態加密金鑰，但此部署尚未開放安裝。開放後，這裡會顯示連接按鈕。",
+    "connected_bots": "已連接的機器人",
+    "loading": "載入中...",
+    "load_failed": "無法載入 Mattermost 安裝項目",
+    "empty_title": "尚未連接機器人",
+    "empty_description_prefix": "開啟此工作區的智慧體，然後點選",
+    "empty_description_cta": "連接 Mattermost",
+    "empty_description_suffix": "，為它安裝機器人。",
+    "revoked_badge": "已撤銷",
+    "installed_at_label": "安裝於 {{when}}",
+    "disconnect": "中斷連接",
+    "disconnecting": "正在中斷連接...",
+    "disconnect_confirm_title": "中斷此 Mattermost 機器人的連接？",
+    "disconnect_confirm_description": "機器人將停止接收此工作區的 Mattermost 訊息。Multica 中的對話歷史會保留；之後可以從同一個智慧體重新連接。",
+    "disconnect_confirm_cancel": "取消",
+    "toast_disconnected": "已中斷 Mattermost 機器人的連接",
+    "toast_disconnect_failed": "無法中斷連接",
+    "bind_button": "連接 Mattermost",
+    "bind_button_title": "將 {{agent}} 連接至 Mattermost 機器人",
+    "agent_bot_connected_label": "已連接 Mattermost",
+    "agent_bot_disconnect_tooltip": "解除此 Mattermost 機器人與智慧體的關聯。機器人將停止接收 Mattermost 訊息。",
+    "agent_bot_manage_link": "開啟 Mattermost",
+    "agent_bot_manage_tooltip": "在瀏覽器中開啟此 Mattermost 伺服器。",
+    "connect_dialog_title": "連接 Mattermost 機器人",
+    "connect_dialog_description": "在 Mattermost 系統控制台建立機器人帳號並產生存取 token，然後在下方貼上伺服器 URL 和 token。兩者都會即時驗證，token 會加密儲存。",
+    "connect_docs_link": "逐步教學：將 Multica 智慧體連接至 Mattermost",
+    "server_url_label": "伺服器 URL",
+    "access_token_label": "機器人存取 token",
+    "connect_submit": "連接",
+    "connect_submitting": "連接中...",
+    "connect_cancel": "取消",
+    "connect_success_toast": "已連接 Mattermost 機器人",
+    "connect_failed_toast": "無法連接 Mattermost 機器人",
+    "not_enabled_description": "請 Multica 管理員啟用 Mattermost，並核准伺服器的 HTTPS URL。",
+    "denied_reply": {
+      "label": "回覆名單外的帳號",
+      "text": "文字",
+      "image": "隨機圖片",
+      "help": "自動傳送，不啟動智慧體，也不消耗智慧體的 token 用量。",
+      "text_label": "回覆文字",
+      "text_help": "最多 4000 個字元。留空則使用預設的存取遭拒訊息。",
+      "image_label": "回覆圖片",
+      "image_help": "支援 PNG、JPEG、GIF 或 WebP，每張最多 5 MiB。每次回覆會隨機選一張圖片，可能重複。",
+      "preview": "自動回覆圖片預覽",
+      "preview_failed": "無法載入已儲存的圖片，請重新上傳。",
+      "unknown": "未知的回覆類型",
+      "remove_image": "移除 {{name}}"
+    },
+    "access": {
+      "label": "誰可以使用此機器人",
+      "members": "已關聯的 Multica 工作區成員",
+      "anyone": "任何 Mattermost 使用者",
+      "allowlist": "指定的 Mattermost 帳號",
+      "users_label": "允許的 Mattermost 使用者名稱",
+      "users_help": "最多輸入 100 個 @使用者名稱，以逗號或換行分隔。名單為空時，所有人都無法存取。帳號變更使用者名稱後仍保有存取權。",
+      "unknown": "未知的存取模式",
+      "notice": "不需要 Multica 帳號。請求會以機器人安裝者的身分執行，並可使用智慧體的工具和已連接的應用程式。",
+      "summary": "存取權：{{selection}}"
+    },
+    "attachments": {
+      "label": "傳送給智慧體的附件",
+      "links": "傳送連結",
+      "none": "不傳送",
+      "unknown": "未知的附件設定",
+      "help": "目前訊息和所選歷史訊息只會傳送檔名、類型、大小和連結。檔案會在需要時下載。連結有效期為 24 小時，請勿公開。"
+    }
   }
 }
