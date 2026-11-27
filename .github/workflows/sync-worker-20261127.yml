@@ -83,14 +83,18 @@ jobs:
           check-latest: true
           cache-dependency-path: server/go.sum
 
-      - name: Verify generated SQL against the merged schema
+      - name: Regenerate and verify SQL against the merged schema
         run: |
           set -euo pipefail
           make sqlc
+          test "$(git diff --name-only)" = server/pkg/db/generated/agent.sql.go
+          test "$(git hash-object server/pkg/db/generated/agent.sql.go)" = b05ed441825f6542f527bd384e646f931f3f6c38
+          git diff --check
+          git add server/pkg/db/generated/agent.sql.go
           git diff --exit-code -- server/pkg/db/generated server/ee
           test -z "$(git ls-files --others --exclude-standard -- server/pkg/db/generated server/ee)"
           git diff --exit-code
-          test "$(git write-tree)" = b049bdb4183076f4fea3a380c83bf5693dac637f
+          test "$(git write-tree)" = 2ea205567e1e2dcab5d83b40c6f2d92030bb193b
 
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v15
