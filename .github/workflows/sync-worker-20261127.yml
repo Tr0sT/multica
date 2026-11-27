@@ -1,0 +1,241 @@
+name: Prepare reviewed upstream sync 20261127
+
+on:
+  push:
+    branches: [sync-worker/upstream-20261127-392ca3d8]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-worker-20261127-392ca3d8
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/sync-worker/upstream-20261127-392ca3d8'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SYNC_FORK: d30edafd541921af285993ca70e787ae6f55ecd1
+      SYNC_UPSTREAM: 392ca3d8463bc1d4c2145b842563166918158403
+      SYNC_MAIN: ac08637c3aef6dc6649dfae934b4c9eb5b8c9999
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: d30edafd541921af285993ca70e787ae6f55ecd1
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reproduce the reviewed merge
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SYNC_FORK"
+          test "$(git rev-parse HEAD^{tree})" = e504d4ff9ebbb28b03fdbf888d4830466dc96f23
+          test -z "$(git status --porcelain)"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$SYNC_MAIN"
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$SYNC_UPSTREAM"
+          test "$(git merge-base HEAD "$SYNC_UPSTREAM")" = aa1fa4ba08bb45d462d4b97b51345a930ac1168a
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          set +e
+          git -c rerere.enabled=false merge --no-commit --no-ff "$SYNC_UPSTREAM"
+          merge_status=$?
+          set -e
+          test "$merge_status" -eq 1
+          test "$(git rev-parse MERGE_HEAD)" = "$SYNC_UPSTREAM"
+          test "$(git diff --name-only --diff-filter=U)" = server/pkg/db/generated/agent.sql.go
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path('server/pkg/db/generated/agent.sql.go')
+          source = path.read_text()
+          pattern = r'^<<<<<<< HEAD\n(.*?)^=======\n(.*?)^>>>>>>> ' + re.escape(os.environ['SYNC_UPSTREAM']) + r'\n'
+          conflicts = list(re.finditer(pattern, source, re.MULTILINE | re.DOTALL))
+          assert len(conflicts) == 1, 'Expected exactly one reviewed conflict'
+          conflict = conflicts[0]
+          ours = conflict.group(1).splitlines(keepends=True)
+          theirs = conflict.group(2).splitlines(keepends=True)
+          assert len(ours) == len(theirs) == 3
+          assert ours[0].endswith(', plugin_selection FROM agent\n')
+          assert theirs[0] == ours[0].replace(', plugin_selection FROM agent\n', ' FROM agent\n')
+          assert ours[1] == 'WHERE workspace_id = $1 AND system_key = $2 AND archived_at IS NULL\n'
+          assert ours[2] == 'ORDER BY created_at ASC, id ASC\n'
+          assert theirs[1] == 'WHERE workspace_id = $1 AND system_key = $2\n'
+          assert theirs[2] == 'ORDER BY (archived_at IS NOT NULL) ASC, created_at ASC, id ASC\n'
+          resolved = source[:conflict.start()] + ours[0] + ''.join(theirs[1:]) + source[conflict.end():]
+          assert not re.search(r'^(<<<<<<< |=======|>>>>>>> )', resolved, re.MULTILINE)
+          path.write_text(resolved)
+          PY
+          git add server/pkg/db/generated/agent.sql.go
+          test "$(git write-tree)" = b049bdb4183076f4fea3a380c83bf5693dac637f
+          git diff --cached --check -- . ':(exclude)patches/micromark-extension-gfm-autolink-literal@2.1.0.patch'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Verify generated SQL against the merged schema
+        run: |
+          set -euo pipefail
+          make sqlc
+          git diff --exit-code -- server/pkg/db/generated server/ee
+          test -z "$(git ls-files --others --exclude-standard -- server/pkg/db/generated server/ee)"
+          git diff --exit-code
+          test "$(git write-tree)" = b049bdb4183076f4fea3a380c83bf5693dac637f
+
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v15
+        with:
+          name: nuclearband
+          skipPush: true
+
+      - name: Measure the merged pnpm dependency hash
+        run: |
+          set -euo pipefail
+          nix_expr='let flake = builtins.getFlake (toString ./.); in flake.packages.x86_64-linux.multica-web.pnpmDeps.overrideAttrs (_: { outputHash = flake.inputs.nixpkgs.lib.fakeHash; })'
+          export SYNC_EXPECTED_DRV
+          SYNC_EXPECTED_DRV=$(nix eval --impure --no-write-lock-file --raw --expr "($nix_expr).drvPath")
+          set +e
+          nix build --impure --no-write-lock-file --no-link --print-build-logs --expr "$nix_expr" > "$RUNNER_TEMP/sync-pnpm-hash.log" 2>&1
+          hash_status=$?
+          set -e
+          tail -n 60 "$RUNNER_TEMP/sync-pnpm-hash.log"
+          test "$hash_status" -ne 0
+          python3 <<'PY'
+          import base64
+          import os
+          import re
+          from pathlib import Path
+
+          log = (Path(os.environ['RUNNER_TEMP']) / 'sync-pnpm-hash.log').read_text()
+          log = re.sub(r'\x1b\[[0-9;]*m', '', log)
+          marker = "hash mismatch in fixed-output derivation '" + os.environ['SYNC_EXPECTED_DRV'] + "':"
+          assert marker in log, 'Failure must be the requested dependency derivation hash mismatch'
+          mismatch = log.split(marker, 1)[1]
+          assert re.search(r'^\s*specified:\s*sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\s*$', mismatch, re.MULTILINE)
+          hashes = set(re.findall(r'^\s*got:\s*(sha256-[A-Za-z0-9+/]+={0,2})\s*$', log, re.MULTILINE))
+          assert len(hashes) == 1, 'Expected one unique actual Nix dependency hash'
+          actual = hashes.pop()
+          assert len(base64.b64decode(actual.removeprefix('sha256-'), validate=True)) == 32
+          path = Path('nix/packages/multica-web.nix')
+          source = path.read_text()
+          old = '"sha256-d2FoLmnR9OanAXa6dwx24N20F7AQDSquQpEj/m17fL4="'
+          assert source.count(old) == 1
+          path.write_text(source.replace(old, '"' + actual + '"'))
+          (Path(os.environ['RUNNER_TEMP']) / 'sync-pnpm-hash.txt').write_text(actual + '\n')
+          print('Measured pnpmDeps.hash=' + actual)
+          PY
+          git diff --check
+          git diff -- nix/packages/multica-web.nix
+          git add nix/packages/multica-web.nix
+
+      - name: Publish unreferenced candidate Git objects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+          git commit -m 'merge: sync upstream 392ca3d8 and refresh Nix pnpm dependencies'
+          test "$(git rev-parse HEAD^1)" = "$SYNC_FORK"
+          test "$(git rev-parse HEAD^2)" = "$SYNC_UPSTREAM"
+          test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 3
+          git merge-base --is-ancestor "$SYNC_FORK" HEAD
+          git merge-base --is-ancestor "$SYNC_UPSTREAM" HEAD
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$SYNC_MAIN"
+          node scripts/check-migration-numbers.mjs --base origin/main --head HEAD
+          test -z "$(git status --porcelain)"
+          python3 <<'PY'
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+
+          def tree_at(ref):
+              result = {}
+              for entry in git('ls-tree', '-r', '-z', ref).split(b'\0'):
+                  if not entry:
+                      continue
+                  meta, path = entry.split(b'\t', 1)
+                  mode, kind, sha = meta.decode('ascii').split()
+                  result[path.decode('utf-8')] = {'mode': mode, 'type': kind, 'sha': sha}
+              return result
+
+          def post(resource, body):
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/Tr0sT/multica/git/' + resource,
+                  data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
+                  headers={
+                      'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                      'Accept': 'application/vnd.github+json',
+                      'Content-Type': 'application/json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+                  method='POST',
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise RuntimeError(f'Git Data {resource} failed: {error.code}: {error.read().decode("utf-8")}') from None
+
+          base = tree_at(os.environ['SYNC_FORK'])
+          upstream = tree_at(os.environ['SYNC_UPSTREAM'])
+          candidate = tree_at('HEAD')
+          existing = {entry['sha'] for entry in [*base.values(), *upstream.values()]}
+          entries = []
+          for path in sorted(base.keys() | candidate.keys()):
+              before, after = base.get(path), candidate.get(path)
+              if before == after:
+                  continue
+              if after is None:
+                  entries.append({'path': path, **before, 'sha': None})
+              elif after['sha'] in existing:
+                  entries.append({'path': path, **after})
+              else:
+                  assert after['type'] == 'blob', 'Unexpected new non-blob object'
+                  content = git('cat-file', 'blob', after['sha']).decode('utf-8')
+                  entries.append({'path': path, 'mode': after['mode'], 'type': 'blob', 'content': content})
+          expected_tree = git('rev-parse', 'HEAD^{tree}').decode().strip()
+          published_tree = post('trees', {
+              'base_tree': 'e504d4ff9ebbb28b03fdbf888d4830466dc96f23',
+              'tree': entries,
+          })
+          assert published_tree['sha'] == expected_tree, 'Published tree differs from the locally verified candidate'
+          author = {
+              'name': 'github-actions[bot]',
+              'email': '41898282+github-actions[bot]@users.noreply.github.com',
+              'date': git('show', '-s', '--format=%aI', 'HEAD').decode().strip(),
+          }
+          parents = [os.environ['SYNC_FORK'], os.environ['SYNC_UPSTREAM']]
+          published_commit = post('commits', {
+              'message': git('show', '-s', '--format=%B', 'HEAD').decode().strip(),
+              'tree': expected_tree,
+              'parents': parents,
+              'author': author,
+              'committer': author,
+          })
+          assert published_commit['tree']['sha'] == expected_tree
+          assert [parent['sha'] for parent in published_commit['parents']] == parents
+          actual_hash = (Path(os.environ['RUNNER_TEMP']) / 'sync-pnpm-hash.txt').read_text().strip()
+          print('SYNC_CANDIDATE_SHA=' + published_commit['sha'])
+          print('SYNC_CANDIDATE_TREE=' + expected_tree)
+          print('SYNC_PNPM_HASH=' + actual_hash)
+          print('SYNC_UPSTREAM=' + os.environ['SYNC_UPSTREAM'])
+          print('Published only unreferenced tree/commit objects; no branch refs changed.')
+          PY
