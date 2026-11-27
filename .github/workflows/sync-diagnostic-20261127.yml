@@ -1,0 +1,35 @@
+name: Temporary upstream merge diagnostic 20261127
+on:
+  push:
+    branches: [sync-worker/upstream-20261127-0c5ee1f0]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.repository == 'Tr0sT/multica'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Review exact three-way merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=d30edafd541921af285993ca70e787ae6f55ecd1
+          target=0c5ee1f07d87dc62cc9c6138cef7f7f44a74eb9f
+          git checkout --detach "$base"
+          git fetch --no-tags https://github.com/multica-ai/multica.git "$target"
+          test "$(git merge-base HEAD "$target")" = aa1fa4ba08bb45d462d4b97b51345a930ac1168a
+          git config user.name "Sync worker"
+          git config user.email "sync-worker@users.noreply.github.com"
+          git config core.hooksPath /dev/null
+          if ! git -c rerere.enabled=false merge --no-commit --no-ff "$target"; then
+            test "$(git rev-parse MERGE_HEAD)" = "$target"
+          fi
+          git diff --name-only --diff-filter=U
+          git diff --cc -- $(git diff --name-only --diff-filter=U)
+          git diff --cached --stat HEAD -- server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
+          git diff --cached --name-status HEAD -- server/migrations/
