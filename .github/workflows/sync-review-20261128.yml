@@ -1,0 +1,75 @@
+name: Review upstream sync 20261128
+on:
+  push:
+    branches: [sync-worker/upstream-20261128-10543473]
+permissions:
+  contents: read
+jobs:
+  review:
+    if: github.repository == 'Tr0sT/multica' && github.ref == 'refs/heads/sync-worker/upstream-20261128-10543473'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 7aba2c4ef3ecba7300921ba175f73a680f9d1d3a
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Review three-way merge
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/multica-ai/multica.git 105434734b00f89c5aa8846c6d49a7f2134f5a9d
+          test "$(git merge-base HEAD 105434734b00f89c5aa8846c6d49a7f2134f5a9d)" = 392ca3d8463bc1d4c2145b842563166918158403
+          git config user.name 'Sync reviewer'
+          git config user.email 'sync-reviewer@users.noreply.github.com'
+          git -c rerere.enabled=false merge --no-ff --no-commit 105434734b00f89c5aa8846c6d49a7f2134f5a9d || test "$(git rev-parse MERGE_HEAD)" = 105434734b00f89c5aa8846c6d49a7f2134f5a9d
+          echo SYNC_CONFLICTS_START
+          git diff --name-only --diff-filter=U
+          git diff --cc -- $(git diff --name-only --diff-filter=U)
+          echo SYNC_CONFLICTS_END
+          git diff --cached --stat HEAD
+          git diff --cached --name-status HEAD -- server/migrations/ server/go.mod server/go.sum pnpm-lock.yaml flake.lock nix/
+          test -z "$(git diff --name-only --diff-filter=U | grep -v '^server/pkg/db/generated/' || true)"
+          # Generated output must be regenerated from the merged schema and queries.
+          git diff --name-only --diff-filter=U -z | xargs -0 -r git checkout --ours --
+          git diff --name-only --diff-filter=U -z | xargs -0 -r git add --
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '~1.27.4'
+          check-latest: true
+          cache: false
+      - name: Regenerate and review merged SQL
+        run: |
+          set -euo pipefail
+          make sqlc
+          git add server/pkg/db/generated server/ee
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+          git diff --exit-code
+          node scripts/check-migration-numbers.mjs --base origin/main --head HEAD
+          git diff --cached --name-status HEAD
+          echo SYNC_TREE=$(git write-tree)
+          python3 <<'PY'
+          import json, subprocess
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+          def tree(ref):
+              rows={}
+              for item in git('ls-tree','-r','-z',ref).split(b'\0'):
+                  if not item: continue
+                  meta,p=item.split(b'\t',1)
+                  mode,kind,sha=meta.decode().split()
+                  rows[p.decode()]={'mode':mode,'type':kind,'sha':sha}
+              return rows
+          base=tree('HEAD')
+          upstream=tree('105434734b00f89c5aa8846c6d49a7f2134f5a9d')
+          final=tree(git('write-tree').decode().strip())
+          for p in sorted(base.keys()|final.keys()):
+              b,a=base.get(p),final.get(p)
+              if b==a: continue
+              print('SYNC_ENTRY '+json.dumps({'path':p,'before':b,'after':a,'upstream':upstream.get(p)},ensure_ascii=False))
+              if a and a!=upstream.get(p):
+                  print('SYNC_PATCH_START '+p)
+                  print(git('diff','--no-ext-diff','--no-color','--cached','HEAD','--',p).decode(),end='')
+                  print('SYNC_PATCH_END '+p)
+          PY
