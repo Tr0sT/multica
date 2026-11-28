@@ -55,6 +55,7 @@ type Agent struct {
 	ServiceTier           pgtype.Text `json:"service_tier"`
 	ConversationStarters  []byte      `json:"conversation_starters"`
 	PluginSelection       []byte      `json:"plugin_selection"`
+	ToolDetailsVisibility string      `json:"tool_details_visibility"`
 }
 
 type AgentApp struct {
