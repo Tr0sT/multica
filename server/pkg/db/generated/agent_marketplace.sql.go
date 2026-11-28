@@ -712,7 +712,7 @@ func (q *Queries) ResolveCurrentAgentPlugin(ctx context.Context, arg ResolveCurr
 
 const setAgentPluginSelection = `-- name: SetAgentPluginSelection :one
 UPDATE agent SET plugin_selection = $3, updated_at = now()
-WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_selection
+WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_selection, tool_details_visibility
 `
 
 type SetAgentPluginSelectionParams struct {
@@ -755,6 +755,7 @@ func (q *Queries) SetAgentPluginSelection(ctx context.Context, arg SetAgentPlugi
 		&i.ServiceTier,
 		&i.ConversationStarters,
 		&i.PluginSelection,
+		&i.ToolDetailsVisibility,
 	)
 	return i, err
 }

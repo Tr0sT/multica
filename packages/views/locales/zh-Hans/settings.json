@@ -380,17 +380,23 @@
     "record_aria": "修改\"{{action}}\"的快捷键",
     "recording": "请按键",
     "record_hint": "Esc 取消 · Delete 清除",
+    "record_sequence_hint": "按一个键；连按两个键可设为序列，如 G 然后 I · Esc 取消",
+    "record_then_hint": "按第二个键 · ↵ 只用一个键 · Backspace 重来",
+    "then": "然后",
     "unassigned": "未设置",
     "no_results": "没有匹配的快捷键操作。",
     "conflict_error": "已被\"{{action}}\"使用。",
     "reserved_error": "该快捷键已被浏览器或桌面窗口占用。",
     "send_error": "发送只能使用 Enter 或 Cmd/Ctrl + Enter。",
     "unsafe_error": "这个按键会干扰文字输入或基础键盘导航。",
+    "unrecognized_error": "无法录制这个组合键，请换一个试试。",
     "send_enter_hint": "Shift+Enter 可插入段落、继续列表，或在代码块中换行。",
     "categories": {
       "general": "常规",
+      "issue": "任务",
       "navigation": "导航"
     },
+    "issue_scope": "作用于眼前的任务：预览中的任务、列表中选中的任务，或当前打开的任务。",
     "actions": {
       "openSearch": {
         "label": "打开搜索",
@@ -432,9 +438,57 @@
         "label": "延后通知",
         "description": "延后从收件箱打开的任务；已延后时让它现在回来。"
       },
+      "markInboxUnread": {
+        "label": "切换通知未读状态",
+        "description": "在当前打开的收件箱通知上切换已读或未读，不离开当前页面。"
+      },
+      "nextInboxItem": {
+        "label": "下一条通知",
+        "description": "打开当前收件箱列表中的下一条通知。"
+      },
+      "prevInboxItem": {
+        "label": "上一条通知",
+        "description": "打开当前收件箱列表中的上一条通知。"
+      },
       "undoInboxAction": {
         "label": "撤销收件箱操作",
         "description": "提示还在时，撤销上一次归档、延后或取消订阅；提示消失后，打开的通知已归档时把它放回收件箱，在\"收件箱已清空\"页撤销页面上写明的操作。"
+      },
+      "setIssueStatus": {
+        "label": "更改状态",
+        "description": "打开状态选择。"
+      },
+      "assignIssue": {
+        "label": "指派负责人",
+        "description": "打开负责人选择。"
+      },
+      "setIssuePriority": {
+        "label": "设置优先级",
+        "description": "打开优先级选择。"
+      },
+      "setIssueLabels": {
+        "label": "编辑标签",
+        "description": "打开标签选择。"
+      },
+      "setIssueDueDate": {
+        "label": "设置截止日期",
+        "description": "打开截止日期选择。"
+      },
+      "moveIssueToProject": {
+        "label": "移动到项目",
+        "description": "打开项目选择。"
+      },
+      "runIssueQuickAction": {
+        "label": "运行快捷操作",
+        "description": "仅在单个任务且有可用的快捷操作时可用。"
+      },
+      "replyToIssue": {
+        "label": "回复",
+        "description": "聚焦当前任务的评论框。"
+      },
+      "showShortcuts": {
+        "label": "显示快捷键",
+        "description": "打开快捷键列表，当前页面相关的排在前面。"
       },
       "send": {
         "label": "发送",
@@ -513,7 +567,32 @@
       "reset_zoom": "重置缩放",
       "close_dialog": "关闭对话框或菜单"
     },
-    "unrecognized_error": "无法录制这个组合键，请换一个试试。"
+    "cheatsheet": {
+      "title": "快捷键",
+      "current_page": "当前页面",
+      "footer_prefix": "快捷键仅保存在本设备，可在 ",
+      "footer_link": "设置 › 快捷键",
+      "footer_suffix": " 中修改。",
+      "groups": {
+        "inbox": "收件箱",
+        "issue": "任务",
+        "navigation": "导航",
+        "general": "常规",
+        "list": "列表与看板",
+        "editor": "编辑器"
+      },
+      "rows": {
+        "list_move": "下移 / 上移",
+        "list_columns": "在看板列之间移动",
+        "list_open": "打开",
+        "list_peek": "预览",
+        "list_select": "选中",
+        "list_extend": "扩展选择",
+        "list_select_all": "全选",
+        "list_clear": "取消选择",
+        "editor_leave": "离开输入框"
+      }
+    }
   },
   "chat": {
     "floating_label": "悬浮聊天窗",
@@ -878,10 +957,6 @@
         "dates": "改日期",
         "labels": "改标签"
       },
-      "after_label": "归档后",
-      "after_description": "正在看的通知被自动归档时。手动归档（E）照旧打开下一条。",
-      "after_stay": "停在当前任务",
-      "after_next": "打开下一条",
       "archived_label": "已归档的通知",
       "archived_description": "可以在这里找回并取消归档",
       "archived_action": "查看已归档"
@@ -899,6 +974,10 @@
       "comments": {
         "label": "评论",
         "description": "你订阅的任务有新评论时"
+      },
+      "squad_handoffs": {
+        "label": "包含小队内部交接",
+        "description": "小队队长给成员派活、成员向队长回报的评论。@你、智能体运行失败和小队收尾时的最终回报照常通知。"
       },
       "mentions": {
         "label": "提及",
@@ -1425,108 +1504,6 @@
     "connect_success_toast": "已连接 Telegram 机器人",
     "connect_failed_toast": "连接 Telegram 机器人失败"
   },
-  "mattermost": {
-    "edit_button": "编辑",
-    "edit_dialog_title": "编辑 Mattermost 集成",
-    "edit_success_toast": "Mattermost 设置已保存",
-    "edit_failed_toast": "无法更新 Mattermost 设置",
-    "context": {
-      "label": "发送给智能体的历史记录",
-      "message": "仅当前消息",
-      "thread": "整个讨论串",
-      "channel": "聊天历史",
-      "unknown": "未知的历史记录设置",
-      "period": "历史记录时间范围",
-      "hour": "最近 1 小时",
-      "six_hours": "最近 6 小时",
-      "day": "最近 24 小时",
-      "three_days": "最近 3 天",
-      "week": "最近 7 天",
-      "month": "最近 30 天",
-      "sixty_days": "最近 60 天",
-      "ninety_days": "最近 90 天",
-      "year": "最近一年",
-      "unlimited": "不限",
-      "channel_unlimited_summary": "聊天历史，不限日期",
-      "help": "选择从 Mattermost 读取的历史记录。现有的 Multica 对话会保留。",
-      "notice": "其他参与者的消息会保存到 Multica 并发送给智能体使用的模型。最多 1,000 条消息 / 128 KiB；历史不完整时会注明。",
-      "summary": "上下文：{{selection}}",
-      "channel_summary": "最近 {{hours}} 小时的聊天历史"
-    },
-    "section_title": "Mattermost",
-    "page_description": "将每个 Multica 智能体连接到你自有服务器上的 Mattermost 机器人。成员可私聊机器人、在频道里 @ 它、输入 /issue 创建 Multica 任务，并在同一话题串中收到智能体的回复。",
-    "not_enabled_title": "Mattermost 集成未启用",
-    "not_enabled_description_prefix": "在服务器上设置",
-    "not_enabled_description_suffix": "以启用 Mattermost 机器人安装。",
-    "not_enabled_self_host_hint": "自部署用户：详见项目 README。",
-    "preview_title": "Mattermost 安装即将上线",
-    "preview_description": "静态加密密钥已设置，但本部署暂未开放安装。开放后，连接按钮会出现在这里。",
-    "connected_bots": "已连接的机器人",
-    "loading": "加载中...",
-    "load_failed": "加载 Mattermost 安装失败",
-    "empty_title": "尚未连接机器人",
-    "empty_description_prefix": "在本工作区打开一个智能体，点击",
-    "empty_description_cta": "连接 Mattermost",
-    "empty_description_suffix": "为其安装机器人。",
-    "revoked_badge": "已撤销",
-    "installed_at_label": "安装于 {{when}}",
-    "disconnect": "断开连接",
-    "disconnecting": "正在断开...",
-    "disconnect_confirm_title": "断开此 Mattermost 机器人？",
-    "disconnect_confirm_description": "机器人将停止接收本工作区的 Mattermost 消息。Multica 中的会话记录会保留；之后可在同一智能体上重新连接。",
-    "disconnect_confirm_cancel": "取消",
-    "toast_disconnected": "已断开 Mattermost 机器人",
-    "toast_disconnect_failed": "断开失败",
-    "bind_button": "连接 Mattermost",
-    "bind_button_title": "将 {{agent}} 连接到 Mattermost 机器人",
-    "agent_bot_connected_label": "已连接 Mattermost",
-    "agent_bot_disconnect_tooltip": "解除该智能体与 Mattermost 机器人的绑定，机器人将停止接收 Mattermost 消息。",
-    "agent_bot_manage_link": "打开 Mattermost",
-    "agent_bot_manage_tooltip": "在浏览器中打开该 Mattermost 服务器。",
-    "connect_dialog_title": "连接 Mattermost 机器人",
-    "connect_dialog_description": "在 Mattermost 系统控制台中创建机器人账号并为其生成访问令牌，然后在下方粘贴服务器地址和该令牌。两者都会实时校验，令牌将加密存储。",
-    "connect_docs_link": "分步指南：将 Multica 智能体连接到 Mattermost",
-    "server_url_label": "服务器地址",
-    "access_token_label": "机器人访问令牌",
-    "connect_submit": "连接",
-    "connect_submitting": "正在连接...",
-    "connect_cancel": "取消",
-    "connect_success_toast": "已连接 Mattermost 机器人",
-    "connect_failed_toast": "连接 Mattermost 机器人失败",
-    "not_enabled_description": "请联系 Multica 运维人员启用 Mattermost，并批准服务器的 HTTPS 地址。",
-    "denied_reply": {
-      "label": "对列表外账号的回复",
-      "text": "文字",
-      "image": "随机图片",
-      "help": "自动发送，不启动智能体，也不消耗智能体 token。",
-      "text_label": "回复文字",
-      "text_help": "最多 4000 个字符。留空则发送默认的拒绝访问提示。",
-      "image_label": "回复图片集",
-      "image_help": "支持 PNG、JPEG、GIF 或 WebP，每张最大 5 MiB。每次回复随机选择一张，可能重复。",
-      "preview": "自动回复图片预览",
-      "preview_failed": "无法加载已保存的图片，请重新上传。",
-      "unknown": "未知回复类型",
-      "remove_image": "移除 {{name}}"
-    },
-    "access": {
-      "label": "谁可以使用此机器人",
-      "members": "已绑定账号的 Multica 工作区成员",
-      "anyone": "任何 Mattermost 用户",
-      "allowlist": "指定的 Mattermost 账号",
-      "users_label": "允许访问的 Mattermost 用户名",
-      "users_help": "输入最多 100 个 @用户名，以逗号或换行分隔。列表为空时，所有人均无法访问。用户名变更不会转移账号的访问权限。",
-      "unknown": "未知访问模式",
-      "notice": "无需 Multica 账号。请求以机器人安装者的身份运行，可以使用智能体的工具和已连接应用。",
-      "summary": "访问权限：{{selection}}"
-    },
-    "attachments": {
-      "label": "发送给智能体的附件",
-      "links": "发送链接",
-      "none": "不发送",
-      "unknown": "未知附件设置",
-      "help": "当前消息和所选历史仅传递文件名、类型、大小和链接。按需下载文件。链接在 24 小时内可访问文件，请勿公开分享。"
-    }
-  },
   "repositories": {
     "section_title": "代码仓库",
     "description": "智能体可使用这些仓库处理代码。",
@@ -1996,7 +1973,8 @@
       "pending": "等待确认",
       "approved": "已批准",
       "rejected": "已拒绝",
-      "rate_limited": "已限流"
+      "rate_limited": "已限流",
+      "quota_exceeded": "已达月度上限"
     },
     "scopes": {
       "team": "团队账号",
@@ -2132,7 +2110,76 @@
       "empty_attention": "没有需要你处理的事项。",
       "no_matches": "没有匹配的应用。",
       "unavailable": "此服务器未提供应用功能。",
-      "retry": "重试"
+      "retry": "重试",
+      "catalog": "目录",
+      "catalog_failed": "无法加载应用目录。",
+      "category_curated": "精选",
+      "categories_label": "分类",
+      "connect_oauth": "OAuth 登录",
+      "connect_key": "填写 API key",
+      "show_more": "显示更多",
+      "categories": {
+        "ai_ml": "AI 与机器学习",
+        "developer_tools": "开发与运维",
+        "data_analytics": "数据分析",
+        "productivity": "效率与项目管理",
+        "collaboration": "协作与沟通",
+        "marketing_social": "营销与社交媒体",
+        "documents": "文档与文件",
+        "sales_support": "销售与客服",
+        "crm": "CRM",
+        "finance": "财务与会计",
+        "workflow_automation": "工作流自动化",
+        "design": "设计与创意",
+        "ecommerce": "电商",
+        "advertising": "广告投放",
+        "scheduling": "日程与预约",
+        "entertainment": "娱乐与媒体",
+        "hr_recruiting": "人事与招聘",
+        "education": "教育",
+        "model_context_protocol": "MCP 服务器",
+        "marketing_automation": "营销自动化",
+        "email": "邮件",
+        "security_identity_tools": "安全与身份",
+        "forms_surveys": "表单与问卷",
+        "databases": "数据库",
+        "web_scraping_browser": "网页抓取与浏览器",
+        "email_newsletters": "邮件订阅",
+        "business_intelligence": "商业智能",
+        "ai_web_scraping": "AI 网页抓取",
+        "ai_agents": "AI 智能体",
+        "web_search_research": "网页搜索与研究",
+        "ai_sales_tools": "AI 销售工具",
+        "ai_content_generation": "AI 内容生成",
+        "payment_processing": "支付处理",
+        "server_monitoring": "服务器监控",
+        "video_audio": "视频与音频",
+        "signatures": "电子签名",
+        "phone_sms": "电话与短信",
+        "audio_speech": "音频与语音",
+        "ai_chatbots": "AI 聊天机器人",
+        "ai_document_extraction": "AI 文档提取",
+        "url_shortener": "短链接",
+        "people_contact_data": "人员与联系人数据",
+        "notifications": "通知",
+        "event_management": "活动管理",
+        "places_weather": "地点与天气",
+        "market_data": "市场数据",
+        "it_operations": "IT 运维",
+        "internet_of_things": "物联网",
+        "spreadsheets": "电子表格",
+        "fundraising": "筹款",
+        "website_builders": "网站与应用搭建",
+        "reviews": "评价",
+        "company_data": "企业数据",
+        "ai_meeting_assistants": "AI 会议助手",
+        "bookmark_managers": "书签管理",
+        "social_creator_data": "社交与创作者数据",
+        "seo_ai_visibility": "SEO 与 AI 可见度",
+        "legal_public_records": "法律与公共记录",
+        "ai_safety": "AI 安全与合规",
+        "other": "其他"
+      }
     },
     "app_page": {
       "agents_title": "智能体",
@@ -2314,5 +2361,107 @@
     "cancel": "取消",
     "toast_joined": "已加入 {{title}}",
     "toast_failed": "加入项目失败。"
+  },
+  "mattermost": {
+    "edit_button": "编辑",
+    "edit_dialog_title": "编辑 Mattermost 集成",
+    "edit_success_toast": "Mattermost 设置已保存",
+    "edit_failed_toast": "无法更新 Mattermost 设置",
+    "context": {
+      "label": "发送给智能体的历史记录",
+      "message": "仅当前消息",
+      "thread": "整个讨论串",
+      "channel": "聊天历史",
+      "unknown": "未知的历史记录设置",
+      "period": "历史记录时间范围",
+      "hour": "最近 1 小时",
+      "six_hours": "最近 6 小时",
+      "day": "最近 24 小时",
+      "three_days": "最近 3 天",
+      "week": "最近 7 天",
+      "month": "最近 30 天",
+      "sixty_days": "最近 60 天",
+      "ninety_days": "最近 90 天",
+      "year": "最近一年",
+      "unlimited": "不限",
+      "channel_unlimited_summary": "聊天历史，不限日期",
+      "help": "选择从 Mattermost 读取的历史记录。现有的 Multica 对话会保留。",
+      "notice": "其他参与者的消息会保存到 Multica 并发送给智能体使用的模型。最多 1,000 条消息 / 128 KiB；历史不完整时会注明。",
+      "summary": "上下文：{{selection}}",
+      "channel_summary": "最近 {{hours}} 小时的聊天历史"
+    },
+    "section_title": "Mattermost",
+    "page_description": "将每个 Multica 智能体连接到你自有服务器上的 Mattermost 机器人。成员可私聊机器人、在频道里 @ 它、输入 /issue 创建 Multica 任务，并在同一话题串中收到智能体的回复。",
+    "not_enabled_title": "Mattermost 集成未启用",
+    "not_enabled_description_prefix": "在服务器上设置",
+    "not_enabled_description_suffix": "以启用 Mattermost 机器人安装。",
+    "not_enabled_self_host_hint": "自部署用户：详见项目 README。",
+    "preview_title": "Mattermost 安装即将上线",
+    "preview_description": "静态加密密钥已设置，但本部署暂未开放安装。开放后，连接按钮会出现在这里。",
+    "connected_bots": "已连接的机器人",
+    "loading": "加载中...",
+    "load_failed": "加载 Mattermost 安装失败",
+    "empty_title": "尚未连接机器人",
+    "empty_description_prefix": "在本工作区打开一个智能体，点击",
+    "empty_description_cta": "连接 Mattermost",
+    "empty_description_suffix": "为其安装机器人。",
+    "revoked_badge": "已撤销",
+    "installed_at_label": "安装于 {{when}}",
+    "disconnect": "断开连接",
+    "disconnecting": "正在断开...",
+    "disconnect_confirm_title": "断开此 Mattermost 机器人？",
+    "disconnect_confirm_description": "机器人将停止接收本工作区的 Mattermost 消息。Multica 中的会话记录会保留；之后可在同一智能体上重新连接。",
+    "disconnect_confirm_cancel": "取消",
+    "toast_disconnected": "已断开 Mattermost 机器人",
+    "toast_disconnect_failed": "断开失败",
+    "bind_button": "连接 Mattermost",
+    "bind_button_title": "将 {{agent}} 连接到 Mattermost 机器人",
+    "agent_bot_connected_label": "已连接 Mattermost",
+    "agent_bot_disconnect_tooltip": "解除该智能体与 Mattermost 机器人的绑定，机器人将停止接收 Mattermost 消息。",
+    "agent_bot_manage_link": "打开 Mattermost",
+    "agent_bot_manage_tooltip": "在浏览器中打开该 Mattermost 服务器。",
+    "connect_dialog_title": "连接 Mattermost 机器人",
+    "connect_dialog_description": "在 Mattermost 系统控制台中创建机器人账号并为其生成访问令牌，然后在下方粘贴服务器地址和该令牌。两者都会实时校验，令牌将加密存储。",
+    "connect_docs_link": "分步指南：将 Multica 智能体连接到 Mattermost",
+    "server_url_label": "服务器地址",
+    "access_token_label": "机器人访问令牌",
+    "connect_submit": "连接",
+    "connect_submitting": "正在连接...",
+    "connect_cancel": "取消",
+    "connect_success_toast": "已连接 Mattermost 机器人",
+    "connect_failed_toast": "连接 Mattermost 机器人失败",
+    "not_enabled_description": "请联系 Multica 运维人员启用 Mattermost，并批准服务器的 HTTPS 地址。",
+    "denied_reply": {
+      "label": "对列表外账号的回复",
+      "text": "文字",
+      "image": "随机图片",
+      "help": "自动发送，不启动智能体，也不消耗智能体 token。",
+      "text_label": "回复文字",
+      "text_help": "最多 4000 个字符。留空则发送默认的拒绝访问提示。",
+      "image_label": "回复图片集",
+      "image_help": "支持 PNG、JPEG、GIF 或 WebP，每张最大 5 MiB。每次回复随机选择一张，可能重复。",
+      "preview": "自动回复图片预览",
+      "preview_failed": "无法加载已保存的图片，请重新上传。",
+      "unknown": "未知回复类型",
+      "remove_image": "移除 {{name}}"
+    },
+    "access": {
+      "label": "谁可以使用此机器人",
+      "members": "已绑定账号的 Multica 工作区成员",
+      "anyone": "任何 Mattermost 用户",
+      "allowlist": "指定的 Mattermost 账号",
+      "users_label": "允许访问的 Mattermost 用户名",
+      "users_help": "输入最多 100 个 @用户名，以逗号或换行分隔。列表为空时，所有人均无法访问。用户名变更不会转移账号的访问权限。",
+      "unknown": "未知访问模式",
+      "notice": "无需 Multica 账号。请求以机器人安装者的身份运行，可以使用智能体的工具和已连接应用。",
+      "summary": "访问权限：{{selection}}"
+    },
+    "attachments": {
+      "label": "发送给智能体的附件",
+      "links": "发送链接",
+      "none": "不发送",
+      "unknown": "未知附件设置",
+      "help": "当前消息和所选历史仅传递文件名、类型、大小和链接。按需下载文件。链接在 24 小时内可访问文件，请勿公开分享。"
+    }
   }
 }

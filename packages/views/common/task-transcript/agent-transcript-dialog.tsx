@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, forwardRef } from "react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
+import { prefersReducedMotion, useReducedMotion } from "@multica/core/appearance";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { UI_EASE_IN, UI_EASE_OUT, UI_EASE_OUT_CSS, UI_MOTION_DURATION } from "@multica/ui/lib/motion";
 import { useTraceIssueLabels } from "./use-trace-issue-labels";
 import { Virtuoso, type VirtuosoHandle, type Components } from "react-virtuoso";
 import {
@@ -12,8 +15,6 @@ import {
   XCircle,
   X,
   Loader2,
-  Copy,
-  Check,
   ChevronRight,
   Filter,
   FilePen,
@@ -27,10 +28,31 @@ import {
   Info,
   Coins,
   GitBranch,
+  Trash2,
+  Lock,
 } from "@multica/ui/icons";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
+import { canPurgeRunLog, useCurrentMember } from "@multica/core/permissions";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { chatKeys } from "@multica/core/chat/queries";
+import { issueKeys } from "@multica/core/issues/queries";
+import { agentTasksKeys } from "@multica/core/agents/queries";
 import { cn } from "@multica/ui/lib/utils";
+import { useIsMobile } from "@multica/ui/hooks/use-mobile";
 import { copyText } from "@multica/ui/lib/clipboard";
 import { Button } from "@multica/ui/components/ui/button";
+import { CopyCheckIcon } from "@multica/ui/components/common/copy-check-icon";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { Dialog, DialogContent, DialogTitle } from "@multica/ui/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@multica/ui/components/ui/popover";
@@ -139,7 +161,13 @@ interface AgentTranscriptDialogProps {
    * The dialog stays generic — slot content is the caller's concern.
    */
   headerSlot?: React.ReactNode;
+  /** Called after an admin clears this run's log, so a caller holding its own
+   * copy of the timeline can drop it. */
+  onTranscriptPurged?: () => void;
 }
+
+const NO_ITEMS: TimelineItem[] = [];
+const PURGEABLE_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -166,6 +194,9 @@ function formatStepDuration(ms: number): string {
   const seconds = Math.round((ms % 60_000) / 1000);
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
+
+/** Characters in the narrowest offset, "+00:00". */
+const MIN_OFFSET_CHARS = 6;
 
 /** Offset from the run's start, which is what a step's position means. */
 function formatOffset(ms: number): string {
@@ -256,11 +287,11 @@ function RunDetailRow({
           <span className="text-muted-foreground">{label}</span>
           <span className="flex min-w-0 items-start gap-1.5">
             <span className={cn(valueClass, "flex-1")}>{value}</span>
-            {copied ? (
-              <Check className="mt-0.5 h-3 w-3 shrink-0 text-success" />
-            ) : (
-              <Copy className="mt-0.5 h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-            )}
+            <CopyCheckIcon
+              copied={Boolean(copied)}
+              className="mt-0.5 h-3 w-3 shrink-0"
+              copyClassName="opacity-0 group-hover:opacity-100"
+            />
           </span>
         </button>
       </TooltipHint>
@@ -320,17 +351,33 @@ export function AgentTranscriptDialog({
   open,
   onOpenChange,
   task,
-  items,
+  items: itemsProp,
   agentName,
   isLive = false,
   finalFocus = false,
   headerSlot,
   contentState,
+  onTranscriptPurged,
 }: AgentTranscriptDialogProps) {
   const { t } = useT("agents");
   const formatSpend = useFormatSpend();
   const locale = useLocale();
-  const formatText = useTraceIssueLabels(useWorkspaceId(), task.issue_id, items, open);
+  const wsId = useWorkspaceId();
+  const queryClient = useQueryClient();
+  const { userId, role } = useCurrentMember(wsId);
+  const { getActorName } = useActorName();
+  const [localPurge, setLocalPurge] = useState<{ taskId: string; at: string; by: string } | null>(null);
+  const purge = task.transcript_purged_at
+    ? { at: task.transcript_purged_at, by: task.transcript_purged_by ?? "" }
+    : localPurge?.taskId === task.id
+      ? localPurge
+      : null;
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const canPurge =
+    !purge && !isLive && PURGEABLE_STATUSES.has(task.status) && canPurgeRunLog({ userId, role }).allowed;
+  const items = purge ? NO_ITEMS : itemsProp;
+  const formatText = useTraceIssueLabels(wsId, task.issue_id, items, open);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(() => new Set());
   const [query, setQuery] = useState("");
@@ -547,10 +594,23 @@ export function AgentTranscriptDialog({
     return undefined;
   }, [steps]);
   const runEnd = task.completed_at ?? lastStamp;
+  // Offsets only grow, so the widest label the list shows is the run's last
+  // one. Sizing the column to it in `ch` keeps every rail in one line at any
+  // run length or font size. Take the later end: a step stamped past
+  // completed_at (clock skew) still shows its own offset.
+  const offsetChars = useMemo(() => {
+    const ends = [task.completed_at, lastStamp].flatMap((iso) => timeMs(iso ?? undefined) ?? []);
+    if (runStartMs === undefined || ends.length === 0) return MIN_OFFSET_CHARS;
+    return formatOffset(Math.max(...ends) - runStartMs).length;
+  }, [task.completed_at, lastStamp, runStartMs]);
 
   const lanes = useMemo(() => buildLanes(steps, runStart, runEnd), [steps, runStart, runEnd]);
   const toolKinds = useMemo(() => toolKindTotals(steps), [steps]);
   const outcome = useMemo(() => buildRunOutcome(steps), [steps]);
+  // Hidden: the server withheld some of this run's tool details from the
+  // viewer. Restricted alone: the viewer is one of the people allowed them.
+  const toolDetailsHidden = useMemo(() => items.some((item) => item.detailsHidden), [items]);
+  const toolDetailsRestricted = agentInfo?.tool_details_visibility === "restricted";
 
   const selectedStep = useMemo(() => {
     if (selectedSeq === null) return null;
@@ -626,6 +686,30 @@ export function AgentTranscriptDialog({
 
     return () => { cancelled = true; };
   }, [open, task.agent_id, task.runtime_id]);
+
+  const reduceMotion = useReducedMotion();
+  const isMobile = useIsMobile();
+  // Track rows that arrive live while the transcript is open so only newly
+  // streamed steps fade in (never historical rows mounted during Virtuoso scroll).
+  const knownSeqsRef = useRef<{ taskId: string; seqs: Set<number> } | null>(null);
+  const [enteringSeqs, setEnteringSeqs] = useState<ReadonlySet<number>>(() => new Set());
+  useEffect(() => {
+    if (!knownSeqsRef.current || knownSeqsRef.current.taskId !== task.id) {
+      knownSeqsRef.current = { taskId: task.id, seqs: new Set(displayRows.map((row) => row.seq)) };
+      setEnteringSeqs((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    const added: number[] = [];
+    for (const row of displayRows) {
+      if (!knownSeqsRef.current.seqs.has(row.seq)) {
+        knownSeqsRef.current.seqs.add(row.seq);
+        if (isLive) added.push(row.seq);
+      }
+    }
+    if (added.length > 0) {
+      setEnteringSeqs((prev) => new Set([...prev, ...added]));
+    }
+  }, [task.id, displayRows, isLive]);
 
   // Elapsed time for live tasks
   useEffect(() => {
@@ -712,6 +796,29 @@ export function AgentTranscriptDialog({
       showCopied();
     });
   }, [displayRows, showCopied]);
+
+  const handlePurge = useCallback(() => {
+    setPurging(true);
+    api
+      .purgeTaskTranscript(task.id)
+      .then(
+        (res) => {
+          setLocalPurge({
+            taskId: task.id,
+            at: res.transcript_purged_at ?? new Date().toISOString(),
+            by: res.transcript_purged_by || (userId ?? ""),
+          });
+          setConfirmPurge(false);
+          queryClient.setQueryData(chatKeys.taskMessages(task.id), []);
+          void queryClient.invalidateQueries({ queryKey: issueKeys.tasksAll() });
+          void queryClient.invalidateQueries({ queryKey: agentTasksKeys.all(wsId) });
+          onTranscriptPurged?.();
+          toast.success(t(($) => $.transcript.purge_done));
+        },
+        () => toast.error(t(($) => $.transcript.purge_failed)),
+      )
+      .finally(() => setPurging(false));
+  }, [task.id, userId, queryClient, wsId, onTranscriptPurged, t]);
 
   const handleToggleGroup = useCallback((seq: number) => {
     setExpandedGroups((prev) => {
@@ -825,6 +932,8 @@ export function AgentTranscriptDialog({
           ? t(($) => $.transcript.trigger_chat)
           : task.kind === "quick_create"
             ? t(($) => $.transcript.trigger_quick_create)
+            : task.kind === "doc_comment" || task.doc_id
+            ? t(($) => $.transcript.trigger_doc_comment)
             : task.kind === "direct"
               ? t(($) => $.transcript.trigger_direct)
               : t(($) => $.transcript.trigger_initial);
@@ -1103,7 +1212,9 @@ export function AgentTranscriptDialog({
         <RunTriggerRow task={task} />
 
         {/* ── What the run produced ──────────────────────────────────── */}
-        <RunOutcomeRow outcome={outcome} branch={task.branch_name} />
+        {/* Read off the tool inputs, so it has nothing true to say when those
+            were withheld. */}
+        {!toolDetailsHidden && <RunOutcomeRow outcome={outcome} branch={task.branch_name} />}
 
         {/* ── Where the time went ────────────────────────────────────── */}
         {lanes && (
@@ -1134,7 +1245,21 @@ export function AgentTranscriptDialog({
               className="min-w-0 flex-1 bg-transparent text-caption outline-none placeholder:text-faint-foreground"
             />
           </label>
-          <span className="ml-auto shrink-0 whitespace-nowrap text-caption text-muted-foreground">
+          {(toolDetailsHidden || toolDetailsRestricted) && (
+            <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-caption text-muted-foreground">
+              <Lock aria-hidden className="h-3 w-3" />
+              {toolDetailsHidden
+                ? t(($) => $.transcript.tool_details_hidden_toolbar)
+                : t(($) => $.transcript.tool_details_restricted_toolbar)}
+              <span aria-hidden className="text-faint-foreground">·</span>
+            </span>
+          )}
+          <span
+            className={cn(
+              "shrink-0 whitespace-nowrap text-caption text-muted-foreground",
+              !(toolDetailsHidden || toolDetailsRestricted) && "ml-auto",
+            )}
+          >
             {activeFilterKeys.length > 0 || trimmedQuery.length > 0
               ? t(($) => $.transcript.steps_filtered, {
                   shown: filteredSteps.length,
@@ -1223,9 +1348,18 @@ export function AgentTranscriptDialog({
                   : t(($) => $.transcript.sort_chronological)}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleCopyAll}>
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                <CopyCheckIcon copied={copied} />
                 {copyTranscriptLabel}
               </DropdownMenuItem>
+              {canPurge && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => setConfirmPurge(true)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t(($) => $.transcript.purge_log)}
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1239,6 +1373,14 @@ export function AgentTranscriptDialog({
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {t(($) => $.transcript.waiting_events)}
+                  </div>
+                ) : purge ? (
+                  <div className="flex items-center gap-2">
+                    <Trash2 aria-hidden className="h-4 w-4" />
+                    {t(($) => $.transcript.purged_by, {
+                      name: getActorName("member", purge.by),
+                      time: formatRunTime(purge.at, locale),
+                    })}
                   </div>
                 ) : steps.length === 0 ? (
                   t(($) => $.transcript.no_data)
@@ -1277,7 +1419,9 @@ export function AgentTranscriptDialog({
                     row={row}
                     formatText={formatText}
                     runStartMs={runStartMs}
+                    offsetChars={offsetChars}
                     isLive={isLive}
+                    entering={isLive && enteringSeqs.has(row.seq)}
                     selectedSeq={selectedSeq}
                     expanded={row.kind === "group" && expandedGroups.has(row.seq)}
                     onToggleGroup={handleToggleGroup}
@@ -1287,16 +1431,77 @@ export function AgentTranscriptDialog({
               />
             )}
           </div>
-          {selectedStep && (
-            <StepInspector
-              step={selectedStep}
-              runStartMs={runStartMs}
-              onClose={() => setSelectedSeq(null)}
-            />
-          )}
+          <AnimatePresence initial={false}>
+            {selectedStep && (
+              <StepInspectorDrawer
+                key="step-inspector-drawer"
+                isMobile={isMobile}
+                reduceMotion={reduceMotion}
+              >
+                <StepInspector
+                  step={selectedStep}
+                  runStartMs={runStartMs}
+                  onClose={() => setSelectedSeq(null)}
+                />
+              </StepInspectorDrawer>
+            )}
+          </AnimatePresence>
         </div>
+        <AlertDialog open={confirmPurge} onOpenChange={(next) => !purging && setConfirmPurge(next)}>
+          <AlertDialogContent className="sm:max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(($) => $.transcript.purge_confirm_title)}</AlertDialogTitle>
+              <AlertDialogDescription>{t(($) => $.transcript.purge_confirm_body)}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={purging}>{t(($) => $.transcript.purge_cancel)}</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" disabled={purging} aria-busy={purging} onClick={handlePurge}>
+                {purging && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {t(($) => $.transcript.purge_confirm_action)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function StepInspectorDrawer({
+  isMobile,
+  reduceMotion,
+  children,
+}: {
+  isMobile: boolean;
+  reduceMotion: boolean;
+  children: React.ReactNode;
+}) {
+  const isPresent = useIsPresent();
+  return (
+    <motion.div
+      inert={!isPresent}
+      // Width is always owned by motion: below md the inspector
+      // fills the dialog (its close button must stay in view), so
+      // it only fades; from md up it slides in as a drawer.
+      initial={reduceMotion ? false : { opacity: 0, width: isMobile ? "100%" : 0 }}
+      animate={{
+        opacity: 1,
+        width: isMobile ? "100%" : "auto",
+        transition: { duration: reduceMotion ? 0 : 0.2, ease: UI_EASE_OUT },
+      }}
+      exit={
+        reduceMotion
+          ? { opacity: 0, transition: { duration: 0 } }
+          : {
+              opacity: 0,
+              ...(isMobile ? {} : { width: 0 }),
+              transition: { duration: UI_MOTION_DURATION.fast, ease: UI_EASE_IN },
+            }
+      }
+      className="flex shrink-0 overflow-hidden"
+    >
+      {children}
+    </motion.div>
   );
 }
 
@@ -1416,7 +1621,9 @@ interface TranscriptRowProps {
   formatText: (text: string) => string;
   row: TraceRow;
   runStartMs?: number;
+  offsetChars: number;
   isLive: boolean;
+  entering?: boolean;
   selectedSeq: number | null;
   expanded: boolean;
   onToggleGroup: (seq: number) => void;
@@ -1424,20 +1631,52 @@ interface TranscriptRowProps {
 }
 
 function TranscriptRow(props: TranscriptRowProps) {
-  const { row } = props;
-  if (isGroupRow(row)) return <GroupRow {...props} row={row} />;
-  if (!isCallStep(row) && row.kind === "text") return <ProseRow {...props} row={row} />;
-  return <StepRow {...props} row={row} />;
+  const { row, entering } = props;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const animatedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!entering || animatedRef.current) return;
+    animatedRef.current = true;
+    const el = rowRef.current;
+    if (!el || typeof el.animate !== "function" || prefersReducedMotion()) return;
+    const anim = el.animate(
+      [{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 140, easing: UI_EASE_OUT_CSS },
+    );
+    return () => { anim.cancel(); };
+  }, [entering]);
+
+  const content = isGroupRow(row)
+    ? <GroupRow {...props} row={row} />
+    : !isCallStep(row) && row.kind === "text"
+      ? <ProseRow {...props} row={row} />
+      : <StepRow {...props} row={row} />;
+  return entering ? <div ref={rowRef}>{content}</div> : content;
 }
 
-/** The offset column: where in the run this happened. */
-function OffsetCell({ startedAt, runStartMs }: { startedAt?: string; runStartMs?: number }) {
+/**
+ * The offset column: where in the run this happened. Every row gets the same
+ * `chars` so the rails beside it line up; without `startedAt` it is a blank
+ * spacer of the same width.
+ */
+function OffsetCell({
+  startedAt,
+  runStartMs,
+  chars,
+}: {
+  startedAt?: string;
+  runStartMs?: number;
+  chars: number;
+}) {
   const locale = useLocale();
   const at = timeMs(startedAt);
   const label = at !== undefined && runStartMs !== undefined ? formatOffset(at - runStartMs) : "";
   return (
     <span
-      className="w-11 shrink-0 pt-0.5 text-right font-mono text-micro tabular-nums text-faint-foreground"
+      // `ch` is this cell's own monospace glyph, so the width follows the font
+      // size; min-w-11 keeps the minutes-only column as it always was.
+      className="min-w-11 shrink-0 pt-0.5 text-right font-mono text-micro tabular-nums text-faint-foreground"
+      style={{ width: `${chars}ch` }}
       title={startedAt ? new Date(startedAt).toLocaleString(locale) : undefined}
     >
       {label}
@@ -1502,10 +1741,10 @@ function StepDuration({
  * identity — the glyph says "the agent's own words", which is what the facet
  * selects, and it says it in 12px without a repeated string.
  */
-function ProseRow({ row, runStartMs }: TranscriptRowProps & { row: TraceMessageStep }) {
+function ProseRow({ row, runStartMs, offsetChars }: TranscriptRowProps & { row: TraceMessageStep }) {
   return (
     <div className="group flex items-start gap-2 px-4 py-2.5">
-      <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} />
+      <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} chars={offsetChars} />
       <span aria-hidden className="mt-1 w-0.5 self-stretch rounded-full bg-success" />
       <StepIcon step={row} className="mt-1 h-3 w-3 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1 pr-2">
@@ -1525,6 +1764,7 @@ function StepRow({
   row,
   formatText,
   runStartMs,
+  offsetChars,
   isLive,
   selectedSeq,
   onSelect,
@@ -1562,7 +1802,7 @@ function StepRow({
         row.kind === "error" && "bg-destructive/5",
       )}
     >
-      <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} />
+      <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} chars={offsetChars} />
       <span
         aria-hidden
         className={cn(
@@ -1580,7 +1820,7 @@ function StepRow({
       <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
         <span
           className={cn(
-            "shrink-0 text-caption font-medium",
+            "max-w-[60%] shrink-0 truncate text-caption font-medium",
             row.kind === "error" ? "text-destructive" : "text-foreground",
           )}
         >
@@ -1592,7 +1832,7 @@ function StepRow({
             call && "font-mono",
           )}
         >
-          {summary}
+          {call && callDetailsHidden(call) ? <HiddenDetails /> : summary}
         </span>
       </span>
       <DurationCell ms={call?.durationMs} pending={pending} />
@@ -1605,6 +1845,7 @@ function GroupRow({
   row,
   formatText,
   runStartMs,
+  offsetChars,
   selectedSeq,
   expanded,
   onToggleGroup,
@@ -1628,21 +1869,21 @@ function GroupRow({
         aria-expanded={expanded}
         className="group flex w-full items-start gap-2 px-4 py-1.5 text-left transition-colors hover:bg-accent/40"
       >
-        <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} />
+        <OffsetCell startedAt={row.startedAt} runStartMs={runStartMs} chars={offsetChars} />
         <span aria-hidden className="mt-0.5 w-0.5 self-stretch rounded-full bg-border" />
         <ChevronRight
           aria-hidden
           className={cn(
-            "mt-1 h-3 w-3 shrink-0 text-faint-foreground transition-transform",
+            "mt-1 h-3 w-3 shrink-0 text-faint-foreground transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
             expanded && "rotate-90",
           )}
         />
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span className="shrink-0 text-caption font-medium">{row.tool}</span>
+          <span className="max-w-[60%] shrink-0 truncate text-caption font-medium">{row.tool}</span>
           {/* Name the first thing it touched, not just how many: "Read · 4
               calls" hides the one detail that makes a folded group scannable. */}
           <span className="truncate font-mono text-micro text-muted-foreground">
-            {callSummary(row.steps[0]!, summaryLabels)}
+            {callDetailsHidden(row.steps[0]!) ? <HiddenDetails /> : callSummary(row.steps[0]!, summaryLabels)}
           </span>
           <span className="shrink-0 text-micro text-faint-foreground">
             {t(($) => $.transcript.group_calls, { count: row.steps.length })}
@@ -1651,31 +1892,36 @@ function GroupRow({
         <DurationCell ms={row.durationMs} />
       </button>
       {expanded && (
-        <div className="ml-[4.4rem] border-l pl-3">
-          {row.steps.map((step) => (
-            <button
-              key={step.seq}
-              type="button"
-              onClick={() => onSelect(step.seq)}
-              className={cn(
-                "flex w-full items-baseline gap-2 rounded-xs px-2 py-1 text-left text-micro transition-colors",
-                selectedSeq === step.seq ? "bg-brand/10" : "hover:bg-accent/40",
-              )}
-            >
-              <span className="truncate font-mono text-muted-foreground">
-                {callSummary(step, summaryLabels) || step.tool}
-              </span>
-              {step.durationMs === undefined ? (
-                <span className="ml-auto shrink-0" />
-              ) : (
-                <StepDuration
-                  ms={step.durationMs}
-                  unknownLabel={t(($) => $.transcript.step_duration_unknown)}
-                  className="ml-auto shrink-0 font-mono tabular-nums text-faint-foreground"
-                />
-              )}
-            </button>
-          ))}
+        // Laid out like a row, with a blank offset cell, so the border lands
+        // on the rail at whatever width the column has.
+        <div className="flex gap-2 pl-4">
+          <OffsetCell chars={offsetChars} />
+          <div className="min-w-0 flex-1 border-l pl-3">
+            {row.steps.map((step) => (
+              <button
+                key={step.seq}
+                type="button"
+                onClick={() => onSelect(step.seq)}
+                className={cn(
+                  "flex w-full items-baseline gap-2 rounded-xs px-2 py-1 text-left text-micro transition-colors",
+                  selectedSeq === step.seq ? "bg-brand/10" : "hover:bg-accent/40",
+                )}
+              >
+                <span className="truncate font-mono text-muted-foreground">
+                  {callDetailsHidden(step) ? <HiddenDetails /> : callSummary(step, summaryLabels) || step.tool}
+                </span>
+                {step.durationMs === undefined ? (
+                  <span className="ml-auto shrink-0" />
+                ) : (
+                  <StepDuration
+                    ms={step.durationMs}
+                    unknownLabel={t(($) => $.transcript.step_duration_unknown)}
+                    className="ml-auto shrink-0 font-mono tabular-nums text-faint-foreground"
+                  />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1703,6 +1949,22 @@ function firstLineOf(value: string | undefined): string {
   return value?.split("\n").find((line) => line.trim().length > 0) ?? "";
 }
 
+/** The agent restricts its tool details and the server withheld this call's. */
+function callDetailsHidden(step: TraceCallStep): boolean {
+  return step.call?.detailsHidden === true || step.result?.detailsHidden === true;
+}
+
+/** Stands in for a call's argument when the viewer may not read it. */
+function HiddenDetails() {
+  const { t } = useT("agents");
+  return (
+    <span className="inline-flex items-center gap-1 font-sans text-faint-foreground">
+      <Lock aria-hidden className="h-3 w-3" />
+      {t(($) => $.transcript.tool_details_hidden_value)}
+    </span>
+  );
+}
+
 // ─── Inspector ──────────────────────────────────────────────────────────────
 
 /**
@@ -1721,6 +1983,7 @@ function StepInspector({
   onClose: () => void;
 }) {
   const { t } = useT("agents");
+  const reduceMotion = useReducedMotion();
   const [copied, showCopied] = useCopyFeedback();
 
   const at = timeMs(step.startedAt);
@@ -1728,6 +1991,7 @@ function StepInspector({
 
   const call = isCallStep(step) ? step : null;
   const message = call ? null : (step as TraceMessageStep);
+  const detailsHidden = call !== null && callDetailsHidden(call);
 
   const handleCopy = useCallback(() => {
     const parts: string[] = [];
@@ -1759,8 +2023,8 @@ function StepInspector({
     <aside className="flex w-full shrink-0 flex-col border-l-0 bg-muted/25 md:w-[26rem] md:border-l">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <StepIcon step={step} className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-label font-semibold">{title}</span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-micro text-muted-foreground">
+        <span title={title} className="line-clamp-3 min-w-0 wrap-anywhere text-label font-semibold">{title}</span>
+        <span className="flex flex-1 items-center gap-1.5 whitespace-nowrap text-micro text-muted-foreground">
           {offset && <span className="font-mono tabular-nums">{offset}</span>}
           {call?.durationMs !== undefined && (
             <>
@@ -1773,16 +2037,18 @@ function StepInspector({
             </>
           )}
         </span>
-        <IconButton
-          variant="ghost"
-          size="icon-sm"
-          onClick={handleCopy}
-          label={t(($) => $.transcript.copy_step)}
-          tooltipSide="bottom"
-          className="shrink-0 text-muted-foreground"
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </IconButton>
+        {!detailsHidden && (
+          <IconButton
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleCopy}
+            label={t(($) => $.transcript.copy_step)}
+            tooltipSide="bottom"
+            className="shrink-0 text-muted-foreground"
+          >
+            <CopyCheckIcon copied={copied} />
+          </IconButton>
+        )}
         <IconButton
           variant="ghost"
           size="icon-sm"
@@ -1795,24 +2061,41 @@ function StepInspector({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {call ? (
-          <>
-            {call.call && (
-              <InspectorSection label={t(($) => $.transcript.step_input)}>
-                <StepBody item={call.call} />
-              </InspectorSection>
-            )}
-            {call.result && (
-              <InspectorSection label={t(($) => $.transcript.step_result)}>
-                <StepBody item={call.result} />
-              </InspectorSection>
-            )}
-          </>
-        ) : (
-          <InspectorSection label={title}>
-            <ToolDetailSurface text={redactSecrets(message?.item.content ?? "")} />
-          </InspectorSection>
-        )}
+        <motion.div
+          key={step.seq}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: reduceMotion ? 0 : 0.12, ease: UI_EASE_OUT }}
+        >
+          {detailsHidden ? (
+            <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">
+              <Lock aria-hidden className="mb-1 h-4 w-4 text-faint-foreground" />
+              <p className="text-caption font-medium text-foreground">
+                {t(($) => $.transcript.tool_details_hidden_title)}
+              </p>
+              <p className="text-caption text-muted-foreground">
+                {t(($) => $.transcript.tool_details_hidden_body)}
+              </p>
+            </div>
+          ) : call ? (
+            <>
+              {call.call && (
+                <InspectorSection label={t(($) => $.transcript.step_input)}>
+                  <StepBody item={call.call} />
+                </InspectorSection>
+              )}
+              {call.result && (
+                <InspectorSection label={t(($) => $.transcript.step_result)}>
+                  <StepBody item={call.result} />
+                </InspectorSection>
+              )}
+            </>
+          ) : (
+            <InspectorSection label={title}>
+              <ToolDetailSurface text={redactSecrets(message?.item.content ?? "")} />
+            </InspectorSection>
+          )}
+        </motion.div>
       </div>
     </aside>
   );

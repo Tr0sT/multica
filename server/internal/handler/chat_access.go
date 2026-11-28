@@ -16,6 +16,9 @@ func (h *Handler) gatePublicChatSessionForReader(w http.ResponseWriter, r *http.
 	if !ok {
 		return db.ChatSession{}, false
 	}
+	if !h.requireChatOwnerAccess(w, r, userID, workspaceID) {
+		return db.ChatSession{}, false
+	}
 	session, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
 		ID: sessionUUID, WorkspaceID: workspaceUUID,
 	})

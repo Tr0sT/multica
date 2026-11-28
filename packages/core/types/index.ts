@@ -1,5 +1,6 @@
 export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction, SourceContextAttachment, SourceContextAuthor, SourceContextIssueSnapshot, SourceContextCommentSnapshot, SourceContextSnapshot, SourceContextLimitUsage, SourceContextPreview, SourceContextAuthorState, IssueSourceContext,
   IssueDuplicateOf,
+  IssueBlocker,
   IssueUnread,
 } from "./issue";
 export type {
@@ -34,6 +35,7 @@ export type {
   AgentStatus,
   AgentRuntimeMode,
   AgentVisibility,
+  AgentToolDetailsVisibility,
   AgentPermissionMode,
   AgentInvocationTarget,
   AgentInvocationTargetInput,
@@ -43,6 +45,7 @@ export type {
   ContextReceiptLoad,
   ContextReceiptSource,
   TaskContextReceiptResponse,
+  TaskTranscriptPurge,
   TaskAttribution,
   AttributionUser,
   TaskCancellationActor,
@@ -84,7 +87,6 @@ export type {
   UpdateSkillRequest,
   SetAgentSkillsRequest,
   RuntimeUsage,
-  RuntimeHourlyActivity,
   RuntimeRateLimitWindowKind,
   RuntimeRateLimitStatus,
   RuntimeRateLimitWindow,
@@ -94,10 +96,13 @@ export type {
   RuntimeUsageByHour,
   DashboardUsageDaily,
   DashboardUsageByAgent,
+  DashboardUsageBySquad,
   DashboardAgentRunTime,
+  DashboardSquadRunTime,
   DashboardRunTimeDaily,
   DashboardFailureDaily,
   DashboardFailureByAgent,
+  DashboardFailureBySquad,
   RuntimeUpdate,
   RuntimeUpdateStatus,
   RuntimeModel,
@@ -148,7 +153,7 @@ export type {
   PluginTokenIssue,
 } from "./plugin";
 export type { InboxItem, InboxSeverity, InboxItemType, InboxWorkspaceUnread, ArchivedInboxPage, ArchivedInboxFacets, SnoozedInboxIssue } from "./inbox";
-export type { AfterAutoArchiveValue, AutoArchiveKey, NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse, OthersIssuesValue } from "./notification-preference";
+export type { AutoArchiveKey, NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse, OthersIssuesValue } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentSupplementReceipt, CommentSupplementStatus, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, CommentTriggerOutcome, CommentTriggerStatus, Reaction } from "./comment";
 export type { Label, LabelResourceType, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse, ResourceLabelsResponse } from "./label";
 export type { IssueProperty, IssuePropertyType, ScalarIssuePropertyType, ListIssuePropertyType, IssuePropertyOption, IssuePropertyConfig, IssuePropertyValue, IssuePropertyValues, CreatePropertyRequest, UpdatePropertyRequest, ListPropertiesResponse, IssuePropertiesResponse, IssuePropertyActorKind, IssuePropertyActorRef, PropertyFilterOp, PropertyOperatorFilter, PropertyFilterValue } from "./property";
@@ -204,6 +209,7 @@ export type {
   ChatDraftRestoresResponse,
   ChatWakeup,
   ChatWakeupKind,
+  ChatWakeupTiming,
   ChatWakeupStatus,
 } from "./chat";
 export type { StorageAdapter } from "./storage";
@@ -304,7 +310,6 @@ export type {
   AppCatalogEntry,
   AppCatalogResponse,
   AppRule,
-  AppTool,
   AppToolCall,
   AppCallOutcome,
   IssueAppCall,
@@ -409,7 +414,11 @@ export type {
   SquadActiveIssueBrief,
   SquadMemberStatus,
   SquadMemberStatusListResponse,
+  SquadHandoffMode,
+  SquadBrief,
+  SquadBriefsResponse,
 } from "./squad";
+export { SQUAD_HANDOFF_ROUND_LIMIT, SQUAD_HANDOFF_DAILY_LIMIT } from "./squad";
 export type {
   BillingBalance,
   BillingTransaction,
@@ -468,6 +477,8 @@ export type {
   WorkspaceFeatureLimits,
   MemberLimit,
   StorageUsage,
+  AppCallUsage,
+  AppCallMemberUsage,
 } from "./billing";
 export type { IssueWakeup, IssueWakeupInput, SystemWakeup, WorkspaceSystemWakeup, WakeupPreview, IssueWakeupSummaryRow, WakeupCondition, WakeupPausedReason, WakeupRun, PausedWakeup, WakeupSource } from "./issue-wakeup";
 

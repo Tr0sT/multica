@@ -64,6 +64,10 @@ Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with these five sections
    and explain why.
 
 End the description with `Closes #<issue>` when the PR resolves an issue.
+The title and description become the squash commit on `main`; credit
+co-authors with `Co-authored-by:` lines at the end of the description. Report
+security vulnerabilities privately as described in [SECURITY.md](SECURITY.md),
+not in a pull request or issue.
 
 **UI or interaction PRs without screenshots or a recording are rejected by
 default.** Reviewers should request changes or close the PR until one is
@@ -382,7 +386,9 @@ Three properties are worth knowing because the old flow lacked them:
 - **Temporary environments have a best-effort fallback.** `make up
   ARGS=--ephemeral` records a 24-hour TTL. The next `make up` automatically
   collects expired and directory-less environments; `make gc` runs the same
-  collection explicitly.
+  collection explicitly. Use `make up ARGS="--ttl 48"` to renew a checkout
+  whose environment is still registered, even after expiry. The command keeps
+  that environment's data and gives it a new 48-hour TTL.
 
 Run any command inside an environment's variables without repeating them:
 

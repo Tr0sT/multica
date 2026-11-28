@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: Tr0sT/multica-declarative
-          ref: bf320699c1bb3d89b7dad10a82138bb1375f08f8
+          ref: 7ba0860c0aa3f73b77549b16692dc01a964ac39e
           path: .declarative-consumer
           persist-credentials: false
       - uses: actions/setup-go@v5
